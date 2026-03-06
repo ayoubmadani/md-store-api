@@ -18,6 +18,7 @@ import { ShippingModule } from './shipping/shipping.module';
 import { AiModule } from './ai/ai.module';
 import { ThemeModule } from './theme/theme.module';
 import { AdminModule } from './admin/admin.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -61,5 +62,6 @@ import { AdminModule } from './admin/admin.module';
     ThemeModule,
     AdminModule,
   ],
+  controllers: [AppController]
 })
 export class AppModule { }
