@@ -195,7 +195,7 @@ export class StoreService {
                     currency: dto.store.currency ?? store.currency,
                     language: dto.store.language ?? store.language,
                 });
-                if (dto.store.nicheId) store.niche = { id: dto.store.nicheId } as any;
+                store.niche = { id: dto.store.nicheId } as any;
             }
 
             if (dto.design && store.design) {

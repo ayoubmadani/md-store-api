@@ -13,7 +13,7 @@ export class OrdersController {
     ) { }
 
     @Post()
-    @UseGuards(ThrottlerGuard) // ضروري جداً لتفعيل القيد على هذه الدالة
+    //@UseGuards(ThrottlerGuard) // ضروري جداً لتفعيل القيد على هذه الدالة
     @Throttle({ default: { limit: 3, ttl: 60000 } })
     create(
         @Body() dto: CreateOrderDto,

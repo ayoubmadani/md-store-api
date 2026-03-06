@@ -51,8 +51,8 @@ export class Store {
   @ManyToOne(() => User, (user) => user.stores, { onDelete: 'CASCADE' })
   user: User;
 
-  @ManyToOne(() => Niche, (niche) => niche.stores, { onDelete: 'CASCADE' })
-  niche: Niche;
+  @ManyToOne(() => Niche, (niche) => niche.stores, { onDelete: 'CASCADE' ,nullable: true})
+  niche?: Niche;
 
   @OneToMany(() => Product, (products) => products.store)
   products: Product[];

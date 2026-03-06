@@ -54,7 +54,7 @@ export class ThemeController {
     @Body() data:any,
   ){
     const userId = user.id || user.sub;
-    this.themeService.activeTheme(userId,data)
+    return this.themeService.activeTheme(userId,data)
   }
 
   @Get('get-one/:id')

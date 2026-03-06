@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { LandingPage } from './entities/landing-page.entity';
 import { Repository } from 'typeorm';
 import { ImageGeneratorService } from 'src/image-generator/image-generator.service';
+import { AiService } from 'src/ai/ai.service';
 
 @Injectable()
 export class LandingPageService {
@@ -12,8 +13,9 @@ export class LandingPageService {
   constructor(
     @InjectRepository(LandingPage)
     private readonly landingPageRope: Repository<LandingPage>,
-    private readonly imageGeneratorService: ImageGeneratorService,
-  ) {}
+
+    private readonly aiService: AiService,
+  ) { }
 
   // ─────────────────────────────────────────
   // CRUD
@@ -53,22 +55,22 @@ export class LandingPageService {
       ...landingpage,
       product: landingpage.product
         ? {
-            ...landingpage.product,
-            store: landingpage.product.store
-              ? {
-                  id: landingpage.product.store.id,
-                  name: landingpage.product.store.name,
-                  subdomain: landingpage.product.store.subdomain,
-                  userId: landingpage.product.store.user?.id || null,
-                }
-              : null,
-            category: landingpage.product.category
-              ? {
-                  id: landingpage.product.category.id,
-                  name: landingpage.product.category.name,
-                }
-              : null,
-          }
+          ...landingpage.product,
+          store: landingpage.product.store
+            ? {
+              id: landingpage.product.store.id,
+              name: landingpage.product.store.name,
+              subdomain: landingpage.product.store.subdomain,
+              userId: landingpage.product.store.user?.id || null,
+            }
+            : null,
+          category: landingpage.product.category
+            ? {
+              id: landingpage.product.category.id,
+              name: landingpage.product.category.name,
+            }
+            : null,
+        }
         : null,
     };
   }
@@ -114,6 +116,15 @@ export class LandingPageService {
   // توليد صورة Landing Page
   // ─────────────────────────────────────────
 
-  async generateProductImage(productId: string) {}
-    
+  async generateProductImage(productId: string) {
+    const result = await this.aiService.generatePromptProduct(productId);
+
+    return this.aiService.generateProductImage({
+      images: result.images,
+      prompt: result.prompt,
+      productName: (result.product as any).name,
+      price: String((result.product as any).price),
+    });
+  }
+
 }

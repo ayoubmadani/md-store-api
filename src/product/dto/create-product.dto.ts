@@ -17,9 +17,6 @@ import { VariantDetailDto } from './sub-dtos/variant-detail.dto';
 import { OfferDto } from './sub-dtos/offer.dto';
 
 export class CreateProductDto {
-  @IsString()
-  @IsNotEmpty({ message: 'معرّف المنتج مطلوب' })
-  id: string; // المعرف القادم من الفرونت إند
 
   @IsString()
   @IsNotEmpty({ message: 'اسم المنتج مطلوب' })

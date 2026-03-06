@@ -6,7 +6,7 @@ import { Theme } from './entities/theme.entity';
 import { ArrayContains, FindOptionsWhere, ILike, Repository } from 'typeorm';
 import { TypeThemeService } from './type-theme.service';
 import { ThemeUser } from './entities/theme-user.entity';
-import { Store } from 'src/store/entities/store.entity';
+import { Store } from '../store/entities/store.entity';
 
 @Injectable()
 export class ThemeService {
@@ -73,7 +73,7 @@ export class ThemeService {
 
   async findUserTheme(userId: string) {
     return this.themeRepo.find({
-      where: { themeUsers: { userId } }
+      where: { themeUsers: { userId } },
     })
   }
 
@@ -115,7 +115,7 @@ export class ThemeService {
       throw new BadRequestException('Invalid ID provided');
     }
 
-    const wallet = 10; // تصحيح الاسم من welatt إلى wallet
+    const wallet = 1000; // تصحيح الاسم من welatt إلى wallet
 
     // 2. التحقق من وجود الثيم وصلاحيته أولاً
     const theme = await this.themeRepo.findOne({ where: { id: themeId } });
