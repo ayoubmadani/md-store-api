@@ -18,8 +18,8 @@ import {
   UpdateDateColumn,
 } from "typeorm";
 import { StorePixel } from "./store-pixel.entity";
-import { Order } from "src/order/entities/order.entity";
-import { ThemeUser } from "src/theme/entities/theme-user.entity";
+import { Order } from "../../order/entities/order.entity";
+import { ThemeUser } from "../../theme/entities/theme-user.entity";
 
 @Entity({ name: 'stores' })
 export class Store {

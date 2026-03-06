@@ -13,9 +13,9 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
-import { AuthGuard } from 'src/auth/guard/auth.guard';
+import { AuthGuard } from '../auth/guard/auth.guard';
 import { ImageService } from './image.service';
-import { GetUser } from 'src/user/decorator/get-user.decorator';
+import { GetUser } from '../user/decorator/get-user.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('images')

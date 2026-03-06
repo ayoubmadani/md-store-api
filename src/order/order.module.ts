@@ -15,8 +15,8 @@ import { Store } from '../store/entities/store.entity';
 import { OrdersService } from './order.service';
 import { OrdersController } from './order.controller';
 import { NtfyModule } from '../ntfy/ntfy.module';
-import { Shipping } from 'src/shipping/entity/shipping.entity';
-import { Commune } from 'src/shipping/entity/commune.entity';
+import { Shipping } from '../shipping/entity/shipping.entity';
+import { Commune } from '../shipping/entity/commune.entity';
 
 @Module({
   imports: [

@@ -2,8 +2,8 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@n
 import { LandingPageService } from './landing-page.service';
 import { CreateLandingPageDto } from './dto/create-landing-page.dto';
 import { UpdateLandingPageDto } from './dto/update-landing-page.dto';
-import { AuthGuard } from 'src/auth/guard/auth.guard';
-import { GetUser } from 'src/user/decorator/get-user.decorator';
+import { AuthGuard } from '../auth/guard/auth.guard';
+import { GetUser } from '../user/decorator/get-user.decorator';
 
 @Controller('landing-page')
 export class LandingPageController {

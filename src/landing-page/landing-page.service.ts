@@ -4,8 +4,7 @@ import { UpdateLandingPageDto } from './dto/update-landing-page.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LandingPage } from './entities/landing-page.entity';
 import { Repository } from 'typeorm';
-import { ImageGeneratorService } from 'src/image-generator/image-generator.service';
-import { AiService } from 'src/ai/ai.service';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class LandingPageService {

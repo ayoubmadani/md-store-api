@@ -18,7 +18,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { AuthGuard } from 'src/auth/guard/auth.guard';
 import { QueryProductsDto } from './dto/query-products.dto';
-import { GetUser } from 'src/user/decorator/get-user.decorator';
+import { GetUser } from '../user/decorator/get-user.decorator';
 // تأكد من استيراد الـ GetUser من مساره الصحيح في مشروعك
 
 @Controller('stores/:storeId/categories')

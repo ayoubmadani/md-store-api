@@ -10,9 +10,9 @@ import { VariantDetail } from "../product/entities/variant-detail.entity";
 import { v4 as uuidv4 } from 'uuid';
 import { UpdateOrderDto } from "./dto/update-order.dto";
 import { NtfyService } from "../ntfy/ntfy.service";
-import { Wilaya } from "src/shipping/entity/wilaya.entity";
-import { Shipping } from "src/shipping/entity/shipping.entity";
-import { Commune } from "src/shipping/entity/commune.entity";
+import { Wilaya } from "../shipping/entity/wilaya.entity";
+import { Shipping } from "../shipping/entity/shipping.entity";
+import { Commune } from "../shipping/entity/commune.entity";
 
 
 

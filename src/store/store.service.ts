@@ -11,7 +11,7 @@ import { UpdateFullStoreDto } from './dto/update-store.dto';
 import { CreateFullStoreDto } from './dto/create-full-store.dto';
 import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
-import { Category } from 'src/category/entities/category.entity';
+import { Category } from '../category/entities/category.entity';
 
 @Injectable()
 export class StoreService {

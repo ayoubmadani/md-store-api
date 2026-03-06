@@ -7,7 +7,6 @@ import { AuthGuard } from "@nestjs/passport";
 import express, { request } from 'express';
 import { ConfigService } from "@nestjs/config";
 import { CredentialLoginDto } from "./dto/credentialLogin.dto";
-import { GetUser } from "src/user/decorator/get-user.decorator";
 
 @Controller('auth')
 export class AuthController {

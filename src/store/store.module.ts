@@ -13,7 +13,7 @@ import { StorePixel } from './entities/store-pixel.entity'; // 🆕
 
 import { User } from '../user/entities/user.entity';
 import { Niche } from '../niche/entities/niche.entity';
-import { Category } from 'src/category/entities/category.entity';
+import { Category } from '../category/entities/category.entity';
 
 @Module({
   imports: [

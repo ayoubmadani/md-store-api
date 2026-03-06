@@ -1,4 +1,3 @@
-// src/stores/entities/store-pixel.entity.ts
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Store } from './store.entity';
 

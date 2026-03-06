@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, JoinColumn, Unique, OneToMany } from "typeorm";
 import { Theme } from "./theme.entity";
-import { Store } from "src/store/entities/store.entity";
+import { Store } from "../../store/entities/store.entity";
 
 @Entity()
 @Unique(['themeId', 'userId'])

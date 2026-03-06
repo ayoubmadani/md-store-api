@@ -3,6 +3,8 @@ import { AppModule } from './app.module';
 import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { json, urlencoded } from 'express';
 
+const listUrl = []
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 

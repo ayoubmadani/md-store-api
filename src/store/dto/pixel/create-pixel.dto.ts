@@ -1,4 +1,3 @@
-// src/stores/dto/create-pixel.dto.ts
 import { IsEnum, IsString, IsOptional, IsBoolean, IsJSON } from 'class-validator';
 
 export type PixelType = 'facebook' | 'tiktok' | 'google' | 'snapchat';

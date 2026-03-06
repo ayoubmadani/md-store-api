@@ -3,8 +3,8 @@ import { ThemeService } from './theme.service';
 import { CreateThemeDto } from './dto/create-theme.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
 import { TypeThemeService } from './type-theme.service';
-import { AuthGuard } from 'src/auth/guard/auth.guard';
-import { GetUser } from 'src/user/decorator/get-user.decorator';
+import { AuthGuard } from '../auth/guard/auth.guard';
+import { GetUser } from '../user/decorator/get-user.decorator';
 
 @Controller('theme')
 export class ThemeController {
