@@ -7,6 +7,7 @@ import { ArrayContains, FindOptionsWhere, ILike, Repository } from 'typeorm';
 import { TypeThemeService } from './type-theme.service';
 import { ThemeUser } from './entities/theme-user.entity';
 import { Store } from '../store/entities/store.entity';
+import { PaymentService } from '../payment/payment.service';
 
 @Injectable()
 export class ThemeService {
@@ -14,7 +15,10 @@ export class ThemeService {
   constructor(
     @InjectRepository(Theme) private readonly themeRepo: Repository<Theme>,
     @InjectRepository(ThemeUser) private readonly themeUserRepo: Repository<ThemeUser>,
-    @InjectRepository(Store) private readonly storeRepo: Repository<Store>
+    @InjectRepository(Store) private readonly storeRepo: Repository<Store>,
+
+    private readonly paymentService : PaymentService,
+
   ) { }
 
 
@@ -115,7 +119,11 @@ export class ThemeService {
       throw new BadRequestException('Invalid ID provided');
     }
 
-    const wallet = 1000; // تصحيح الاسم من welatt إلى wallet
+    const wallet = await this.paymentService.getBalanceUser(userId) ; // تصحيح الاسم من welatt إلى wallet
+
+    if (!wallet) {
+      return this.res(false, 'Insufficient balance')
+    }
 
     // 2. التحقق من وجود الثيم وصلاحيته أولاً
     const theme = await this.themeRepo.findOne({ where: { id: themeId } });
@@ -125,7 +133,7 @@ export class ThemeService {
     }
 
     // 3. التحقق من الرصيد
-    if (theme.price && theme.price > wallet) {
+    if (theme.price && theme.price > wallet.balance) {
       return this.res(false, 'Insufficient balance')
     }
 

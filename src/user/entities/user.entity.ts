@@ -1,7 +1,9 @@
+import { Wallet } from '../../payment/entities/wallets.entity';
 import { Image } from '../../image/entities/image.entity';
 import { Shipping } from '../../shipping/entity/shipping.entity';
 import { Store } from '../../store/entities/store.entity';
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, OneToOne } from 'typeorm';
+import { Transaction } from '../../payment/entities/transaction.entity';
 
 export enum AuthProvider {
     CREDENTIALS = 'CREDENTIALS',
@@ -80,4 +82,10 @@ export class User {
     // داخل user.entity.ts
     @OneToMany(() => Shipping, (shipping) => shipping.user)
     shippings: Shipping[];
+
+    @OneToOne(() => Wallet, (wallet) => wallet.user)
+    wallet: Wallet;
+
+    @OneToMany(() => Transaction, (transaction) => transaction.user)
+    transactions: Transaction[];
 }

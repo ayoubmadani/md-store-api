@@ -19,6 +19,8 @@ import { AiModule } from './ai/ai.module';
 import { ThemeModule } from './theme/theme.module';
 import { AdminModule } from './admin/admin.module';
 import { AppController } from './app.controller';
+import { SubscriptionModule } from './subscription/subscription.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -61,6 +63,8 @@ import { AppController } from './app.controller';
     AiModule,
     ThemeModule,
     AdminModule,
+    SubscriptionModule,
+    PaymentModule,
   ],
   controllers: [AppController]
 })

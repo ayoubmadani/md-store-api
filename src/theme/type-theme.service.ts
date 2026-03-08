@@ -2,12 +2,13 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ThemeType } from "./entities/theme-type.entity";
 import { Repository } from "typeorm";
+import { PaymentService } from "../payment/payment.service";
 
 @Injectable()
 export class TypeThemeService {
     constructor(
         @InjectRepository(ThemeType)
-        private readonly themeTypeRepo: Repository<ThemeType> // يفضل تسميته Repo للوضوح
+        private readonly themeTypeRepo: Repository<ThemeType>, // يفضل تسميته Repo للوضوح
     ) { }
 
     async create(name: string) {

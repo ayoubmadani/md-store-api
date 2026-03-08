@@ -7,12 +7,14 @@ import { Theme } from './entities/theme.entity';
 import { ThemeType } from './entities/theme-type.entity';
 import { TypeThemeService } from './type-theme.service';
 import { Store } from '../store/entities/store.entity';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   controllers: [ThemeController],
   providers: [ThemeService,TypeThemeService],
   imports:[
-    TypeOrmModule.forFeature([ThemeUser,Theme,ThemeType,Store])
+    TypeOrmModule.forFeature([ThemeUser,Theme,ThemeType,Store]),
+    PaymentModule,
   ],
 
 })

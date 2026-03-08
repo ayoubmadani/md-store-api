@@ -4,19 +4,31 @@ import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { json, urlencoded } from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // 1. تفعيل خاصية rawBody عند إنشاء التطبيق
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true, 
+  });
 
-  // 1. حجم البيانات
-  app.use(json({ limit: '50mb' }));
+  // 2. تحديث إعدادات body-parser لالتقاط البيانات الخام (Buffer)
+  // هذا الجزء ضروري جداً لكي تعمل دالة verifySignature الخاصة بـ Chargily
+  app.use(json({
+    limit: '50mb',
+    verify: (req: any, res, buf) => {
+      if (buf && buf.length) {
+        req.rawBody = buf; // تخزين البيانات الخام في req.rawBody
+      }
+    },
+  }));
+
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
-  // 2. تفعيل الـ CORS (تعديل الشرط ليشمل نطاق Vercel الخاص بك)
+  // 3. تفعيل الـ CORS
   app.enableCors({
     origin: (origin, callback) => {
       const allowedOrigins = [
         'http://localhost:5173',
         'http://localhost:3000',
-        'https://mdstore.vercel.app' // أضف رابط الفرونت-إند الخاص بك هنا
+        'https://mdstore.vercel.app'
       ];
       
       if (!origin || allowedOrigins.some(domain => origin.startsWith(domain)) || origin.includes('127.0.0.1')) {
@@ -27,7 +39,7 @@ async function bootstrap() {
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
-    allowedHeaders: 'Content-Type, Accept, Authorization',
+    allowedHeaders: 'Content-Type, Accept, Authorization, signature', // أضف signature هنا
   });
 
   app.useGlobalPipes(new ValidationPipe({
@@ -38,8 +50,7 @@ async function bootstrap() {
 
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
-  // 3. تعديل المنفذ ليتوافق مع Vercel (مهم جداً)
-  const port = process.env.PORT || 1997;
+  const port = process.env.PORT || 7000;
   await app.listen(port);
 }
 bootstrap();

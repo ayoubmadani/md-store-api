@@ -1,0 +1,65 @@
+[33mcommit 88d01fd4b30aa34f61f59f8ece398be50e67186c[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Sat Mar 7 04:33:45 2026 +0100
+
+    fix: serverless entry point and remove hardcoded cors
+
+[33mcommit 59d2466928b631ceadb6bc1eda4bedc789f8fa83[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Sat Mar 7 04:31:27 2026 +0100
+
+    fix: final production configuration for CORS and Serverless
+
+[33mcommit 2b1308705ba34a2797784dfe951e710a4a7e9f51[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Sat Mar 7 04:24:44 2026 +0100
+
+    fix: simplify cors to array for production
+
+[33mcommit efd1f635dd3511cb8e2f6c260aa90a0dbd1780e1[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Sat Mar 7 04:12:04 2026 +0100
+
+    cors
+
+[33mcommit 8c4292fc2508251b8a2dae82edb58e351dfac02e[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Fri Mar 6 21:34:45 2026 +0100
+
+    fix: downgrade uuid to valid version 2
+
+[33mcommit 6fc328287abc63887e671981164e3236f63985e2[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Fri Mar 6 21:14:19 2026 +0100
+
+    fix: downgrade uuid to valid version 2
+
+[33mcommit 2648872207d8437123936f9a97851095087b4c97[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Fri Mar 6 20:34:50 2026 +0100
+
+    fix: downgrade uuid to valid version
+
+[33mcommit fb44ce1e8630c9a88de05291de14d446810c96aa[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Fri Mar 6 20:30:08 2026 +0100
+
+    main 3
+
+[33mcommit 7a7907d7fb9fd51cc46a997203b78cea9f047642[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Fri Mar 6 20:14:57 2026 +0100
+
+    main 2
+
+[33mcommit 9020ee9cf2de7fc43bb33bf73c304d6edbf3d6b4[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Fri Mar 6 20:00:40 2026 +0100
+
+    main 1
+
+[33mcommit 0f246ffb0ec5441e38b9c3d1acce2778204d27d7[m
+Author: ayoubmadani <ayoubbansalah123456@gmail.com>
+Date:   Thu Mar 5 04:34:06 2026 +0100
+
+    initial commit

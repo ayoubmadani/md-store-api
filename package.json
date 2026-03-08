@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.990.0",
+    "@chargily/chargily-pay": "^2.1.0",
     "@fal-ai/client": "^1.9.4",
     "@google-cloud/vertexai": "^1.10.0",
     "@google/generative-ai": "^0.24.1",
