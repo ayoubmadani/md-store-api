@@ -8,7 +8,16 @@ export class Niche {
     id:string
 
     @Column()
-    name : string
+    name_en : string
+
+    @Column()
+    name_ar : string
+
+    @Column()
+    name_fr : string
+
+    @Column()
+    slug : string
 
     @Column()
     icon : string
