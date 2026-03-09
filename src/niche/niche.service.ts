@@ -14,7 +14,7 @@ export class NicheService {
   ) {}
 
   // إنشاء Niche جديد
-  async create(createNicheDto: CreateNicheDto): Promise<Niche> {
+  async create(createNicheDto: CreateNicheDto[]): Promise<Niche[]> {
     const niche = this.nicheRepository.create(createNicheDto);
     return this.nicheRepository.save(niche);
   }

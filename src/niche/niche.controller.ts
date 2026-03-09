@@ -10,7 +10,7 @@ export class NicheController {
 
   // إنشاء Niche جديد
   @Post()
-  async create(@Body() createNicheDto: CreateNicheDto) {
+  async create(@Body() createNicheDto: CreateNicheDto[]) {
     const niche = await this.nicheService.create(createNicheDto);
     return {
       success: true,
