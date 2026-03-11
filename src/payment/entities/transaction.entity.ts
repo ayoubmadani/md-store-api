@@ -3,7 +3,7 @@ import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, Jo
 
 export enum TransactionAction {
     PAYMENT = 'payment',
-    TOP_UP = 'deposit'
+    DESPOSIT = 'deposit'
 }
 
 export enum TransactionType {

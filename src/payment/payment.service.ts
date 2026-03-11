@@ -101,7 +101,7 @@ export class PaymentService {
         // 3. تسجيل المعاملة في جدول الترانزاكشن (يربط المحفظة بالـ Plans)
         const transaction = manager.create(Transaction, {
             // نستخدم الـ Enum المصلح لتفادي خطأ Postgres
-            action: action === "ADD" ? TransactionAction.TOP_UP : TransactionAction.PAYMENT, 
+            action: action === "ADD" ? TransactionAction.DESPOSIT : TransactionAction.PAYMENT, 
             type, // نوع العملية (مثل شراء خطة)
             amount,
             userId: String(userId),
