@@ -8,6 +8,7 @@ import { TypeThemeService } from './type-theme.service';
 import { ThemeUser } from './entities/theme-user.entity';
 import { Store } from '../store/entities/store.entity';
 import { PaymentService } from '../payment/payment.service';
+import { TransactionType } from 'src/payment/entities/transaction.entity';
 
 @Injectable()
 export class ThemeService {
@@ -146,6 +147,7 @@ export class ThemeService {
           userId,
           price,
           "SUB",
+          TransactionType.SELL_THEME,
           queryRunner.manager,
         );
       }

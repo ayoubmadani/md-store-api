@@ -56,75 +56,71 @@ export class PaymentService {
 
 
             // هنا نستخدم كود الـ topUpWallet الذي كتبناه سابقاً لإضافة الرصيد فعلياً
-            return await this.handleWalletBalance(userId, amount, "ADD");
+            return await this.handleWalletBalance(userId, amount ,"ADD" , TransactionType.TOP_UP);
         }
     }
 
     async handleWalletBalance(
-        userId: string,
-        amount: number,
-        action: "SUB" | "ADD",
-        existingManager?: EntityManager // معامل اختياري لدعم الترانزاكشن الخارجية
-    ) {
-        // إذا كان هناك manager خارجي نستخدمه، وإلا ننشئ queryRunner جديد
-        const queryRunner = !existingManager ? this.dataSource.createQueryRunner() : null;
-        const manager = existingManager || queryRunner!.manager;
+    userId: string,
+    amount: number,
+    action: "SUB" | "ADD",
+    type: TransactionType, // تمرير النوع هنا (مثل PLAN_SUBSCRIPTION)
+    existingManager?: EntityManager
+) {
+    const queryRunner = !existingManager ? this.dataSource.createQueryRunner() : null;
+    const manager = existingManager || queryRunner!.manager;
 
-        if (queryRunner) {
-            await queryRunner.connect();
-            await queryRunner.startTransaction();
-        }
-
-        try {
-            // 1. البحث عن المحفظة مع القفل للحماية
-            let wallet = await manager.findOne(Wallet, {
-                where: { userId: String(userId) },
-                lock: { mode: 'pessimistic_write' }
-            });
-
-            if (!wallet) {
-                wallet = manager.create(Wallet, { userId: String(userId), balance: 0 });
-            }
-
-            // 2. معالجة الرصيد
-            if (action === "ADD") {
-                wallet.balance = Number(wallet.balance) + amount;
-            } else {
-                if (Number(wallet.balance) < amount) {
-                    throw new BadRequestException('عذراً، الرصيد غير كافٍ');
-                }
-                wallet.balance = Number(wallet.balance) - amount;
-            }
-
-            await manager.save(wallet);
-
-            // 3. تسجيل المعاملة
-            const transaction = manager.create(Transaction, {
-                action: action === "ADD" ? TransactionAction.TOP_UP : TransactionAction.WITHDRAW,
-                type: TransactionType.WALLET,
-                amount,
-                userId,
-            });
-            await manager.save(transaction);
-
-            // 4. إنهاء الترانزاكشن إذا كانت محلية
-            if (queryRunner) {
-                await queryRunner.commitTransaction();
-            }
-
-            return { success: true, newBalance: wallet.balance };
-
-        } catch (err) {
-            if (queryRunner) {
-                await queryRunner.rollbackTransaction();
-            }
-            throw err;
-        } finally {
-            if (queryRunner) {
-                await queryRunner.release();
-            }
-        }
+    if (queryRunner) {
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
     }
+
+    try {
+        // 1. البحث عن المحفظة (مع القفل لحماية الرصيد من العمليات المتزامنة)
+        let wallet = await manager.findOne(Wallet, {
+            where: { userId: String(userId) },
+            lock: { mode: 'pessimistic_write' }
+        });
+
+        if (!wallet) {
+            wallet = manager.create(Wallet, { userId: String(userId), balance: 0 });
+        }
+
+        // 2. معالجة الرصيد بناءً على الأكشن
+        if (action === "ADD") {
+            wallet.balance = Number(wallet.balance) + amount;
+        } else {
+            if (Number(wallet.balance) < amount) {
+                throw new BadRequestException('عذراً، رصيدك في المحفظة غير كافٍ لإتمام هذه العملية');
+            }
+            wallet.balance = Number(wallet.balance) - amount;
+        }
+
+        await manager.save(wallet);
+
+        // 3. تسجيل المعاملة في جدول الترانزاكشن (يربط المحفظة بالـ Plans)
+        const transaction = manager.create(Transaction, {
+            // نستخدم الـ Enum المصلح لتفادي خطأ Postgres
+            action: action === "ADD" ? TransactionAction.TOP_UP : TransactionAction.PAYMENT, 
+            type, // نوع العملية (مثل شراء خطة)
+            amount,
+            userId: String(userId),
+            description: `Operation: ${type} for User ${userId}` // اختياري للتدقيق
+        });
+        
+        await manager.save(transaction);
+
+        if (queryRunner) await queryRunner.commitTransaction();
+
+        return { success: true, newBalance: wallet.balance, transactionId: transaction.id };
+
+    } catch (err) {
+        if (queryRunner) await queryRunner.rollbackTransaction();
+        throw err;
+    } finally {
+        if (queryRunner) await queryRunner.release();
+    }
+}
 
     // 3 bay
 

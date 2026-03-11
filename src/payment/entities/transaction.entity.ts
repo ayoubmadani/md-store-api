@@ -2,14 +2,17 @@ import { User } from '../../user/entities/user.entity';
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, JoinColumn } from 'typeorm';
 
 export enum TransactionAction {
-    WITHDRAW = 'withdraw',
+    PAYMENT = 'payment',
     TOP_UP = 'deposit'
 }
 
 export enum TransactionType {
-    SUB = 'subscription',
-    THEME = 'sell theme',
-    WALLET = 'top up wallet'
+    PLAN_SUBSCRIPTION = 'plan_subscription', // دفع ثمن الخطة
+    PLAN_UPGRADE = 'plan_upgrade',           // ترقية الخطة
+    STORE_FEE = 'store_fee',                 // رسوم المتجر
+    REFUND = 'refund',                        // استرجاع
+    SELL_THEME = "sell_theme",
+    TOP_UP = 'top_up'
 }
 
 @Entity('transactions')

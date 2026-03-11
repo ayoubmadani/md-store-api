@@ -1,0 +1,5 @@
+
+npx typeorm-ts-node-commonjs migration:generate src/migrations/UpdateWalletAndUUID -d config/typeorm.ts
+
+
+npx typeorm-ts-node-commonjs migration:run -d config/typeorm.ts
