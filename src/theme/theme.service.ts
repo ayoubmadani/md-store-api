@@ -3,7 +3,7 @@ import { CreateThemeDto } from './dto/create-theme.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Theme } from './entities/theme.entity';
-import { ArrayContains, FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { ArrayContains, DataSource, FindOptionsWhere, ILike, Repository } from 'typeorm';
 import { TypeThemeService } from './type-theme.service';
 import { ThemeUser } from './entities/theme-user.entity';
 import { Store } from '../store/entities/store.entity';
@@ -17,7 +17,8 @@ export class ThemeService {
     @InjectRepository(ThemeUser) private readonly themeUserRepo: Repository<ThemeUser>,
     @InjectRepository(Store) private readonly storeRepo: Repository<Store>,
 
-    private readonly paymentService : PaymentService,
+    private readonly paymentService: PaymentService,
+    private readonly dataSource: DataSource,
 
   ) { }
 
@@ -81,10 +82,10 @@ export class ThemeService {
     })
   }
 
-  async findAllth(){
-    const getthemes= await this.themeRepo.find()
+  async findAllth() {
+    const getthemes = await this.themeRepo.find()
 
-    const themes = getthemes.map(th => {return {name : th.name_en , desc : th.desc_en,slug : th.slug}})
+    const themes = getthemes.map(th => { return { name: th.name_en, desc: th.desc_en, slug: th.slug } })
 
 
     return themes
@@ -114,47 +115,56 @@ export class ThemeService {
   }
 
   async installTheme(themeId: string, userId: string) {
-    // 1. التحقق من أن القيم ليست undefined أو null لتجنب خطأ UUID في PostgreSQL
+    // 1. التحقق من صحة المعرفات
     if (!themeId || !userId || themeId === 'undefined' || userId === 'undefined') {
       throw new BadRequestException('Invalid ID provided');
     }
 
-    const wallet = await this.paymentService.getBalanceUser(userId) ; // تصحيح الاسم من welatt إلى wallet
-
-    if (!wallet) {
-      return this.res(false, 'Insufficient balance')
-    }
-
-    // 2. التحقق من وجود الثيم وصلاحيته أولاً
+    // 2. الحصول على الثيم والتأكد من وجوده ونشاطه
     const theme = await this.themeRepo.findOne({ where: { id: themeId } });
-
-    if (!theme || theme.isActive === false) {
-      return this.res(false, 'Theme not found or not active')
+    if (!theme || !theme.isActive) {
+      return this.res(false, 'Theme not found or not active');
     }
 
-    // 3. التحقق من الرصيد
-    if (theme.price && theme.price > wallet.balance) {
-      return this.res(false, 'Insufficient balance')
+    // 3. التحقق مما إذا كان المستخدم يملك الثيم مسبقاً
+    const alreadyOwned = await this.themeUserRepo.findOne({ where: { themeId, userId } });
+    if (alreadyOwned) {
+      return this.res(false, 'User already owns this theme');
     }
 
-    // 4. التحقق مما إذا كان المستخدم يملك الثيم مسبقاً
-    const themeUser = await this.themeUserRepo.findOne({
-      where: { themeId, userId }
-    });
+    // 4. تنفيذ عملية الشراء داخل Transaction
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (themeUser) {
-      return this.res(false, 'User already owns this theme')
+    try {
+      const price = Number(theme.price || 0);
+
+      if (price > 0) {
+        // --- التعديل هنا: استدعاء الدالة من الـ paymentService المحقون ---
+        await this.paymentService.handleWalletBalance(  
+          userId,
+          price,
+          "SUB",
+          queryRunner.manager,
+        );
+      }
+
+      // 5. منح الثيم للمستخدم باستخدام الـ manager لضمان الـ Transaction
+      const newThemeUser = this.themeUserRepo.create({ userId, themeId });
+      await queryRunner.manager.save(newThemeUser);
+
+      // اعتماد كافة العمليات
+      await queryRunner.commitTransaction();
+      return this.res(true, 'Theme installed successfully');
+
+    } catch (error) {
+      // التراجع في حال حدوث خطأ (مثل نقص الرصيد)
+      await queryRunner.rollbackTransaction();
+      return this.res(false, error.message || 'Installation failed');
+    } finally {
+      await queryRunner.release();
     }
-
-    // 5. إنشاء السجل الجديد وحفظه
-    const newThemeUser = this.themeUserRepo.create({
-      userId,
-      themeId,
-    });
-
-    await this.themeUserRepo.save(newThemeUser);
-
-    return this.res(true, '')
   }
 
   async activeTheme(userId, { themeId, storeId, isDefault }) {

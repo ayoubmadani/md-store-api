@@ -2,14 +2,14 @@ import { User } from '../../user/entities/user.entity';
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, JoinColumn } from 'typeorm';
 
 export enum TransactionAction {
-    BUY = 'buy',
-    TOP_UP = 'topUp'
+    WITHDRAW = 'withdraw',
+    TOP_UP = 'deposit'
 }
 
 export enum TransactionType {
-    SUB = 'sub',
-    THEME = 'theme',
-    WALLET = 'wallet'
+    SUB = 'subscription',
+    THEME = 'sell theme',
+    WALLET = 'top up wallet'
 }
 
 @Entity('transactions')
