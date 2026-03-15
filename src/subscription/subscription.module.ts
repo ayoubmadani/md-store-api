@@ -4,12 +4,14 @@ import { SubscriptionController } from './subscription.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   controllers: [SubscriptionController],
   providers: [SubscriptionService],
   imports: [
-    TypeOrmModule.forFeature([Plan,Subscription])
+    TypeOrmModule.forFeature([Plan,Subscription]),
+    PaymentModule,
   ],
 
 })
