@@ -12,6 +12,7 @@ import { CreateFullStoreDto } from './dto/create-full-store.dto';
 import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { Category } from '../category/entities/category.entity';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class StoreService {
@@ -25,6 +26,8 @@ export class StoreService {
 
         @InjectRepository(Category)
         private categoryRepository: TreeRepository<Category>,
+
+        private readonly subscriptionService: SubscriptionService
     ) { }
 
     // ==================== PIXELS ====================
@@ -120,6 +123,22 @@ export class StoreService {
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
+
+        const getSub = await this.subscriptionService.findSub(userId)
+        const countStore = await this.storeRepository.count({ where: { user: { id: userId }, isActive: true } })
+
+
+
+        if (getSub?.plan.name === "free" && countStore >= 1) {
+            throw new BadRequestException('You have reached the maximum limit of stores for the Free plan (1 store).');
+        }
+
+        if (getSub?.plan.name === "pro" && countStore >= 10) {
+            throw new BadRequestException('You have reached the maximum limit of stores for the Pro plan (10 stores).');
+        }
+
+
+
 
         try {
             const { store: storeDto, design, topBar, contact, hero } = dto;
@@ -247,7 +266,7 @@ export class StoreService {
 
         const store = await this.storeRepository.findOne({
             where,
-            relations: ['design', 'topBar', 'contact', 'orders', 'hero', 'products', 'categories', 'niche', 'user', 'pixels','themeUser'],
+            relations: ['design', 'topBar', 'contact', 'orders', 'hero', 'products', 'categories', 'niche', 'user', 'pixels', 'themeUser'],
         });
 
         if (!store) throw new NotFoundException('Store not found or you do not have permission');
@@ -255,45 +274,79 @@ export class StoreService {
     }
 
     // store.service.ts
-   async getStoreByDomain(subdomain: string, categoryId?: string) {
-    let categoryIds: string[] = [];
+    async getStoreByDomain(subdomain: string, categoryId?: string) {
+        let categoryIds: string[] = [];
 
-    if (categoryId) {
-        const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
-        if (category) {
-            const descendants = await this.categoryRepository.findDescendants(category);
-            categoryIds = descendants.map(c => c.id);
+        if (categoryId) {
+            const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
+            if (category) {
+                const descendants = await this.categoryRepository.findDescendants(category);
+                categoryIds = descendants.map(c => c.id);
+            }
         }
+
+        const qb = this.storeRepository
+            .createQueryBuilder('store')
+            .leftJoinAndSelect('store.design', 'design')
+            .leftJoinAndSelect('store.topBar', 'topBar')
+            .leftJoinAndSelect('store.contact', 'contact')
+            .leftJoinAndSelect('store.hero', 'hero')
+            .leftJoinAndSelect('store.categories', 'categories')
+            .leftJoinAndSelect('store.pixels', 'pixels')
+            // جلب سجل امتلاك الثيم
+            .leftJoinAndSelect('store.themeUser', 'themeUser')
+            // جلب بيانات الثيم نفسه (الاسم، المسار، إلخ)
+            .leftJoinAndSelect('themeUser.theme', 'theme')
+            .leftJoinAndSelect(
+                'store.products',
+                'products',
+                categoryId && categoryIds.length > 0
+                    ? 'products.isActive = true AND products.categoryId IN (:...categoryIds)'
+                    : 'products.isActive = true',
+                categoryIds.length > 0 ? { categoryIds } : {}
+            )
+            .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
+            .leftJoinAndSelect('products.category', 'productCategory')
+            .where('store.subdomain = :subdomain', { subdomain });
+
+        qb.addOrderBy('categories.sortOrder', 'ASC');
+
+        return qb.getOne();
     }
 
-    const qb = this.storeRepository
-        .createQueryBuilder('store')
-        .leftJoinAndSelect('store.design', 'design')
-        .leftJoinAndSelect('store.topBar', 'topBar')
-        .leftJoinAndSelect('store.contact', 'contact')
-        .leftJoinAndSelect('store.hero', 'hero')
-        .leftJoinAndSelect('store.categories', 'categories')
-        .leftJoinAndSelect('store.pixels', 'pixels')
-        // جلب سجل امتلاك الثيم
-        .leftJoinAndSelect('store.themeUser', 'themeUser') 
-        // جلب بيانات الثيم نفسه (الاسم، المسار، إلخ)
-        .leftJoinAndSelect('themeUser.theme', 'theme') 
-        .leftJoinAndSelect(
-            'store.products',
-            'products',
-            categoryId && categoryIds.length > 0
-                ? 'products.isActive = true AND products.categoryId IN (:...categoryIds)'
-                : 'products.isActive = true',
-            categoryIds.length > 0 ? { categoryIds } : {}
-        )
-        .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
-        .leftJoinAndSelect('products.category', 'productCategory')
-        .where('store.subdomain = :subdomain', { subdomain });
+    async deactivateAllStores(userId: string) {
+        await this.storeRepository.update(
+            { user: { id: userId } },
+            { isActive: false }
+        );
+        return { success: true, message: 'All stores have been deactivated.' };
+    }
 
-    qb.addOrderBy('categories.sortOrder', 'ASC');
+    async activateFirstStoreOnly(userId: string) {
+        // 1. جلب كافة متاجر المستخدم مرتبة من الأقدم إلى الأحدث
+        const userStores = await this.storeRepository.find({
+            where: { user: { id: userId } },
+            order: { createdAt: 'ASC' }
+        });
 
-    return qb.getOne();
-}
+        if (userStores.length === 0) {
+            throw new NotFoundException('No stores found for this user.');
+        }
+
+        // 2. تحديث الحالة في قاعدة البيانات
+        // تعطيل الكل أولاً
+        await this.storeRepository.update({ user: { id: userId } }, { isActive: false });
+
+        // تفعيل المتجر الأول فقط
+        const firstStoreId = userStores[0].id;
+        await this.storeRepository.update({ id: firstStoreId }, { isActive: true });
+
+        return {
+            success: true,
+            activatedStore: userStores[0].name,
+            message: 'First store activated, others deactivated to comply with limits.'
+        };
+    }
 
     async getAllStores(userId?: string) {
         const query = this.storeRepository
@@ -315,7 +368,26 @@ export class StoreService {
 
     // ==================== TOGGLE STATUS ====================
 
-    async toggleStatus(storeId: string): Promise<{ success: boolean; isActive: boolean; message: string }> {
+    async toggleStatus(storeId: string, userId): Promise<{ success: boolean; isActive: boolean; message: string }> {
+
+        const getSub = await this.subscriptionService.findSub(userId)
+        const countStore = await this.storeRepository.count({ where: { user: { id: userId }, isActive: true } })
+
+        console.log(countStore);
+
+
+        if (getSub?.plan.name === "free" && countStore > 1) {
+            throw new BadRequestException('You have reached the maximum limit of stores for the Free plan (1 store).');
+        }
+
+        if (getSub?.plan.name === "pro" && countStore > 10) {
+            throw new BadRequestException('You have reached the maximum limit of stores for the Pro plan (10 stores).');
+        }
+
+        if (!getSub && countStore >= 1) {
+            throw new BadRequestException('You have reached the maximum limit of stores for the Free plan (1 store).');
+        }
+
         const store = await this.storeRepository.findOne({
             where: { id: storeId },
             select: ['id', 'isActive'],
@@ -334,6 +406,12 @@ export class StoreService {
     }
 
     async toggleStatusWithAuth(storeId: string, userId: string): Promise<{ success: boolean; isActive: boolean; message: string }> {
+
+        const getSub = await this.subscriptionService.findSub(userId)
+        const countStore = await this.storeRepository.count({ where: { user: { id: userId }, isActive: true } })
+
+        console.log(getSub?.plan.name);
+
         const store = await this.storeRepository.findOne({
             where: { id: storeId, user: { id: userId } },
             select: ['id', 'isActive', 'name'],
@@ -342,6 +420,21 @@ export class StoreService {
         if (!store) throw new NotFoundException('Store not found or you do not have permission');
 
         const newStatus = !store.isActive;
+
+        if (newStatus === true) {
+            if (getSub?.plan.name.toLowerCase() === "free" && countStore >= 1) {
+                throw new BadRequestException('You have reached the maximum limit of stores for the Free plan (1 store).');
+            }
+
+            if (getSub?.plan.name === "pro" && countStore >= 10) {
+                throw new BadRequestException('You have reached the maximum limit of stores for the Pro plan (10 stores).');
+            }
+
+            if (!getSub && countStore >= 1) {
+                throw new BadRequestException('You have reached the maximum limit of stores for the Free plan (1 store).');
+            }
+        }
+
         await this.storeRepository.update({ id: storeId }, { isActive: newStatus });
 
         return {

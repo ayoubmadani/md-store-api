@@ -11,6 +11,7 @@ import { PlansService } from './plan.service';
 @Module({
   controllers: [SubscriptionController,PlansController],
   providers: [SubscriptionService,PlansService],
+  exports: [SubscriptionService,PlansService],
   imports: [
     TypeOrmModule.forFeature([Plan,Subscription]),
     PaymentModule,

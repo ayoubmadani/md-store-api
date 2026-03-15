@@ -16,6 +16,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { AttributeDto } from './dto/sub-dtos/attribute.dto';
 import { StoreService } from '../store/store.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shape stored in VariantDetail.name (JSON column)
@@ -135,6 +136,7 @@ export class ProductService {
 
     private readonly storeService: StoreService,
     private readonly dataSource: DataSource,
+    private readonly subscriptionService: SubscriptionService
   ) { }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -143,6 +145,18 @@ export class ProductService {
 
   async create(storeId: string, userId: string, dto: CreateProductDto): Promise<Product> {
     await this.storeService.verifyOwnership(storeId, userId);
+
+    const getSub = await this.subscriptionService.findSub(userId)
+    const countProduct = await this.productRepository.count({ where: { isActive: true, store: { user: { id: userId } } } })
+
+    if (getSub?.plan.name === "free" && countProduct >= 4) {
+      throw new BadRequestException('You have reached the maximum limit of stores for the Free plan (4 products).');
+    }
+
+    if (getSub?.plan.name === "pro" && countProduct >= 40) {
+      throw new BadRequestException('You have reached the maximum limit of products for the Pro plan (40 products).');
+    }
+
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -265,6 +279,8 @@ export class ProductService {
   ): Promise<{ products: Product[]; total: number; page: number; totalPages: number }> {
     await this.storeService.verifyOwnership(storeId, userId);
 
+
+
     const qb = this.productRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.category', 'category')
@@ -311,6 +327,27 @@ export class ProductService {
     await this.storeService.verifyOwnership(storeId, userId);
     const product = await this.findOne(id, storeId, userId);
 
+    // --- 1. التحقق من حدود الخطة عند تفعيل المنتج عبر التحديث ---
+    // إذا كان المنتج الحالي معطلاً والمستخدم يطلب تفعيله في الـ DTO
+    if (product.isActive === false && dto.isActive === true) {
+      const countProduct = await this.productRepository.count({ where: { isActive: true, store: { user: { id: userId } } } })
+      const getSub = await this.subscriptionService.findSub(userId);
+      const planName = getSub?.plan?.name?.toLowerCase();
+
+      console.log(countProduct);
+
+
+      const limits = { free: 4, pro: 40 };
+
+      if (planName === "free" && countProduct >= limits.free) {
+        throw new BadRequestException(`Cannot activate. Free plan limit reached (${limits.free} products).`);
+      }
+
+      if (planName === "pro" && countProduct >= limits.pro) {
+        throw new BadRequestException(`Cannot activate. Pro plan limit reached (${limits.pro} products).`);
+      }
+    }
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -326,7 +363,7 @@ export class ProductService {
         sku: dto.sku ?? product.sku,
         slug: dto.slug ?? product.slug,
         stock: dto.stock !== undefined ? Number(dto.stock) : product.stock,
-        isActive: dto.isActive ?? product.isActive,
+        isActive: dto.isActive ?? product.isActive, // سيتم تطبيق القيمة الجديدة هنا
         category: dto.categoryId ? { id: dto.categoryId } : product.category,
       });
       await queryRunner.manager.save(product);
@@ -441,6 +478,18 @@ export class ProductService {
     }
   }
 
+  async deactivateAllProducts(userId: string) {
+    // نقوم بتحديث كل المنتجات التي تنتمي لمتاجر يملكها هذا المستخدم
+    const result = await this.productRepository.update(
+      {
+        store: { user: { id: userId } }
+      },
+      {
+        isActive: false
+      }
+    );
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // DELETE / RESTORE / TOGGLE / STOCK
   // ══════════════════════════════════════════════════════════════════════════
@@ -489,10 +538,45 @@ export class ProductService {
   }
 
   async toggleActive(id: string, storeId: string, userId: string): Promise<Product> {
+    // 1. التحقق من الملكية وجودة المنتج
     await this.storeService.verifyOwnership(storeId, userId);
     const product = await this.findOne(id, storeId, userId);
-    product.isActive = !product.isActive;
+
+    const newStatus = !product.isActive;
+
+    // 2. إذا كان التوجه هو التفعيل (من false إلى true)، نتحقق من الحدود
+    if (newStatus === true) {
+      const getSub = await this.subscriptionService.findSub(userId);
+      const planName = getSub?.plan?.name?.toLowerCase();
+
+      // حساب عدد المنتجات النشطة حالياً للمستخدم عبر كل متاجره
+      const activeProductsCount = await this.productRepository.count({
+        where: {
+          store: { user: { id: userId } },
+          isActive: true
+        },
+      });
+
+      const limits = { free: 4, pro: 40 };
+
+      if (planName === "free" && activeProductsCount >= limits.free) {
+        throw new BadRequestException(`Limit reached. Your Free plan allows only ${limits.free} active products.`);
+      }
+
+      if (planName === "pro" && activeProductsCount >= limits.pro) {
+        throw new BadRequestException(`Limit reached. Your Pro plan allows only ${limits.pro} active products.`);
+      }
+
+      // في حال عدم وجود خطة أو خطة غير معروفة
+      if (!planName) {
+        throw new BadRequestException('No active subscription found to activate products.');
+      }
+    }
+
+    // 3. تحديث الحالة وحفظ المنتج
+    product.isActive = newStatus;
     await this.productRepository.save(product);
+
     return product;
   }
 

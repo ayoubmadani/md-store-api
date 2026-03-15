@@ -12,6 +12,7 @@ import { StoreModule } from "../store/store.module";
 import { CategoryModule } from "../category/category.module";
 import { ProductPublicController } from "./product-public.controller";
 import { Store } from "..//store/entities/store.entity";
+import { SubscriptionModule } from "../subscription/subscription.module";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { Store } from "..//store/entities/store.entity";
     ]),
     StoreModule, // للوصول إلى StoreService
     CategoryModule, // للوصول إلى CategoryService إذا لزم الأمر
+    SubscriptionModule
   ],
   controllers: [ProductController, ProductPublicController],
   providers: [ProductService],

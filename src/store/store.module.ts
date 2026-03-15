@@ -14,6 +14,7 @@ import { StorePixel } from './entities/store-pixel.entity'; // 🆕
 import { User } from '../user/entities/user.entity';
 import { Niche } from '../niche/entities/niche.entity';
 import { Category } from '../category/entities/category.entity';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { Category } from '../category/entities/category.entity';
       Niche,
       Category,
     ]),
+    SubscriptionModule,
   ],
   controllers: [StoreController],
   providers: [StoreService],
