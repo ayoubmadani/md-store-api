@@ -5,10 +5,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
 import { PaymentModule } from '../payment/payment.module';
+import { PlansController } from './plan.controller';
+import { PlansService } from './plan.service';
 
 @Module({
-  controllers: [SubscriptionController],
-  providers: [SubscriptionService],
+  controllers: [SubscriptionController,PlansController],
+  providers: [SubscriptionService,PlansService],
   imports: [
     TypeOrmModule.forFeature([Plan,Subscription]),
     PaymentModule,

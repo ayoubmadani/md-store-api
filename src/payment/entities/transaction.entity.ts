@@ -12,7 +12,7 @@ export enum TransactionType {
     STORE_FEE = 'store_fee',                 // رسوم المتجر
     REFUND = 'refund',                        // استرجاع
     SELL_THEME = "sell_theme",
-    TOP_UP = 'top_up'
+    TOP_UP = 'top_up',
 }
 
 @Entity('transactions')

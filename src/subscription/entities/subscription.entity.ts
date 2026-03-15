@@ -8,7 +8,6 @@ export class Subscription {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    // ربط الاشتراك بالمستخدم (علاقة كثير إلى واحد)
     @ManyToOne(() => User, (user) => user.subscriptions)
     @JoinColumn({ name: 'userId' })
     user: User;
@@ -16,7 +15,6 @@ export class Subscription {
     @Column()
     userId: string;
 
-    // ربط الاشتراك بالخطة
     @ManyToOne(() => Plan)
     @JoinColumn({ name: 'planId' })
     plan: Plan;
@@ -31,7 +29,6 @@ export class Subscription {
     })
     status: 'active' | 'canceled' | 'expired' | 'past_due' | 'trailing_period';
 
-    // معرف الاشتراك في Stripe (مهم جداً لإدارة الإلغاء والتجديد)
     @Column({ nullable: true })
     stripeSubscriptionId?: string;
 
@@ -42,7 +39,11 @@ export class Subscription {
     endDate: Date;
 
     @Column({ default: false })
-    cancelAtPeriodEnd: boolean; // هل سيتم الإلغاء في نهاية الدورة الحالية؟
+    cancelAtPeriodEnd: boolean;
+
+    /** تجديد تلقائي — إذا كان true يُجدَّد الاشتراك تلقائياً عند الانتهاء */
+    @Column({ default: true })
+    autoRenew: boolean;
 
     @CreateDateColumn()
     createdAt: Date;

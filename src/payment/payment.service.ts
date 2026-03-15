@@ -63,7 +63,7 @@ export class PaymentService {
     async handleWalletBalance(
     userId: string,
     amount: number,
-    action: "SUB" | "ADD",
+    action: "SUB" | "ADD" ,
     type: TransactionType, // تمرير النوع هنا (مثل PLAN_SUBSCRIPTION)
     existingManager?: EntityManager
 ) {
