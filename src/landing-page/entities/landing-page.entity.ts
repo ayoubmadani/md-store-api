@@ -23,4 +23,7 @@ export class LandingPage {
 
     @Column({default:"md store"})
     platform : string
+
+    @Column({default : true})
+    isActive: boolean
 }

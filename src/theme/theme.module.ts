@@ -13,7 +13,7 @@ import { PaymentModule } from '../payment/payment.module';
   controllers: [ThemeController],
   providers: [ThemeService,TypeThemeService],
   imports:[
-    TypeOrmModule.forFeature([ThemeUser,Theme,ThemeType,Store]),
+    TypeOrmModule.forFeature([ThemeUser,Theme,ThemeType,Store,]),
     PaymentModule,
   ],
 

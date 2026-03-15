@@ -1,17 +1,42 @@
+import { Column, Entity, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from "typeorm";
+
+@Entity('plans') // تحديد اسم الجدول في قاعدة البيانات
 export class Plan {
-    id: string;          // المعرف الفريد (مثلاً UUID)
-    name: string;        // اسم الخطة: "Free", "Pro", "Enterprise"
-    
-    price: number;       // سعر الخطة (مثلاً: 29.99)
-    currency: string;    // العملة (مثلاً: "USD" أو "SAR")
-    
-    interval: 'month' | 'year'; // دورة التجديد (شهري أم سنوي)
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
 
-    // ميزات الخطة (مثلاً: ["10GB Storage", "24/7 Support"])
-    features: string[];  
+    @Column({ length: 100 })
+    name: string; // مثال: "Pro Plan"
 
-    // هذا الحقل مهم جداً لربط الخطة ببوابة دفع مثل Stripe
-    stripePriceId?: string; 
+    // استخدام decimal لضمان دقة الحسابات المالية
+    @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+    price: number;
 
-    isActive: boolean;   // هل الخطة متاحة حالياً للشراء؟
-}
+    @Column({ default: 'DZD' })
+    currency: string;
+
+    // تعريف الـ Enum بشكل أوضح داخل قاعدة البيانات
+    @Column({
+        type: 'enum',
+        enum: ['month', 'year'],
+        default: 'month'
+    })
+    interval: 'month' | 'year';
+
+    // ملاحظة: PostgreSQL يدعم simple-array أو json
+    @Column({ type: 'simple-array', nullable: true })
+    features: string[];
+
+    @Column({ nullable: true })
+    stripePriceId?: string;
+
+    @Column({ default: true })
+    isActive: boolean;
+
+    // إضافة طوابع زمنية مفيدة للتدقيق
+    @CreateDateColumn()
+    createdAt: Date;
+
+    @UpdateDateColumn()
+    updatedAt: Date;
+}   

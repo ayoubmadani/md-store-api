@@ -21,6 +21,9 @@ import { AdminModule } from './admin/admin.module';
 import { AppController } from './app.controller';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { PaymentModule } from './payment/payment.module';
+import { ShippingProviderModule } from './shipping-provider/shipping-provider.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { CronJobModule } from './cron-job/cron-job.module';
 
 @Module({
   imports: [
@@ -34,6 +37,8 @@ import { PaymentModule } from './payment/payment.module';
       ttl: 60000,
       limit: 3, // رفعناه قليلاً ليكون مناسباً للتصفح العادي
     }]),
+
+    ScheduleModule.forRoot(),
 
     // 2. إعداد قاعدة البيانات
     TypeOrmModule.forRootAsync({
@@ -65,6 +70,8 @@ import { PaymentModule } from './payment/payment.module';
     AdminModule,
     SubscriptionModule,
     PaymentModule,
+    ShippingProviderModule,
+    CronJobModule,
   ],
   controllers: [AppController]
 })

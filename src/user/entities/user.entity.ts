@@ -4,6 +4,7 @@ import { Shipping } from '../../shipping/entity/shipping.entity';
 import { Store } from '../../store/entities/store.entity';
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, OneToOne } from 'typeorm';
 import { Transaction } from '../../payment/entities/transaction.entity';
+import { Subscription } from '../../subscription/entities/subscription.entity';
 
 export enum AuthProvider {
     CREDENTIALS = 'CREDENTIALS',
@@ -44,11 +45,11 @@ export class User {
     })
     role: UserRole;
 
-    @Column({nullable:true , unique: true})
-    topic?:string
+    @Column({ nullable: true, unique: true })
+    topic?: string
 
-    @Column({default: true})
-    isNtfy:boolean
+    @Column({ default: true })
+    isNtfy: boolean
 
     @Column({ nullable: true })
     password?: string;
@@ -88,4 +89,7 @@ export class User {
 
     @OneToMany(() => Transaction, (transaction) => transaction.user)
     transactions: Transaction[];
+
+    @OneToMany(() => Subscription, (subscription) => subscription.user)
+    subscriptions: Subscription[];
 }
