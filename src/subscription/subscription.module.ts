@@ -15,7 +15,7 @@ import { FeaturesEntity } from './entities/features.entity';
   exports: [SubscriptionService, PlansService],
   imports: [
     TypeOrmModule.forFeature([Plan, Subscription, FeaturesEntity]),
-    forwardRef(() => PaymentModule), // مهم
+    forwardRef(() => PaymentModule), // ✅ مهم لحل الاعتمادية الدائرية
   ],
 })
 export class SubscriptionModule {}

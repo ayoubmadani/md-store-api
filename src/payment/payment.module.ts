@@ -8,9 +8,9 @@ import { Transaction } from './entities/transaction.entity';
 @Module({
   controllers: [PaymentController],
   providers: [PaymentService],
-  exports: [PaymentService],
+  exports: [PaymentService], // ✅ مهم جداً - لتصدير الخدمة للوحدات الأخرى
   imports: [
-    TypeOrmModule.forFeature([Wallet , Transaction])
+    TypeOrmModule.forFeature([Wallet, Transaction])
   ],
 })
 export class PaymentModule {}

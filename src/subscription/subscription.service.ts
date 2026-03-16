@@ -10,9 +10,10 @@ import { TransactionType } from '../payment/entities/transaction.entity';
 export class SubscriptionService {
     constructor(
         @InjectRepository(Subscription) private readonly subRepo: Repository<Subscription>,
-        @InjectRepository(Plan)         private readonly planRepo: Repository<Plan>,
-        private dataSource:   DataSource,
+        @InjectRepository(Plan) private readonly planRepo: Repository<Plan>,
+        private dataSource: DataSource,
 
+        // ✅ استخدام forwardRef هنا أيضاً
         @Inject(forwardRef(() => PaymentService)) 
         private paymentService: PaymentService,
     ) {}
