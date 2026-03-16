@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
@@ -12,6 +12,8 @@ export class SubscriptionService {
         @InjectRepository(Subscription) private readonly subRepo: Repository<Subscription>,
         @InjectRepository(Plan)         private readonly planRepo: Repository<Plan>,
         private dataSource:   DataSource,
+
+        @Inject(forwardRef(() => PaymentService)) 
         private paymentService: PaymentService,
     ) {}
 
