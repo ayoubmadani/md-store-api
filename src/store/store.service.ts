@@ -25,7 +25,7 @@ export class StoreService {
         @InjectRepository(Category)
         private categoryRepository: TreeRepository<Category>,
         private readonly subscriptionService: SubscriptionService,
-    ) {}
+    ) { }
 
     // ─── helper: جلب الحد المسموح من الـ features ──────────────────────────────
     private async getStoreLimit(userId: string): Promise<number> {
@@ -47,21 +47,61 @@ export class StoreService {
         }
     }
 
+    // ─── helper: جلب الحد المسموح لكل نوع بكسل ──────────────────────────────
+    private async getPixelLimit(userId: string, type: 'facebook' | 'tiktok'): Promise<number> {
+        const sub = await this.subscriptionService.findSub(userId);
+
+        const limit = type === 'facebook'
+            ? sub?.plan?.features?.pixelFacebookNumber
+            : sub?.plan?.features?.pixelTiktokNumber;
+
+        return limit ?? 0;
+    }
+
+    private async assertPixelLimitNotReached(userId: string, type: 'facebook' | 'tiktok', extraMessage?: string): Promise<void> {
+        const [limit, count] = await Promise.all([
+            this.getPixelLimit(userId, type),
+            // نعد البكسلات النشطة من نفس النوع فقط لهذا المستخدم عبر كل متاجره
+            this.pixelRepository.count({
+                where: {
+                    type, // مهم جداً فلترة النوع هنا
+                    store: { user: { id: userId } },
+                    isActive: true
+                }
+            }),
+        ]);
+
+        if (count >= limit) {
+            throw new BadRequestException(
+                extraMessage ?? `لقد وصلت إلى الحد الأقصى لبكسلات ${type} في خطتك الحالية (${limit}).`
+            );
+        }
+    }
+
     // ==================== PIXELS ====================
 
     async addPixel(storeId: string, dto: CreatePixelDto, userId: string) {
+        // 1. التأكد من وجود المتجر وصلاحية المستخدم
         const store = await this.storeRepository.findOne({
             where: { id: storeId, user: { id: userId } },
         });
         if (!store) throw new NotFoundException('Store not found or you do not have permission');
 
-        const existingPixel = await this.pixelRepository.findOne({
-            where: { storeId, type: dto.type, isActive: true },
+        // 2. التحقق من الحد الأقصى الإجمالي المسموح به للمستخدم (حسب نوع البكسل)
+        // هذا الفحص يتأكد أن المستخدم لم يتجاوز مثلاً الـ 5 بكسلات المتاحة في خطته
+        await this.assertPixelLimitNotReached(userId, dto.type as 'facebook' | 'tiktok');
+
+        // 3. التحقق من "تكرار نفس المعرف" (اختياري ولكن ينصح به)
+        // لمنع المستخدم من إضافة نفس الـ Pixel ID مرتين لنفس المتجر بالخطأ
+        const duplicatePixelId = await this.pixelRepository.findOne({
+            where: { storeId, pixelId: dto.pixelId, type: dto.type, isActive: true },
         });
-        if (existingPixel) {
-            throw new BadRequestException(`Active ${dto.type} pixel already exists for this store`);
+        if (duplicatePixelId) {
+            throw new BadRequestException(`هذا البكسل (ID: ${dto.pixelId}) مضاف بالفعل لهذا المتجر.`);
         }
 
+        // 4. إنشاء وحفظ البكسل الجديد
+        // الآن يمكن إضافة بكسل تيك توك ثانٍ لنفس المتجر طالما لم يتجاوز الـ Limit العام
         const pixel = this.pixelRepository.create({ ...dto, storeId });
         return this.pixelRepository.save(pixel);
     }
@@ -110,10 +150,26 @@ export class StoreService {
             where: { id: pixelId },
             relations: ['store', 'store.user'],
         });
+
         if (!pixel || pixel.store.user.id !== userId) {
             throw new NotFoundException('Pixel not found or you do not have permission');
         }
-        pixel.isActive = !pixel.isActive;
+
+        // 1. تحديد الحالة الجديدة المستهدفة
+        const newStatus = !pixel.isActive;
+
+        // 2. إذا كان المستخدم يحاول "تفعيل" البكسل (من false إلى true)
+        if (newStatus === true) {
+            // نتحقق مما إذا كان سيتحاوز الحد المسموح به لهذا النوع (facebook/tiktok)
+            await this.assertPixelLimitNotReached(
+                userId,
+                pixel.type as 'facebook' | 'tiktok',
+                `لا يمكنك تفعيل هذا البكسل، لقد وصلت للحد الأقصى لبكسلات ${pixel.type} في خطتك.`
+            );
+        }
+
+        // 3. تحديث الحالة وحفظ التغييرات
+        pixel.isActive = newStatus;
         return this.pixelRepository.save(pixel);
     }
 
@@ -143,9 +199,9 @@ export class StoreService {
             const storeDesign = queryRunner.manager.create(StoreDesign, { ...design, store: savedStore });
             const savedDesign = await queryRunner.manager.save(StoreDesign, storeDesign);
 
-            await queryRunner.manager.save(StoreTopBar,     queryRunner.manager.create(StoreTopBar,     { ...topBar,  store: savedStore }));
-            await queryRunner.manager.save(StoreContact,    queryRunner.manager.create(StoreContact,    { ...contact, store: savedStore }));
-            await queryRunner.manager.save(StoreHeroSection,queryRunner.manager.create(StoreHeroSection,{ ...hero,    store: savedStore }));
+            await queryRunner.manager.save(StoreTopBar, queryRunner.manager.create(StoreTopBar, { ...topBar, store: savedStore }));
+            await queryRunner.manager.save(StoreContact, queryRunner.manager.create(StoreContact, { ...contact, store: savedStore }));
+            await queryRunner.manager.save(StoreHeroSection, queryRunner.manager.create(StoreHeroSection, { ...hero, store: savedStore }));
 
             await queryRunner.commitTransaction();
 
@@ -187,18 +243,18 @@ export class StoreService {
 
             if (dto.store) {
                 Object.assign(store, {
-                    name:      dto.store.name      ?? store.name,
+                    name: dto.store.name ?? store.name,
                     subdomain: dto.store.subdomain ?? store.subdomain,
-                    currency:  dto.store.currency  ?? store.currency,
-                    language:  dto.store.language  ?? store.language,
+                    currency: dto.store.currency ?? store.currency,
+                    language: dto.store.language ?? store.language,
                 });
                 store.niche = { id: dto.store.nicheId } as any;
             }
 
-            if (dto.design  && store.design)  { Object.assign(store.design,  dto.design);  await queryRunner.manager.save(StoreDesign,     store.design);  }
-            if (dto.topBar  && store.topBar)  { Object.assign(store.topBar,  dto.topBar);  await queryRunner.manager.save(StoreTopBar,     store.topBar);  }
-            if (dto.contact && store.contact) { Object.assign(store.contact, dto.contact); await queryRunner.manager.save(StoreContact,    store.contact); }
-            if (dto.hero    && store.hero)    { Object.assign(store.hero,    dto.hero);    await queryRunner.manager.save(StoreHeroSection, store.hero);    }
+            if (dto.design && store.design) { Object.assign(store.design, dto.design); await queryRunner.manager.save(StoreDesign, store.design); }
+            if (dto.topBar && store.topBar) { Object.assign(store.topBar, dto.topBar); await queryRunner.manager.save(StoreTopBar, store.topBar); }
+            if (dto.contact && store.contact) { Object.assign(store.contact, dto.contact); await queryRunner.manager.save(StoreContact, store.contact); }
+            if (dto.hero && store.hero) { Object.assign(store.hero, dto.hero); await queryRunner.manager.save(StoreHeroSection, store.hero); }
 
             await queryRunner.manager.save(Store, store);
             await queryRunner.commitTransaction();
@@ -247,14 +303,14 @@ export class StoreService {
 
         const qb = this.storeRepository
             .createQueryBuilder('store')
-            .leftJoinAndSelect('store.design',     'design')
-            .leftJoinAndSelect('store.topBar',     'topBar')
-            .leftJoinAndSelect('store.contact',    'contact')
-            .leftJoinAndSelect('store.hero',       'hero')
+            .leftJoinAndSelect('store.design', 'design')
+            .leftJoinAndSelect('store.topBar', 'topBar')
+            .leftJoinAndSelect('store.contact', 'contact')
+            .leftJoinAndSelect('store.hero', 'hero')
             .leftJoinAndSelect('store.categories', 'categories')
-            .leftJoinAndSelect('store.pixels',     'pixels')
-            .leftJoinAndSelect('store.themeUser',  'themeUser')
-            .leftJoinAndSelect('themeUser.theme',  'theme')
+            .leftJoinAndSelect('store.pixels', 'pixels')
+            .leftJoinAndSelect('store.themeUser', 'themeUser')
+            .leftJoinAndSelect('themeUser.theme', 'theme')
             .leftJoinAndSelect(
                 'store.products',
                 'products',
@@ -264,7 +320,7 @@ export class StoreService {
                 categoryIds.length > 0 ? { categoryIds } : {},
             )
             .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
-            .leftJoinAndSelect('products.category',      'productCategory')
+            .leftJoinAndSelect('products.category', 'productCategory')
             .where('store.subdomain = :subdomain', { subdomain })
             .addOrderBy('categories.sortOrder', 'ASC');
 
@@ -296,15 +352,15 @@ export class StoreService {
     async getAllStores(userId?: string) {
         const query = this.storeRepository
             .createQueryBuilder('store')
-            .leftJoinAndSelect('store.design',     'design')
-            .leftJoinAndSelect('store.topBar',     'topBar')
-            .leftJoinAndSelect('store.contact',    'contact')
-            .leftJoinAndSelect('store.hero',       'hero')
-            .leftJoinAndSelect('store.products',   'products')
+            .leftJoinAndSelect('store.design', 'design')
+            .leftJoinAndSelect('store.topBar', 'topBar')
+            .leftJoinAndSelect('store.contact', 'contact')
+            .leftJoinAndSelect('store.hero', 'hero')
+            .leftJoinAndSelect('store.products', 'products')
             .leftJoinAndSelect('store.categories', 'categories')
-            .leftJoinAndSelect('store.niche',      'niche')
-            .leftJoinAndSelect('store.user',       'user')
-            .leftJoinAndSelect('store.pixels',     'pixels');
+            .leftJoinAndSelect('store.niche', 'niche')
+            .leftJoinAndSelect('store.user', 'user')
+            .leftJoinAndSelect('store.pixels', 'pixels');
 
         if (userId) query.where('user.id = :userId', { userId });
         return query.getMany();
