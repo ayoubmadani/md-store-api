@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
 import { SubscriptionController } from './subscription.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -10,13 +10,12 @@ import { PlansService } from './plan.service';
 import { FeaturesEntity } from './entities/features.entity';
 
 @Module({
-  controllers: [SubscriptionController,PlansController],
-  providers: [SubscriptionService,PlansService],
-  exports: [SubscriptionService,PlansService],
+  controllers: [SubscriptionController, PlansController],
+  providers: [SubscriptionService, PlansService],
+  exports: [SubscriptionService, PlansService],
   imports: [
-    TypeOrmModule.forFeature([Plan,Subscription,FeaturesEntity]),
-    PaymentModule,
+    TypeOrmModule.forFeature([Plan, Subscription, FeaturesEntity]),
+    forwardRef(() => PaymentModule), // مهم
   ],
-
 })
 export class SubscriptionModule {}
