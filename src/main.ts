@@ -2,11 +2,23 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { json, urlencoded } from 'express';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import express from 'express';
+// ✅ إنشاء instance واحد من express
+const server = express();
+
+// ✅ متغير global للتأكد من تهيئة التطبيق مرة واحدة فقط (Hot Reload في التطوير)
+let cachedApp: any;
 
 async function bootstrap() {
+  // إذا كان التطبيق مهيأ مسبقاً، أعده مباشرة
+  if (cachedApp) {
+    return cachedApp;
+  }
+
   // 1. تفعيل خاصية rawBody عند إنشاء التطبيق
-  const app = await NestFactory.create(AppModule, {
-    rawBody: true, 
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
+    rawBody: true,
   });
 
   // 2. تحديث إعدادات body-parser لالتقاط البيانات الخام (Buffer)
@@ -33,7 +45,27 @@ async function bootstrap() {
 
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
-  const port = process.env.PORT || 7000;
-  await app.listen(port);
+  // ✅ لا نستخدم app.listen() في Vercel
+  await app.init();
+
+  // تخزين التطبيق للاستخدام المستقبلي
+  cachedApp = server;
+  
+  return server;
 }
-bootstrap();
+
+// ✅ تصدير للتشغيل المحلي (اختياري)
+if (process.env.NODE_ENV !== 'production') {
+  bootstrap().then((server) => {
+    const port = process.env.PORT || 7000;
+    server.listen(port, () => {
+      console.log(`🚀 Server running on http://localhost:${port}`);
+    });
+  });
+}
+
+// ✅ تصدير الـ handler للـ Vercel (مطلوب)
+export default async function handler(req: any, res: any) {
+  const app = await bootstrap();
+  return app(req, res);
+}
