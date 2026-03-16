@@ -16,17 +16,28 @@ export class SubscriptionService {
     ) {}
 
     // ─────────────────────────────────────────────────────────────────────────
-    async subscribeToPlan(userId: string, planId: string) {
+    // interval مطلوب الآن لاختيار السعر الصحيح (monthlyPrice أو yearlyPrice)
+    async subscribeToPlan(userId: string, planId: string, interval: 'month' | 'year') {
         const plan = await this.planRepo.findOne({ where: { id: planId, isActive: true } });
         if (!plan) throw new NotFoundException('الخطة غير موجودة أو غير متاحة حالياً');
 
-        // منع الاشتراك إذا كان المستخدم مشتركاً بالفعل في خطة مدفوعة نشطة
+        // السعر يعتمد على الـ interval المختار
+        const price = interval === 'year'
+            ? Number(plan.yearlyPrice)
+            : Number(plan.monthlyPrice);
+
+        // منع الاشتراك إذا كان المستخدم مشتركاً في خطة مدفوعة نشطة
         const existing = await this.subRepo.findOne({
             where: { userId, status: 'active' },
             relations: ['plan'],
         });
-        if (existing && Number(existing.plan.price) > 0) {
-            throw new BadRequestException('أنت مشترك بالفعل في خطة نشطة');
+        if (existing) {
+            const existingPrice = existing.interval === 'year'
+                ? Number(existing.plan.yearlyPrice)
+                : Number(existing.plan.monthlyPrice);
+            if (existingPrice > 0) {
+                throw new BadRequestException('أنت مشترك بالفعل في خطة نشطة');
+            }
         }
 
         // إنهاء أي اشتراك نشط حالي
@@ -37,11 +48,10 @@ export class SubscriptionService {
         await queryRunner.startTransaction();
 
         try {
-            const price     = Number(plan.price);
             const startDate = new Date();
             const endDate   = new Date();
 
-            if (plan.interval === 'month') {
+            if (interval === 'month') {
                 endDate.setMonth(startDate.getMonth() + 1);
             } else {
                 endDate.setFullYear(startDate.getFullYear() + 1);
@@ -58,7 +68,7 @@ export class SubscriptionService {
             }
 
             const newSub = this.subRepo.create({
-                userId, planId, status: 'active', startDate, endDate,
+                userId, planId, interval, status: 'active', startDate, endDate,
             });
 
             await queryRunner.manager.save(newSub);
@@ -78,55 +88,62 @@ export class SubscriptionService {
     async findSub(userId: string) {
         const subscription = await this.subRepo.findOne({
             where: { userId, status: 'active' },
-            relations: ['plan'],
+            relations: ['plan','plan.features'],
             order: { startDate: 'DESC' },
         });
 
-        // لا يوجد اشتراك أصلاً → فعّل المجاني
         if (!subscription) {
             return this.activateFreePlan(userId);
         }
 
-        // الاشتراك منتهي
         if (new Date() > subscription.endDate) {
             subscription.status = 'expired';
             await this.subRepo.save(subscription);
 
-            // autoRenew → جدد نفس الخطة، وإلا → فعّل المجاني
-            if (subscription.autoRenew && Number(subscription.plan.price) > 0) {
-                return this.renewPlan(userId, subscription.planId);
+            // السعر المدفوع يعتمد على الـ interval المحفوظ في الاشتراك
+            const paidPrice = subscription.interval === 'year'
+                ? Number(subscription.plan.yearlyPrice)
+                : Number(subscription.plan.monthlyPrice);
+
+            if (subscription.autoRenew && paidPrice > 0) {
+                return this.renewPlan(userId, subscription.planId, subscription.interval);
             }
 
             return this.activateFreePlan(userId);
         }
+        console.log(subscription.plan.features);
+        
 
         return subscription;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    /** تجديد الخطة تلقائياً — يخصم من المحفظة وينشئ اشتراكاً جديداً */
-    private async renewPlan(userId: string, planId: string): Promise<Subscription | null> {
+    private async renewPlan(
+        userId: string,
+        planId: string,
+        interval: 'month' | 'year',
+    ): Promise<Subscription | null> {
         const plan = await this.planRepo.findOne({ where: { id: planId, isActive: true } });
-
-        // الخطة أُلغيت أو صارت غير نشطة → رجّع للمجاني
         if (!plan) return this.activateFreePlan(userId);
+
+        const price = interval === 'year'
+            ? Number(plan.yearlyPrice)
+            : Number(plan.monthlyPrice);
 
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
 
         try {
-            const price     = Number(plan.price);
             const startDate = new Date();
             const endDate   = new Date();
 
-            if (plan.interval === 'month') {
+            if (interval === 'month') {
                 endDate.setMonth(startDate.getMonth() + 1);
             } else {
                 endDate.setFullYear(startDate.getFullYear() + 1);
             }
 
-            // خصم الرصيد — إذا فشل (رصيد غير كافٍ) يتراجع ويرجع للمجاني
             await this.paymentService.handleWalletBalance(
                 userId,
                 price,
@@ -136,7 +153,7 @@ export class SubscriptionService {
             );
 
             const newSub = this.subRepo.create({
-                userId, planId, status: 'active', startDate, endDate, autoRenew: true,
+                userId, planId, interval, status: 'active', startDate, endDate, autoRenew: true,
             });
 
             await queryRunner.manager.save(newSub);
@@ -145,7 +162,6 @@ export class SubscriptionService {
             return this.subRepo.findOne({ where: { id: newSub.id }, relations: ['plan'] });
 
         } catch {
-            // رصيد غير كافٍ أو خطأ → تراجع وفعّل المجاني
             await queryRunner.rollbackTransaction();
             return this.activateFreePlan(userId);
         } finally {
@@ -155,21 +171,23 @@ export class SubscriptionService {
 
     // ─────────────────────────────────────────────────────────────────────────
     private async activateFreePlan(userId: string): Promise<Subscription | null> {
+        // البحث عن الخطة المجانية بـ monthlyPrice = 0
         const freePlan = await this.planRepo.findOne({
-            where: { isActive: true, price: 0 },
+            where: { isActive: true, monthlyPrice: 0, yearlyPrice: 0 },
         });
 
         if (!freePlan) return null;
 
         const startDate = new Date();
         const endDate   = new Date();
-        endDate.setFullYear(startDate.getFullYear() + 100); // المجانية لا تنتهي عملياً
+        endDate.setFullYear(startDate.getFullYear() + 100);
 
         const newSub = this.subRepo.create({
             userId,
             planId:    freePlan.id,
+            interval:  'month',  // المجانية تعتبر شهرية بالاسم فقط
             status:    'active',
-            autoRenew: false,   // المجانية لا تحتاج تجديداً
+            autoRenew: false,
             startDate,
             endDate,
         });
@@ -179,7 +197,7 @@ export class SubscriptionService {
         );
     }
 
-     // ─────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
     async setAutoRenew(userId: string, autoRenew: boolean) {
         const subscription = await this.subRepo.findOne({
             where: { userId, status: 'active' },
@@ -193,5 +211,3 @@ export class SubscriptionService {
         return { success: true, autoRenew };
     }
 }
-
-   

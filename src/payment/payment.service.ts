@@ -7,6 +7,7 @@ import { Transaction, TransactionAction, TransactionType } from "./entities/tran
 import { ChargilyClient } from '@chargily/chargily-pay';
 import { ConfigService } from "@nestjs/config";
 
+
 @Injectable()
 export class PaymentService {
     private chargilyClient: ChargilyClient;
@@ -45,82 +46,101 @@ export class PaymentService {
         }
     }
 
-    // 2. الـ Webhook: هذه الوظيفة تستدعى تلقائياً من Chargily بعد نجاح الدفع
     async handleWebhook(payload: any) {
-        // التحقق من نوع الحدث (إذا نجح الدفع)
+        // 1. التحقق من نوع الحدث
         if (payload.type === 'checkout.paid') {
             const userId = payload.data.metadata.userId;
             const amount = payload.data.amount;
 
-            console.log(userId);
+            // 2. الحصول على المعرف الفريد لهذه العملية من Chargily
+            // عادة ما يكون payload.data.id هو معرف الـ checkout
+            const checkoutId = payload.data.id;
 
-
-            // هنا نستخدم كود الـ topUpWallet الذي كتبناه سابقاً لإضافة الرصيد فعلياً
-            return await this.handleWalletBalance(userId, amount ,"ADD" , TransactionType.TOP_UP);
+            // 3. نمرر الـ checkoutId للدالة للتأكد من عدم تكرارها
+            return await this.handleWalletBalance(
+                userId,
+                amount,
+                "ADD",
+                TransactionType.TOP_UP,
+                undefined,
+                checkoutId // نمرر المعرف هنا
+            );
         }
     }
 
     async handleWalletBalance(
-    userId: string,
-    amount: number,
-    action: "SUB" | "ADD" ,
-    type: TransactionType, // تمرير النوع هنا (مثل PLAN_SUBSCRIPTION)
-    existingManager?: EntityManager
-) {
-    const queryRunner = !existingManager ? this.dataSource.createQueryRunner() : null;
-    const manager = existingManager || queryRunner!.manager;
+        userId: string,
+        amount: number,
+        action: "SUB" | "ADD",
+        type: TransactionType,
+        existingManager?: EntityManager,
+        providerTransactionId?: string // بارامتر جديد
+    ) {
+        const queryRunner = !existingManager ? this.dataSource.createQueryRunner() : null;
+        const manager = existingManager || queryRunner!.manager;
 
-    if (queryRunner) {
-        await queryRunner.connect();
-        await queryRunner.startTransaction();
-    }
-
-    try {
-        // 1. البحث عن المحفظة (مع القفل لحماية الرصيد من العمليات المتزامنة)
-        let wallet = await manager.findOne(Wallet, {
-            where: { userId: String(userId) },
-            lock: { mode: 'pessimistic_write' }
-        });
-
-        if (!wallet) {
-            wallet = manager.create(Wallet, { userId: String(userId), balance: 0 });
+        if (queryRunner) {
+            await queryRunner.connect();
+            await queryRunner.startTransaction();
         }
 
-        // 2. معالجة الرصيد بناءً على الأكشن
-        if (action === "ADD") {
-            wallet.balance = Number(wallet.balance) + amount;
-        } else {
-            if (Number(wallet.balance) < amount) {
-                throw new BadRequestException('عذراً، رصيدك في المحفظة غير كافٍ لإتمام هذه العملية');
+        try {
+            // --- الخطوة الأهم لمنع التكرار ---
+            if (providerTransactionId) {
+                const existingTx = await manager.findOne(Transaction, {
+                    where: { providerTransactionId: providerTransactionId }
+                });
+
+                // إذا كانت المعاملة موجودة مسبقاً، لا تفعل شيئاً وأرجع نجاح
+                if (existingTx) {
+                    if (queryRunner) await queryRunner.rollbackTransaction();
+                    return { success: true, message: 'Transaction already processed' };
+                }
             }
-            wallet.balance = Number(wallet.balance) - amount;
+            // --------------------------------
+
+            let wallet = await manager.findOne(Wallet, {
+                where: { userId: String(userId) },
+                lock: { mode: 'pessimistic_write' }
+            });
+
+            if (!wallet) {
+                wallet = manager.create(Wallet, { userId: String(userId), balance: 0 });
+            }
+
+            if (action === "ADD") {
+                wallet.balance = Number(wallet.balance) + amount;
+            } else {
+                if (Number(wallet.balance) < amount) {
+                    throw new BadRequestException('عذراً، رصيدك غير كافٍ');
+                }
+                wallet.balance = Number(wallet.balance) - amount;
+            }
+
+            await manager.save(wallet);
+
+            const transaction = manager.create(Transaction, {
+                action: action === "ADD" ? TransactionAction.DESPOSIT : TransactionAction.PAYMENT,
+                type,
+                amount,
+                userId: String(userId),
+                providerTransactionId, // حفظ المعرف لمنع التكرار مستقبلاً
+                description: `Operation: ${type} for User ${userId}`
+            });
+
+            await manager.save(transaction);
+
+            if (queryRunner) await queryRunner.commitTransaction();
+
+            return { success: true, newBalance: wallet.balance, transactionId: transaction.id };
+
+        } catch (err) {
+            if (queryRunner) await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            if (queryRunner) await queryRunner.release();
         }
-
-        await manager.save(wallet);
-
-        // 3. تسجيل المعاملة في جدول الترانزاكشن (يربط المحفظة بالـ Plans)
-        const transaction = manager.create(Transaction, {
-            // نستخدم الـ Enum المصلح لتفادي خطأ Postgres
-            action: action === "ADD" ? TransactionAction.DESPOSIT : TransactionAction.PAYMENT, 
-            type, // نوع العملية (مثل شراء خطة)
-            amount,
-            userId: String(userId),
-            description: `Operation: ${type} for User ${userId}` // اختياري للتدقيق
-        });
-        
-        await manager.save(transaction);
-
-        if (queryRunner) await queryRunner.commitTransaction();
-
-        return { success: true, newBalance: wallet.balance, transactionId: transaction.id };
-
-    } catch (err) {
-        if (queryRunner) await queryRunner.rollbackTransaction();
-        throw err;
-    } finally {
-        if (queryRunner) await queryRunner.release();
     }
-}
 
     // 3 bay
 

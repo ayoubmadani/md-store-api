@@ -2,7 +2,6 @@ import { User } from "../../user/entities/user.entity";
 import { Column, Entity, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from "typeorm";
 import { Plan } from "./plan.entity";
 
-
 @Entity('subscriptions')
 export class Subscription {
     @PrimaryGeneratedColumn('uuid')
@@ -29,6 +28,14 @@ export class Subscription {
     })
     status: 'active' | 'canceled' | 'expired' | 'past_due' | 'trailing_period';
 
+    // ← إضافة interval لمعرفة هل الاشتراك شهري أو سنوي
+    @Column({
+        type: 'enum',
+        enum: ['month', 'year'],
+        default: 'month'
+    })
+    interval: 'month' | 'year';
+
     @Column({ nullable: true })
     stripeSubscriptionId?: string;
 
@@ -41,7 +48,6 @@ export class Subscription {
     @Column({ default: false })
     cancelAtPeriodEnd: boolean;
 
-    /** تجديد تلقائي — إذا كان true يُجدَّد الاشتراك تلقائياً عند الانتهاء */
     @Column({ default: true })
     autoRenew: boolean;
 

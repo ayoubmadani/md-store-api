@@ -7,13 +7,14 @@ import { Subscription } from './entities/subscription.entity';
 import { PaymentModule } from '../payment/payment.module';
 import { PlansController } from './plan.controller';
 import { PlansService } from './plan.service';
+import { FeaturesEntity } from './entities/features.entity';
 
 @Module({
   controllers: [SubscriptionController,PlansController],
   providers: [SubscriptionService,PlansService],
   exports: [SubscriptionService,PlansService],
   imports: [
-    TypeOrmModule.forFeature([Plan,Subscription]),
+    TypeOrmModule.forFeature([Plan,Subscription,FeaturesEntity]),
     PaymentModule,
   ],
 

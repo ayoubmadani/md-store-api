@@ -30,13 +30,18 @@ export class Transaction {
     amount: number;
 
     @Column({ nullable: true })
-    typeId: number; // معرف الاشتراك أو الثيم
+    typeId: number; 
 
     @Column()
-    userId:string
+    userId: string;
+
+    // --- الحقل الجديد المضاف ---
+    @Column({ nullable: true, unique: true }) 
+    providerTransactionId: string; // لتخزين معرف عملية Chargily ومنع التكرار
+    // ---------------------------
 
     @ManyToOne(() => User, (user) => user.transactions)
-    @JoinColumn({name : "userId"})
+    @JoinColumn({ name: "userId" })
     user: User;
 
     @CreateDateColumn()

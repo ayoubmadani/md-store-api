@@ -1,47 +1,44 @@
 import { Controller, Get, Post, Body, Patch, UseGuards } from '@nestjs/common';
+import { IsBoolean, IsEnum, IsUUID, IsNotEmpty } from 'class-validator';
 import { SubscriptionService } from './subscription.service';
 import { GetUser } from 'src/user/decorator/get-user.decorator';
 import { AuthGuard } from 'src/auth/guard/auth.guard';
 
+class SubscribeDto {
+  @IsUUID()
+  @IsNotEmpty()
+  planId: string;
+
+  @IsEnum(['month', 'year'])
+  interval: 'month' | 'year';
+}
+
+class AutoRenewDto {
+  @IsBoolean()
+  autoRenew: boolean;
+}
+
 @Controller('subscription')
 @UseGuards(AuthGuard)
 export class SubscriptionController {
-  constructor(private readonly subscriptionService: SubscriptionService) { }
+  constructor(private readonly subscriptionService: SubscriptionService) {}
 
-  /**
-   * POST /subscription/subscribe
-   * الاشتراك في خطة — يخصم من المحفظة ويُفعّل الاشتراك
-   */
-  @Post('subscribe')
-  async subscribe(
-    @GetUser() user: any,
-    @Body('planId') planId: string,
-  ) {
-    const userId = user.id || user.sub
-    return this.subscriptionService.subscribeToPlan(userId, planId);
+  private uid(user: any): string {
+    return user.id ?? user.sub;
   }
 
-  /**
-   * GET /subscription/my
-   * جلب الاشتراك النشط للمستخدم الحالي — يُرجع null إذا لم يوجد
-   */
+  @Post('subscribe')
+  async subscribe(@GetUser() user: any, @Body() dto: SubscribeDto) {
+    return this.subscriptionService.subscribeToPlan(this.uid(user), dto.planId, dto.interval);
+  }
+
   @Get('my')
   async getMySub(@GetUser() user: any) {
-    const userId = user.id || user.sub
-    return this.subscriptionService.findSub(userId);
+    return this.subscriptionService.findSub(this.uid(user));
   }
 
-  /**
-   * PATCH /subscription/my/auto-renew
-   * تفعيل أو إيقاف التجديد التلقائي للاشتراك النشط
-   */
   @Patch('my/auto-renew')
-  async toggleAutoRenew(
-    @GetUser() user: any,
-    @Body('autoRenew') autoRenew: boolean,
-  ) {
-    const userId = user.id || user.sub
-    return this.subscriptionService.setAutoRenew(userId, autoRenew);
+  async toggleAutoRenew(@GetUser() user: any, @Body() dto: AutoRenewDto) {
+    return this.subscriptionService.setAutoRenew(this.uid(user), dto.autoRenew);
   }
 }
-

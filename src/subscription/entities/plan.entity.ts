@@ -1,31 +1,26 @@
-import { Column, Entity, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from "typeorm";
+import { Column, Entity, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToOne, JoinColumn } from "typeorm";
+import { FeaturesEntity } from "./features.entity";
 
-@Entity('plans') // تحديد اسم الجدول في قاعدة البيانات
+@Entity('plans')
 export class Plan {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
     @Column({ length: 100 })
-    name: string; // مثال: "Pro Plan"
+    name: string;
 
-    // استخدام decimal لضمان دقة الحسابات المالية
     @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-    price: number;
+    monthlyPrice: number;
+
+    @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+    yearlyPrice: number;
 
     @Column({ default: 'DZD' })
     currency: string;
 
-    // تعريف الـ Enum بشكل أوضح داخل قاعدة البيانات
-    @Column({
-        type: 'enum',
-        enum: ['month', 'year'],
-        default: 'month'
-    })
-    interval: 'month' | 'year';
-
-    // ملاحظة: PostgreSQL يدعم simple-array أو json
-    @Column({ type: 'simple-array', nullable: true })
-    features: string[];
+    @OneToOne(() => FeaturesEntity, { cascade: true })
+    @JoinColumn()
+    features: FeaturesEntity;
 
     @Column({ nullable: true })
     stripePriceId?: string;
@@ -33,10 +28,9 @@ export class Plan {
     @Column({ default: true })
     isActive: boolean;
 
-    // إضافة طوابع زمنية مفيدة للتدقيق
     @CreateDateColumn()
     createdAt: Date;
 
     @UpdateDateColumn()
     updatedAt: Date;
-}   
+}

@@ -1,32 +1,64 @@
-import { IsString, IsNumber, IsEnum, IsArray, IsOptional, IsBoolean, IsNotEmpty, MaxLength } from 'class-validator';
+import {
+  IsString, IsNumber, IsOptional, IsBoolean,
+  IsNotEmpty, MaxLength, Min, ValidateNested,
+  IsInt,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class CreateFeaturesDto {
+  @IsInt() @Min(0)
+  storeNumber: number;
+
+  @IsInt() @Min(0)
+  productNumber: number;
+
+  @IsInt() @Min(0)
+  landingPageNumber: number;
+
+  @IsBoolean()
+  isNtfy: boolean;
+
+  @IsInt() @Min(0)
+  pixelTiktokNumber: number;
+
+  @IsInt() @Min(0)
+  pixelFacebookNumber: number;
+
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0)
+  commission: number;
+
+  @IsOptional()
+  theme?: any;
+}
 
 export class CreatePlanDto {
-    @IsString()
-    @IsNotEmpty()
-    @MaxLength(100)
-    name: string;
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name: string;
 
-    @IsNumber({ maxDecimalPlaces: 2 })
-    @IsNotEmpty()
-    price: number;
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  monthlyPrice: number;
 
-    @IsString()
-    @IsOptional()
-    currency?: string; // سيعتمد القيمة الافتراضية 'DZD' من الـ Entity إذا لم تُرسل
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  yearlyPrice: number;
 
-    @IsEnum(['month', 'year'], { message: 'Interval must be either month or year' })
-    interval: 'month' | 'year';
+  @IsString()
+  @IsOptional()
+  currency?: string;
 
-    @IsArray()
-    @IsString({ each: true })
-    @IsOptional()
-    features?: string[];
+  @ValidateNested()
+  @Type(() => CreateFeaturesDto)
+  @IsNotEmpty()
+  features: CreateFeaturesDto;
 
-    @IsString()
-    @IsOptional()
-    stripePriceId?: string;
+  @IsString()
+  @IsOptional()
+  stripePriceId?: string;
 
-    @IsBoolean()
-    @IsOptional()
-    isActive?: boolean;
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 }

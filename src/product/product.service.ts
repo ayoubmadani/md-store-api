@@ -18,26 +18,13 @@ import { AttributeDto } from './dto/sub-dtos/attribute.dto';
 import { StoreService } from '../store/store.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shape stored in VariantDetail.name (JSON column)
-// e.g. [{ attrId, attrName, displayMode: 'color'|'image'|'text', value }]
-// ─────────────────────────────────────────────────────────────────────────────
 export interface VariantAttributeEntry {
-  attrId: string;   // temp front-end id or '' – not a DB FK
+  attrId: string;
   attrName: string;
   displayMode: 'color' | 'image' | 'text';
-  value: string;    // hex color | image URL | plain text
+  value: string;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Normalise whatever lands in the DTO into VariantAttributeEntry[].
- * Handles:
- *   1. New array shape  (VariantAttributeEntry[])
- *   2. Legacy object    { Color: '#ff0000', Size: 'S' }
- *   3. null / undefined → []
- */
 function normaliseVDName(raw: unknown): VariantAttributeEntry[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw as VariantAttributeEntry[];
@@ -52,19 +39,10 @@ function normaliseVDName(raw: unknown): VariantAttributeEntry[] {
   return [];
 }
 
-/** Returns true only for a proper v4 UUID string. */
 const isUuid = (val: unknown): val is string =>
   typeof val === 'string' &&
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
 
-/**
- * Generate every attribute combination from the **DTO** attributes.
- *
- * ⚠️  Must run from DTO data (before any DB save) because TypeORM does NOT
- * auto-populate `.variants` on an entity right after `save()`.
- *
- * With the real payload above (2 colors × 5 sizes) → 10 combinations.
- */
 function generateCombinationsFromDto(
   attributes: AttributeDto[],
   defaultPrice: number,
@@ -74,41 +52,17 @@ function generateCombinationsFromDto(
   const combinations: VariantAttributeEntry[][] = [];
 
   const recurse = (current: VariantAttributeEntry[], attrIndex: number) => {
-    if (attrIndex === attributes.length) {
-      combinations.push([...current]);
-      return;
-    }
-
+    if (attrIndex === attributes.length) { combinations.push([...current]); return; }
     const attr = attributes[attrIndex];
     const displayMode: VariantAttributeEntry['displayMode'] =
-      attr.type === 'color'
-        ? ((attr.displayMode ?? 'color') as 'color' | 'image')
-        : 'text';
-
+      attr.type === 'color' ? ((attr.displayMode ?? 'color') as 'color' | 'image') : 'text';
     for (const variant of attr.variants ?? []) {
-      recurse(
-        [
-          ...current,
-          {
-            attrId: '',          // no DB id at generation time
-            attrName: attr.name,
-            displayMode,
-            value: variant.value,
-          },
-        ],
-        attrIndex + 1,
-      );
+      recurse([...current, { attrId: '', attrName: attr.name, displayMode, value: variant.value }], attrIndex + 1);
     }
   };
 
   recurse([], 0);
-
-  return combinations.map((attrs) => ({
-    attributes: attrs,
-    price: -1,
-    stock: 0,
-    autoGenerate: true,
-  }));
+  return combinations.map((attrs) => ({ attributes: attrs, price: -1, stock: 0, autoGenerate: true }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,28 +70,36 @@ function generateCombinationsFromDto(
 @Injectable()
 export class ProductService {
   constructor(
-    @InjectRepository(Product)
-    private productRepository: Repository<Product>,
-
-    @InjectRepository(Attribute)
-    private attributeRepository: Repository<Attribute>,
-
-    @InjectRepository(Variant)
-    private variantRepository: Repository<Variant>,
-
-    @InjectRepository(VariantDetail)
-    private variantDetailRepository: Repository<VariantDetail>,
-
-    @InjectRepository(Offer)
-    private offerRepository: Repository<Offer>,
-
-    @InjectRepository(ImageProduct)
-    private imageProductRepository: Repository<ImageProduct>,
-
+    @InjectRepository(Product)     private productRepository: Repository<Product>,
+    @InjectRepository(Attribute)   private attributeRepository: Repository<Attribute>,
+    @InjectRepository(Variant)     private variantRepository: Repository<Variant>,
+    @InjectRepository(VariantDetail) private variantDetailRepository: Repository<VariantDetail>,
+    @InjectRepository(Offer)       private offerRepository: Repository<Offer>,
+    @InjectRepository(ImageProduct) private imageProductRepository: Repository<ImageProduct>,
     private readonly storeService: StoreService,
     private readonly dataSource: DataSource,
-    private readonly subscriptionService: SubscriptionService
-  ) { }
+    private readonly subscriptionService: SubscriptionService,
+  ) {}
+
+  // ─── helper: قراءة الحد من features.productNumber ──────────────────────────
+  private async getProductLimit(userId: string): Promise<number> {
+    const sub = await this.subscriptionService.findSub(userId);
+    return sub?.plan?.features?.productNumber ?? 4;
+  }
+
+  private async assertProductLimitNotReached(userId: string): Promise<void> {
+    const [limit, count] = await Promise.all([
+      this.getProductLimit(userId),
+      this.productRepository.count({
+        where: { isActive: true, store: { user: { id: userId } } },
+      }),
+    ]);
+    if (count >= limit) {
+      throw new BadRequestException(
+        `لقد وصلت إلى الحد الأقصى للمنتجات النشطة في خطتك (${limit} منتجات).`
+      );
+    }
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // CREATE
@@ -146,85 +108,48 @@ export class ProductService {
   async create(storeId: string, userId: string, dto: CreateProductDto): Promise<Product> {
     await this.storeService.verifyOwnership(storeId, userId);
 
-    const getSub = await this.subscriptionService.findSub(userId)
-    const countProduct = await this.productRepository.count({ where: { isActive: true, store: { user: { id: userId } } } })
-
-    if (getSub?.plan.name === "free" && countProduct >= 4) {
-      throw new BadRequestException('You have reached the maximum limit of stores for the Free plan (4 products).');
-    }
-
-    if (getSub?.plan.name === "pro" && countProduct >= 40) {
-      throw new BadRequestException('You have reached the maximum limit of products for the Pro plan (40 products).');
-    }
-
+    // ← فحص الحد قبل فتح transaction
+    await this.assertProductLimitNotReached(userId);
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // ── 1. Product ──────────────────────────────────────────────────────
       const product = this.productRepository.create({
-        name: dto.name,
-        desc: dto.desc,
-        price: dto.price,
-        priceOriginal: dto.priceOriginal,
-        productImage: dto.productImage,
-        sku: dto.sku,
-        slug: dto.slug,
-        stock: dto.stock ?? 0,
+        name: dto.name, desc: dto.desc, price: dto.price,
+        priceOriginal: dto.priceOriginal, productImage: dto.productImage,
+        sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
         isActive: dto.isActive ?? true,
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
       const savedProduct = await queryRunner.manager.save(product);
 
-      // ── 2. Attributes + Variants ────────────────────────────────────────
       if (dto.attributes?.length) {
         for (const attrDto of dto.attributes) {
           const attribute = this.attributeRepository.create({
-            name: attrDto.name,
-            type: attrDto.type,
-            displayMode: attrDto.displayMode,
+            name: attrDto.name, type: attrDto.type, displayMode: attrDto.displayMode,
             product: savedProduct,
           });
           const savedAttribute = await queryRunner.manager.save(attribute);
-
           for (const varDto of attrDto.variants ?? []) {
             await queryRunner.manager.save(
-              this.variantRepository.create({
-                name: varDto.name,
-                value: varDto.value,
-                attribute: savedAttribute,
-              }),
+              this.variantRepository.create({ name: varDto.name, value: varDto.value, attribute: savedAttribute }),
             );
           }
         }
       }
 
-      // ── 3. Variant Details ──────────────────────────────────────────────
-      //
-      // Priority:
-      //   a) Front-end sent explicit variantDetails  → use them as-is.
-      //   b) variantDetails is empty AND attributes exist
-      //      → auto-generate ALL combinations from DTO attributes NOW
-      //        (cannot use saved entities – relations not loaded after save).
-      //
       let vdList: any[] = dto.variantDetails ?? [];
-
       if (vdList.length === 0 && dto.attributes?.length) {
         vdList = generateCombinationsFromDto(dto.attributes, dto.price);
-        console.log(`[Auto-generate] ${vdList.length} variant combinations saved`);
       }
 
       for (const vdDto of vdList) {
-        // Explicit DTO → vdDto.attributes (VariantAttributeEntry[])
-        // Auto-generated  → vdDto.attributes (same shape, built above)
-        const namePayload = normaliseVDName(vdDto.attributes ?? vdDto.name ?? null);
-
         await queryRunner.manager.save(
           this.variantDetailRepository.create({
-            name: namePayload,
+            name: normaliseVDName(vdDto.attributes ?? vdDto.name ?? null),
             price: Number(vdDto.price) || dto.price,
             stock: Number(vdDto.stock) || 0,
             autoGenerate: vdDto.autoGenerate ?? false,
@@ -233,20 +158,15 @@ export class ProductService {
         );
       }
 
-      // ── 4. Offers ───────────────────────────────────────────────────────
       for (const offerDto of dto.offers ?? []) {
         await queryRunner.manager.save(
           this.offerRepository.create({
-            // ids like "off-1234" are not UUIDs → let Postgres generate
-            name: offerDto.name,
-            quantity: Number(offerDto.quantity),
-            price: Number(offerDto.price),
-            product: savedProduct,
+            name: offerDto.name, quantity: Number(offerDto.quantity),
+            price: Number(offerDto.price), product: savedProduct,
           }),
         );
       }
 
-      // ── 5. Images ───────────────────────────────────────────────────────
       for (const imageUrl of dto.images ?? []) {
         await queryRunner.manager.save(
           this.imageProductRepository.create({ imageUrl, product: savedProduct }),
@@ -257,7 +177,6 @@ export class ProductService {
       return this.findOne(savedProduct.id, storeId, userId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('Error creating product:', error);
       throw error;
     } finally {
       await queryRunner.release();
@@ -269,17 +188,11 @@ export class ProductService {
   // ══════════════════════════════════════════════════════════════════════════
 
   async findAll(
-    storeId: string,
-    userId: string,
-    page = 1,
-    limit = 20,
-    categoryId?: string,
-    search?: string,
-    isActive?: boolean,
+    storeId: string, userId: string,
+    page = 1, limit = 20,
+    categoryId?: string, search?: string, isActive?: boolean,
   ): Promise<{ products: Product[]; total: number; page: number; totalPages: number }> {
     await this.storeService.verifyOwnership(storeId, userId);
-
-
 
     const qb = this.productRepository
       .createQueryBuilder('product')
@@ -294,7 +207,6 @@ export class ProductService {
     if (isActive !== undefined) qb.andWhere('product.isActive = :isActive', { isActive });
 
     qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
-
     const [products, total] = await qb.getManyAndCount();
     return { products, total, page, totalPages: Math.ceil(total / limit) };
   }
@@ -305,16 +217,10 @@ export class ProductService {
 
   async findOne(id: string, storeId: string, userId?: string): Promise<Product> {
     if (userId) await this.storeService.verifyOwnership(storeId, userId);
-
     const product = await this.productRepository.findOne({
       where: { id, store: { id: storeId } },
-      relations: [
-        'category', 'imagesProduct',
-        'attributes', 'attributes.variants',
-        'variantDetails', 'offers',
-      ],
+      relations: ['category', 'imagesProduct', 'attributes', 'attributes.variants', 'variantDetails', 'offers'],
     });
-
     if (!product) throw new NotFoundException(`المنتج #${id} غير موجود`);
     return product;
   }
@@ -327,25 +233,9 @@ export class ProductService {
     await this.storeService.verifyOwnership(storeId, userId);
     const product = await this.findOne(id, storeId, userId);
 
-    // --- 1. التحقق من حدود الخطة عند تفعيل المنتج عبر التحديث ---
-    // إذا كان المنتج الحالي معطلاً والمستخدم يطلب تفعيله في الـ DTO
+    // فحص الحد فقط عند تفعيل منتج كان معطلاً
     if (product.isActive === false && dto.isActive === true) {
-      const countProduct = await this.productRepository.count({ where: { isActive: true, store: { user: { id: userId } } } })
-      const getSub = await this.subscriptionService.findSub(userId);
-      const planName = getSub?.plan?.name?.toLowerCase();
-
-      console.log(countProduct);
-
-
-      const limits = { free: 4, pro: 40 };
-
-      if (planName === "free" && countProduct >= limits.free) {
-        throw new BadRequestException(`Cannot activate. Free plan limit reached (${limits.free} products).`);
-      }
-
-      if (planName === "pro" && countProduct >= limits.pro) {
-        throw new BadRequestException(`Cannot activate. Pro plan limit reached (${limits.pro} products).`);
-      }
+      await this.assertProductLimitNotReached(userId);
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -353,85 +243,62 @@ export class ProductService {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Basic fields
       Object.assign(product, {
-        name: dto.name ?? product.name,
-        desc: dto.desc ?? product.desc,
-        price: dto.price !== undefined ? Number(dto.price) : product.price,
+        name:          dto.name          ?? product.name,
+        desc:          dto.desc          ?? product.desc,
+        price:         dto.price         !== undefined ? Number(dto.price)         : product.price,
         priceOriginal: dto.priceOriginal !== undefined ? Number(dto.priceOriginal) : product.priceOriginal,
-        productImage: dto.productImage ?? product.productImage,
-        sku: dto.sku ?? product.sku,
-        slug: dto.slug ?? product.slug,
-        stock: dto.stock !== undefined ? Number(dto.stock) : product.stock,
-        isActive: dto.isActive ?? product.isActive, // سيتم تطبيق القيمة الجديدة هنا
-        category: dto.categoryId ? { id: dto.categoryId } : product.category,
+        productImage:  dto.productImage  ?? product.productImage,
+        sku:           dto.sku           ?? product.sku,
+        slug:          dto.slug          ?? product.slug,
+        stock:         dto.stock         !== undefined ? Number(dto.stock) : product.stock,
+        isActive:      dto.isActive      ?? product.isActive,
+        category:      dto.categoryId ? { id: dto.categoryId } : product.category,
       });
       await queryRunner.manager.save(product);
 
-      // 2. Attributes (delete-then-recreate)
       if (dto.attributes) {
         await queryRunner.manager.delete(Attribute, { product: { id } });
         for (const attrDto of dto.attributes) {
           const attribute = this.attributeRepository.create({
             id: isUuid(attrDto.id) ? attrDto.id : undefined,
-            name: attrDto.name,
-            type: attrDto.type,
-            displayMode: attrDto.displayMode,
-            product,
+            name: attrDto.name, type: attrDto.type, displayMode: attrDto.displayMode, product,
           });
           const savedAttribute = await queryRunner.manager.save(attribute);
-
           for (const varDto of attrDto.variants ?? []) {
             await queryRunner.manager.save(
               this.variantRepository.create({
                 id: isUuid(varDto.id) ? varDto.id : undefined,
-                name: varDto.name,
-                value: varDto.value,
-                attribute: savedAttribute,
+                name: varDto.name, value: varDto.value, attribute: savedAttribute,
               }),
             );
           }
         }
       }
 
-      // 3. Images (delete-then-recreate)
       if (dto.images) {
         await queryRunner.manager.delete(ImageProduct, { product: { id } });
         for (const imgUrl of dto.images) {
-          await queryRunner.manager.save(
-            this.imageProductRepository.create({ imageUrl: imgUrl, product }),
-          );
+          await queryRunner.manager.save(this.imageProductRepository.create({ imageUrl: imgUrl, product }));
         }
       }
 
-      // 4. Variant Details (delete-then-recreate)
       if (dto.variantDetails !== undefined) {
-        // ⚠️  orders.variantDetailId is a FK into variant_details.
-        // Postgres refuses to delete a variant_detail row while orders still reference it.
-        // Null-out the FK on any affected orders first, inside the same transaction.
         await queryRunner.query(
-          `UPDATE orders SET "variantDetailId" = NULL
-           WHERE "variantDetailId" IN (
-             SELECT id FROM variant_details WHERE "productId" = $1
-           )`,
+          `UPDATE orders SET "variantDetailId" = NULL WHERE "variantDetailId" IN (SELECT id FROM variant_details WHERE "productId" = $1)`,
           [id],
         );
-
         await queryRunner.manager.delete(VariantDetail, { product: { id } });
 
         let vdList: any[] = dto.variantDetails;
-
-        // Auto-generate if empty but new attributes provided
         if (vdList.length === 0 && dto.attributes?.length) {
           vdList = generateCombinationsFromDto(dto.attributes, dto.price ?? product.price);
         }
 
         for (const vdDto of vdList) {
-          const namePayload = normaliseVDName(vdDto.attributes ?? vdDto.name ?? null);
-
           await queryRunner.manager.save(
             queryRunner.manager.create(VariantDetail, {
-              name: namePayload,
+              name: normaliseVDName(vdDto.attributes ?? vdDto.name ?? null),
               price: Number(vdDto.price) || product.price,
               stock: Number(vdDto.stock) || 0,
               autoGenerate: vdDto.autoGenerate ?? false,
@@ -441,27 +308,18 @@ export class ProductService {
         }
       }
 
-      // 5. Offers (delete-then-recreate)
       if (dto.offers) {
-        // ⚠️  orders.offerId is a FK into product_offers.
-        // Null it out on affected orders before deleting, same pattern as variantDetailId.
         await queryRunner.query(
-          `UPDATE orders SET "offerId" = NULL
-           WHERE "offerId" IN (
-             SELECT id FROM product_offers WHERE "productId" = $1
-           )`,
+          `UPDATE orders SET "offerId" = NULL WHERE "offerId" IN (SELECT id FROM product_offers WHERE "productId" = $1)`,
           [id],
         );
-
         await queryRunner.manager.delete(Offer, { product: { id } });
         for (const offerDto of dto.offers) {
           await queryRunner.manager.save(
             this.offerRepository.create({
               id: isUuid(offerDto.id) ? offerDto.id : undefined,
-              name: offerDto.name,
-              quantity: Number(offerDto.quantity),
-              price: Number(offerDto.price),
-              product,
+              name: offerDto.name, quantity: Number(offerDto.quantity),
+              price: Number(offerDto.price), product,
             }),
           );
         }
@@ -471,7 +329,6 @@ export class ProductService {
       return this.findOne(id, storeId, userId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('Update Error Detail:', error);
       throw error;
     } finally {
       await queryRunner.release();
@@ -479,14 +336,9 @@ export class ProductService {
   }
 
   async deactivateAllProducts(userId: string) {
-    // نقوم بتحديث كل المنتجات التي تنتمي لمتاجر يملكها هذا المستخدم
-    const result = await this.productRepository.update(
-      {
-        store: { user: { id: userId } }
-      },
-      {
-        isActive: false
-      }
+    await this.productRepository.update(
+      { store: { user: { id: userId } } },
+      { isActive: false },
     );
   }
 
@@ -500,8 +352,7 @@ export class ProductService {
     try {
       await this.productRepository.softDelete(id);
       return { message: 'تم حذف المنتج بنجاح' };
-    } catch (error) {
-      console.error('Soft Delete Error:', error);
+    } catch {
       throw new InternalServerErrorException('فشل حذف المنتج من قاعدة البيانات');
     }
   }
@@ -509,8 +360,7 @@ export class ProductService {
   async forceRemove(id: string, storeId: string, userId: string): Promise<{ message: string }> {
     await this.storeService.verifyOwnership(storeId, userId);
     const product = await this.productRepository.findOne({
-      where: { id, store: { id: storeId } },
-      withDeleted: true,
+      where: { id, store: { id: storeId } }, withDeleted: true,
     });
     if (!product) throw new NotFoundException(`المنتج #${id} غير موجود`);
     try {
@@ -524,8 +374,7 @@ export class ProductService {
   async restore(id: string, storeId: string, userId: string): Promise<Product> {
     await this.storeService.verifyOwnership(storeId, userId);
     const product = await this.productRepository.findOne({
-      where: { id, store: { id: storeId } },
-      withDeleted: true,
+      where: { id, store: { id: storeId } }, withDeleted: true,
     });
     if (!product) throw new NotFoundException(`المنتج #${id} غير موجود`);
     if (!product.deletedAt) throw new BadRequestException('المنتج غير محذوف');
@@ -538,46 +387,17 @@ export class ProductService {
   }
 
   async toggleActive(id: string, storeId: string, userId: string): Promise<Product> {
-    // 1. التحقق من الملكية وجودة المنتج
     await this.storeService.verifyOwnership(storeId, userId);
     const product = await this.findOne(id, storeId, userId);
-
     const newStatus = !product.isActive;
 
-    // 2. إذا كان التوجه هو التفعيل (من false إلى true)، نتحقق من الحدود
+    // فحص الحد فقط عند التفعيل
     if (newStatus === true) {
-      const getSub = await this.subscriptionService.findSub(userId);
-      const planName = getSub?.plan?.name?.toLowerCase();
-
-      // حساب عدد المنتجات النشطة حالياً للمستخدم عبر كل متاجره
-      const activeProductsCount = await this.productRepository.count({
-        where: {
-          store: { user: { id: userId } },
-          isActive: true
-        },
-      });
-
-      const limits = { free: 4, pro: 40 };
-
-      if (planName === "free" && activeProductsCount >= limits.free) {
-        throw new BadRequestException(`Limit reached. Your Free plan allows only ${limits.free} active products.`);
-      }
-
-      if (planName === "pro" && activeProductsCount >= limits.pro) {
-        throw new BadRequestException(`Limit reached. Your Pro plan allows only ${limits.pro} active products.`);
-      }
-
-      // في حال عدم وجود خطة أو خطة غير معروفة
-      if (!planName) {
-        throw new BadRequestException('No active subscription found to activate products.');
-      }
+      await this.assertProductLimitNotReached(userId);
     }
 
-    // 3. تحديث الحالة وحفظ المنتج
     product.isActive = newStatus;
-    await this.productRepository.save(product);
-
-    return product;
+    return this.productRepository.save(product);
   }
 
   async updateStock(id: string, storeId: string, userId: string, quantity: number): Promise<Product> {
@@ -585,8 +405,7 @@ export class ProductService {
     const product = await this.findOne(id, storeId, userId);
     if (quantity < 0) throw new BadRequestException('الكمية يجب أن تكون موجبة');
     product.stock = quantity;
-    await this.productRepository.save(product);
-    return product;
+    return this.productRepository.save(product);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -595,7 +414,6 @@ export class ProductService {
 
   async getStoreStats(storeId: string, userId: string) {
     await this.storeService.verifyOwnership(storeId, userId);
-
     const [totalProducts, activeProducts, outOfStock, totalValue] = await Promise.all([
       this.productRepository.count({ where: { store: { id: storeId } } }),
       this.productRepository.count({ where: { store: { id: storeId }, isActive: true } }),
@@ -606,13 +424,10 @@ export class ProductService {
         .where('product.storeId = :storeId', { storeId })
         .getRawOne(),
     ]);
-
     return {
-      totalProducts,
-      activeProducts,
+      totalProducts, activeProducts,
       inactiveProducts: totalProducts - activeProducts,
-      outOfStock,
-      totalValue: totalValue?.total || 0,
+      outOfStock, totalValue: totalValue?.total || 0,
     };
   }
 
@@ -621,11 +436,7 @@ export class ProductService {
   // ══════════════════════════════════════════════════════════════════════════
 
   async findAllByDomain(
-    subdomain: string,
-    page = 1,
-    limit = 20,
-    categoryId?: string,
-    search?: string,
+    subdomain: string, page = 1, limit = 20, categoryId?: string, search?: string,
   ): Promise<{ products: Product[]; total: number; page: number; totalPages: number }> {
     const qb = this.productRepository
       .createQueryBuilder('product')
@@ -642,7 +453,6 @@ export class ProductService {
     if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
 
     qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
-
     const [products, total] = await qb.getManyAndCount();
     return { products, total, page, totalPages: Math.ceil(total / limit) };
   }
@@ -654,16 +464,9 @@ export class ProductService {
         { slug: productId, isActive: true, store: { subdomain } },
       ],
       relations: [
-        'store',
-        'store.themeUser',       // جلب سجل امتلاك الثيم الخاص بالمتجر
-        'store.themeUser.theme', // جلب بيانات الثيم (الاسم، التصميم)
-        'store.user',
-        'category',
-        'imagesProduct',
-        'attributes',
-        'attributes.variants',
-        'variantDetails',
-        'offers',
+        'store', 'store.themeUser', 'store.themeUser.theme', 'store.user',
+        'category', 'imagesProduct', 'attributes', 'attributes.variants',
+        'variantDetails', 'offers',
       ],
       order: { attributes: { id: 'ASC' } },
     });
@@ -672,20 +475,17 @@ export class ProductService {
 
     return {
       ...product,
-      store: product.store
-        ? {
-          id: product.store.id,
-          name: product.store.name,
-          subdomain: product.store.subdomain,
-          userId: product.store.user.id,
-          // 💡 إضافة بيانات الثيم هنا لكي تظهر في الـ Frontend
-          theme: product.store.themeUser?.theme ? {
-            id: product.store.themeUser.theme.id,
-            slug: product.store.themeUser.theme.slug,
-            name: product.store.themeUser.theme.name_en
-          } : null,
-        }
-        : null,
+      store: product.store ? {
+        id: product.store.id,
+        name: product.store.name,
+        subdomain: product.store.subdomain,
+        userId: product.store.user.id,
+        theme: product.store.themeUser?.theme ? {
+          id: product.store.themeUser.theme.id,
+          slug: product.store.themeUser.theme.slug,
+          name: product.store.themeUser.theme.name_en,
+        } : null,
+      } : null,
       category: product.category
         ? { id: product.category.id, name: product.category.name }
         : null,
@@ -693,14 +493,10 @@ export class ProductService {
   }
 
   async getVariants(productId: string) {
-    return this.variantDetailRepository.find({
-      where: { product: { id: productId } },
-    });
+    return this.variantDetailRepository.find({ where: { product: { id: productId } } });
   }
 
   async getOffers(productId: string) {
-    return this.offerRepository.find({
-      where: { product: { id: productId } },
-    });
+    return this.offerRepository.find({ where: { product: { id: productId } } });
   }
 }

@@ -2,71 +2,88 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Plan } from './entities/plan.entity';
+import { Subscription } from '../subscription/entities/subscription.entity';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 
 @Injectable()
 export class PlansService {
-  constructor(
-    @InjectRepository(Plan)
-    private readonly planRepository: Repository<Plan>,
-  ) {}
+    constructor(
+        @InjectRepository(Plan)
+        private readonly planRepository: Repository<Plan>,
+        @InjectRepository(Subscription)
+        private readonly subRepository: Repository<Subscription>,
+    ) { }
 
-  /**
-   * إنشاء خطة جديدة
-   */
-  async create(createPlanDto: CreatePlanDto): Promise<Plan> {
-    // يمكنك إضافة منطق للتحقق من عدم تكرار اسم الخطة إذا أردت
-    const newPlan = this.planRepository.create(createPlanDto);
-    return await this.planRepository.save(newPlan);
-  }
+    async create(createPlanDto: CreatePlanDto): Promise<Plan> {
+        // منع تكرار الاسم
+        const existing = await this.planRepository.findOne({
+            where: { name: createPlanDto.name },
+        });
+        if (existing) {
+            throw new ConflictException(`خطة بالاسم "${createPlanDto.name}" موجودة مسبقاً`);
+        }
 
-  /**
-   * جلب جميع الخطط (يمكن إضافة تصفية للخطط النشطة فقط)
-   */
-  async findAll(onlyActive: boolean = false): Promise<Plan[]> {
-    const query = onlyActive ? { where: { isActive: true } } : {};
-    return await this.planRepository.find(query);
-  }
-
-  /**
-   * جلب خطة واحدة عن طريق الـ ID (UUID)
-   */
-  async findOne(id: string): Promise<Plan> {
-    const plan = await this.planRepository.findOne({ where: { id } });
-    if (!plan) {
-      throw new NotFoundException(`Plan with ID "${id}" not found`);
+        const newPlan = this.planRepository.create(createPlanDto);
+        return await this.planRepository.save(newPlan);
     }
-    return plan;
-  }
 
-  /**
-   * تحديث بيانات خطة
-   */
-  async update(id: string, updatePlanDto: UpdatePlanDto): Promise<Plan> {
-    const plan = await this.findOne(id); // التأكد من وجودها أولاً
-    
-    // دمج التحديثات مع الكيان الحالي
-    const updatedPlan = this.planRepository.merge(plan, updatePlanDto);
-    return await this.planRepository.save(updatedPlan);
-  }
-
-  /**
-   * حذف خطة نهائياً (أو يمكنك عمل Soft Delete)
-   */
-  async remove(id: string): Promise<void> {
-    const result = await this.planRepository.delete(id);
-    if (result.affected === 0) {
-      throw new NotFoundException(`Plan with ID "${id}" not found`);
+    async findAll(onlyActive = false): Promise<Plan[]> {
+        return await this.planRepository.find({
+            where: onlyActive ? { isActive: true } : {},
+            relations: ['features'], // ← جلب الـ features مع كل Plan
+            order: { createdAt: 'DESC' },
+        });
     }
-  }
 
-  /**
-   * تفعيل أو تعطيل خطة بسرعة
-   */
-  async toggleStatus(id: string): Promise<Plan> {
-    const plan = await this.findOne(id);
-    plan.isActive = !plan.isActive;
-    return await this.planRepository.save(plan);
-  }
+    async findOne(id: string): Promise<Plan> {
+        const plan = await this.planRepository.findOne({
+            where: { id },
+            relations: ['features'], // ← ضروري لأن Plan لا معنى له بدون features
+        });
+        if (!plan) throw new NotFoundException(`الخطة بالمعرف "${id}" غير موجودة`);
+        return plan;
+    }
+
+    async update(id: string, updatePlanDto: UpdatePlanDto): Promise<Plan> {
+        const plan = await this.findOne(id); // يجلب features أيضاً بسبب relations
+
+        const { features, ...planFields } = updatePlanDto;
+
+        // تحديث حقول الـ Plan العادية
+        this.planRepository.merge(plan, planFields);
+
+        // تحديث الـ FeaturesEntity بشكل منفصل إذا أُرسلت
+        if (features && plan.features) {
+            Object.assign(plan.features, features);
+        }
+
+        return await this.planRepository.save(plan); // cascade:true يحفظ features تلقائياً
+    }
+
+    async remove(id: string): Promise<void> {
+        // منع حذف خطة عليها اشتراكات نشطة
+        const activeSubs = await this.subRepository
+            .createQueryBuilder('sub')
+            .where('sub.planId = :id', { id })
+            .andWhere('sub.status = :status', { status: 'active' })
+            .getCount();
+
+        if (activeSubs > 0) {
+            throw new ConflictException(
+                `لا يمكن حذف هذه الخطة — يوجد ${activeSubs} اشتراك نشط مرتبط بها`,
+            );
+        }
+
+        const result = await this.planRepository.delete(id);
+        if (result.affected === 0) {
+            throw new NotFoundException(`الخطة بالمعرف "${id}" غير موجودة`);
+        }
+    }
+
+    async toggleStatus(id: string): Promise<Plan> {
+        const plan = await this.findOne(id);
+        plan.isActive = !plan.isActive;
+        return await this.planRepository.save(plan);
+    }
 }
