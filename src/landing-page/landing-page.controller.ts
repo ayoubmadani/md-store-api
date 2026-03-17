@@ -7,7 +7,7 @@ import { GetUser } from '../user/decorator/get-user.decorator';
 
 @Controller('landing-page')
 export class LandingPageController {
-  constructor(private readonly landingPageService: LandingPageService) {}
+  constructor(private readonly landingPageService: LandingPageService) { }
 
   @Post()
   @UseGuards(AuthGuard)
@@ -21,38 +21,62 @@ export class LandingPageController {
   }
 
   @Get(':domain')
-  getByDomain(@Param('domain') domain:string){
+  getByDomain(@Param('domain') domain: string) {
     return this.landingPageService.getByDomain(domain)
   }
 
   @Get('store/:storeId')
 
-  getByStoreId(@Param('storeId') storeId:string){
+  getByStoreId(@Param('storeId') storeId: string) {
     return this.landingPageService.getByStoreId(storeId)
   }
 
 
-  @Get(':id')
+  @Get('get-one/:id')
+  @UseGuards(AuthGuard)
+
   findOne(@Param('id') id: string) {
-    return this.landingPageService.findOne(+id);
+    return this.landingPageService.findOne(id);
   }
 
   @Patch(':id')
+  @UseGuards(AuthGuard)
   update(@Param('id') id: string, @Body() updateLandingPageDto: UpdateLandingPageDto) {
-    return this.landingPageService.update(+id, updateLandingPageDto);
+    return this.landingPageService.update(id, updateLandingPageDto);
+  }
+
+  @Get('toggle-status/:id')
+  @UseGuards(AuthGuard)
+  toggleStatus(@Param('id') id: string) {
+    return this.landingPageService.toggleStatus(id)
+  }
+
+  @Post('duplicate/:id')
+  @UseGuards(AuthGuard)
+  duplicate(@Param('id') id: string) {
+    return this.landingPageService.duplicate(id)
+  }
+
+  @Patch('update-platform/:id')
+  updatePlatform(
+    @Param('id') id:string,
+    @Body('platform') platform : string
+  ){
+    return this.landingPageService.updatePlatfor(id, platform)
   }
 
   @Delete(':id')
+  @UseGuards(AuthGuard)
   remove(@Param('id') id: string) {
-    return this.landingPageService.remove(+id);
+    return this.landingPageService.remove(id);
   }
 
   @Post('generate-product-image/:productId')
   @UseGuards(AuthGuard)
   generateProductImage(
-    @Param('productId') productId:string,
-    @GetUser() user : any
-  ){
+    @Param('productId') productId: string,
+    @GetUser() user: any
+  ) {
     const userId = user.id
     return this.landingPageService.generateProductImage(productId)
   }
