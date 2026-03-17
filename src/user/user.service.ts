@@ -8,6 +8,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from '../mail/mail.service';
 import { ResetNewPassword } from './dto/reset-new-password.dto';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class UserService {
@@ -15,7 +16,8 @@ export class UserService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly config: ConfigService,
-    private readonly mailService: MailService
+    private readonly mailService: MailService,
+    private readonly subscriptionService: SubscriptionService,
   ) { }
 
   async create(dto: CreateUserDto): Promise<User> {
@@ -109,8 +111,8 @@ export class UserService {
       image: user.image,
       provider: user.provider,
       isVerified: user.isVerified,
-      topic : user.topic,
-      isNtfy : user.isNtfy
+      topic: user.topic,
+      isNtfy: user.isNtfy
     }
   }
 
@@ -156,10 +158,33 @@ export class UserService {
     throw new BadRequestException('Action not allowed for this account provider');
   }
 
+  private async getIsNotfy(userId: string){
+    const sub = await this.subscriptionService.findSub(userId);
+    if (sub?.plan?.features?.isNtfy === false) {
+        throw new BadRequestException('خطة اشتراكك الحالية لا تدعم ميزة التنبيهات.');
+    }
+  }
+
+  async toggleNtfy(userId){
+    let user = await this.userRepo.findOne({where :{id: userId}})
+    await this.getIsNotfy(userId);
+    const apdateUser = await this.userRepo.update(userId, {
+      isNtfy: !user?.isNtfy
+    });
+    return !user?.isNtfy
+  }
+
   async updateUser(dto: UpdateUserDto, id: string) {
     // إذا كان هناك كلمة مرور، قم بتشفيرها
     if (dto.password) {
       dto.password = await bcrypt.hash(dto.password, 10);
+    }
+
+    console.log(dto.isNtfy);
+    
+
+    if (dto.isNtfy === true) {
+      await this.getIsNotfy(id);
     }
 
     // بدلاً من find ثم assign ثم save

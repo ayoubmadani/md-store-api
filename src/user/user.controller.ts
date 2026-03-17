@@ -26,4 +26,13 @@ export class UserController {
       return this.userService.updateUser(dto,userId)
   }
 
+  @Post('toggle-ntfy')
+  @UseGuards(AuthGuard)
+  toggleNtfy(
+    @GetUser() user: any,
+  ){
+      const userId = user.id || user.sub;
+      return this.userService.toggleNtfy(userId)
+  }
+
 }

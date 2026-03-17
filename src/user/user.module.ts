@@ -5,13 +5,15 @@ import { MailModule } from "../mail/mail.module";
 import { User } from "./entities/user.entity";
 import { UserController } from "./user.controller";
 import { UserService } from "./user.service";
+import { SubscriptionModule } from "../subscription/subscription.module";
 
 // user.module.ts
 @Module({
   imports: [
     TypeOrmModule.forFeature([User]), 
     MailModule,
-    ConfigModule, // <<< تأكد من إضافة هذا السطر هنا
+    ConfigModule,
+    SubscriptionModule,
   ],
   controllers: [UserController],
   providers: [UserService],
