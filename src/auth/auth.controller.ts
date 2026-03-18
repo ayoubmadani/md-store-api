@@ -4,7 +4,7 @@ import { CreateUserDto } from "../user/dto/create-user.dto";
 import { VerifyEmailDto } from "./dto/verifyEmail.dto";
 import { ResetPasswordDto } from "./dto/resetPassword";
 import { AuthGuard } from "@nestjs/passport";
-import express, { request } from 'express';
+import * as express from 'express';
 import { ConfigService } from "@nestjs/config";
 import { CredentialLoginDto } from "./dto/credentialLogin.dto";
 
@@ -45,7 +45,7 @@ export class AuthController {
         return this.authService.forgotPassword(email);
     }
 
-     @Post('verify-otp')
+    @Post('verify-otp')
     @HttpCode(HttpStatus.OK)
     verifyOTP(@Body() dto: VerifyEmailDto) {
         return this.authService.verifyOTP(dto)
@@ -64,20 +64,18 @@ export class AuthController {
 
     @Get('google/callback')
     @UseGuards(AuthGuard('google'))
+    // 2. استخدم express.Response بدلاً من Response فقط
     async googleAuthRedirect(@Req() req, @Res() res: express.Response) {
         try {
             const result = await this.authService.GoogleLogin(req.user);
 
             if (result && result.access_token) {
                 const frontendUrl = `${this.config.get<string>('FRONT_URL')}/auth/callback?token=${result.access_token}`;
-                
                 return res.redirect(frontendUrl);
             }
 
-            // في حال نجاح الدخول من جوجل ولكن فش   ل المنطق الخاص بك
             return res.redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=auth_failed`);
         } catch (error) {
-            // إعادة التوجيه لصفحة التسجيل مع رسالة خطأ
             return res.redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=google_auth_error`);
         }
     }
