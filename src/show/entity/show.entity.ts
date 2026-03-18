@@ -9,7 +9,7 @@ import {
 } from "typeorm";
 import { Product } from "../../product/entities/product.entity";
 import { Store } from "../../store/entities/store.entity";
-import { LandingPage } from "src/landing-page/entities/landing-page.entity";
+import { LandingPage } from "../../landing-page/entities/landing-page.entity";
 
 @Entity('shows')
 @Unique(['visitorId', 'productId', 'storeId', 'dayDate']) // منع التكرار بناءً على هذه المجموعة

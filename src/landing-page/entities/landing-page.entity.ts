@@ -1,7 +1,7 @@
 import { Show } from "../../show/entity/show.entity";
 import { Product } from "../../product/entities/product.entity";
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
-import { Order } from "src/order/entities/order.entity";
+import { Order } from "../../order/entities/order.entity";
 
 
 @Entity({ name: 'landing-pages' })

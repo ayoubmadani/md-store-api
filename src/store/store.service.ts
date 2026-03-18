@@ -13,8 +13,8 @@ import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { Category } from '../category/entities/category.entity';
 import { SubscriptionService } from '../subscription/subscription.service';
-import { Show } from 'src/show/entity/show.entity';
-import { Product } from 'src/product/entities/product.entity';
+import { Show } from '../show/entity/show.entity';
+import { Product } from '../product/entities/product.entity';
 
 @Injectable()
 export class StoreService {
