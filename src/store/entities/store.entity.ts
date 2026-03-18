@@ -20,6 +20,7 @@ import {
 import { StorePixel } from "./store-pixel.entity";
 import { Order } from "../../order/entities/order.entity";
 import { ThemeUser } from "../../theme/entities/theme-user.entity";
+import { Show } from "../../show/entity/show.entity";
 
 @Entity({ name: 'stores' })
 export class Store {
@@ -51,7 +52,7 @@ export class Store {
   @ManyToOne(() => User, (user) => user.stores, { onDelete: 'CASCADE' })
   user: User;
 
-  @ManyToOne(() => Niche, (niche) => niche.stores, { onDelete: 'CASCADE' ,nullable: true})
+  @ManyToOne(() => Niche, (niche) => niche.stores, { onDelete: 'CASCADE', nullable: true })
   niche?: Niche;
 
   @OneToMany(() => Product, (products) => products.store)
@@ -91,4 +92,7 @@ export class Store {
   })
   @JoinColumn({ name: "themeUserId" })
   themeUser: ThemeUser;
+
+  @OneToMany(() => Show, show => show.store)
+  shows: Show[]
 }

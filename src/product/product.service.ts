@@ -70,16 +70,16 @@ function generateCombinationsFromDto(
 @Injectable()
 export class ProductService {
   constructor(
-    @InjectRepository(Product)     private productRepository: Repository<Product>,
-    @InjectRepository(Attribute)   private attributeRepository: Repository<Attribute>,
-    @InjectRepository(Variant)     private variantRepository: Repository<Variant>,
+    @InjectRepository(Product) private productRepository: Repository<Product>,
+    @InjectRepository(Attribute) private attributeRepository: Repository<Attribute>,
+    @InjectRepository(Variant) private variantRepository: Repository<Variant>,
     @InjectRepository(VariantDetail) private variantDetailRepository: Repository<VariantDetail>,
-    @InjectRepository(Offer)       private offerRepository: Repository<Offer>,
+    @InjectRepository(Offer) private offerRepository: Repository<Offer>,
     @InjectRepository(ImageProduct) private imageProductRepository: Repository<ImageProduct>,
     private readonly storeService: StoreService,
     private readonly dataSource: DataSource,
     private readonly subscriptionService: SubscriptionService,
-  ) {}
+  ) { }
 
   // ─── helper: قراءة الحد من features.productNumber ──────────────────────────
   private async getProductLimit(userId: string): Promise<number> {
@@ -188,27 +188,56 @@ export class ProductService {
   // ══════════════════════════════════════════════════════════════════════════
 
   async findAll(
-    storeId: string, userId: string,
-    page = 1, limit = 20,
-    categoryId?: string, search?: string, isActive?: boolean,
+    storeId: string,
+    userId: string,
+    page = 1,
+    limit = 20,
+    categoryId?: string,
+    search?: string,
+    isActive?: boolean,
   ): Promise<{ products: Product[]; total: number; page: number; totalPages: number }> {
+    // التأكد من ملكية المتجر
     await this.storeService.verifyOwnership(storeId, userId);
 
     const qb = this.productRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.category', 'category')
       .leftJoinAndSelect('product.imagesProduct', 'images')
+      // حساب عدد المشاهدات ووضعه في حقل showsCount
+      .loadRelationCountAndMap('product.showsCount', 'product.shows')
       .leftJoinAndSelect('product.attributes', 'attributes')
       .leftJoinAndSelect('attributes.variants', 'variants')
       .where('product.storeId = :storeId', { storeId });
 
-    if (categoryId) qb.andWhere('product.categoryId = :categoryId', { categoryId });
-    if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
-    if (isActive !== undefined) qb.andWhere('product.isActive = :isActive', { isActive });
+    // الفلاتر
+    if (categoryId) {
+      qb.andWhere('product.categoryId = :categoryId', { categoryId });
+    }
 
-    qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
+    if (search) {
+      // استخدم ILIKE لـ PostgreSQL أو LIKE لـ MySQL
+      qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', {
+        search: `%${search}%`
+      });
+    }
+
+    if (isActive !== undefined) {
+      qb.andWhere('product.isActive = :isActive', { isActive });
+    }
+
+    // الترتيب والترقيم الصفحي
+    qb.orderBy('product.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
     const [products, total] = await qb.getManyAndCount();
-    return { products, total, page, totalPages: Math.ceil(total / limit) };
+
+    return {
+      products,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit)
+    };
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -244,16 +273,16 @@ export class ProductService {
 
     try {
       Object.assign(product, {
-        name:          dto.name          ?? product.name,
-        desc:          dto.desc          ?? product.desc,
-        price:         dto.price         !== undefined ? Number(dto.price)         : product.price,
+        name: dto.name ?? product.name,
+        desc: dto.desc ?? product.desc,
+        price: dto.price !== undefined ? Number(dto.price) : product.price,
         priceOriginal: dto.priceOriginal !== undefined ? Number(dto.priceOriginal) : product.priceOriginal,
-        productImage:  dto.productImage  ?? product.productImage,
-        sku:           dto.sku           ?? product.sku,
-        slug:          dto.slug          ?? product.slug,
-        stock:         dto.stock         !== undefined ? Number(dto.stock) : product.stock,
-        isActive:      dto.isActive      ?? product.isActive,
-        category:      dto.categoryId ? { id: dto.categoryId } : product.category,
+        productImage: dto.productImage ?? product.productImage,
+        sku: dto.sku ?? product.sku,
+        slug: dto.slug ?? product.slug,
+        stock: dto.stock !== undefined ? Number(dto.stock) : product.stock,
+        isActive: dto.isActive ?? product.isActive,
+        category: dto.categoryId ? { id: dto.categoryId } : product.category,
       });
       await queryRunner.manager.save(product);
 

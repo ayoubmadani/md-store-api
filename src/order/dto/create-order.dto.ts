@@ -99,4 +99,8 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   platform?: string
+
+  @IsOptional()
+  @IsString()
+  lpId?:string
 }

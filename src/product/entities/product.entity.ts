@@ -18,6 +18,7 @@ import { Offer } from './offer.entity';
 import { ImageProduct } from '../../image-product/entities/image-product.entity';
 import { Category } from '../../category/entities/category.entity';
 import { Order } from '../../order/entities/order.entity';
+import { Show } from '../../show/entity/show.entity';
 
 @Entity({ name: 'products' })
 @Index(['store', 'category'])
@@ -112,4 +113,13 @@ export class Product {
   @Exclude()
   @OneToMany(() => Order, (order) => order.product)
   orders: Order[];
+
+  /**
+   * ✅ ONE product → MANY show.
+   * The FK `productId` lives on the show table, not here.
+   * Removed: @ManyToOne, @JoinColumn, and the stray `offerId` column.
+   */
+
+  @OneToMany(()=> Show , show=> show.product)
+  shows:Show[]
 }

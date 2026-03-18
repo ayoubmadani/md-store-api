@@ -11,8 +11,9 @@ export class LandingPageController {
 
   @Post()
   @UseGuards(AuthGuard)
-  create(@Body() dto: CreateLandingPageDto) {
-    return this.landingPageService.create(dto);
+  create(@Body() dto: CreateLandingPageDto , @GetUser() user: any) {
+    const userId = user.id || user.sub
+    return this.landingPageService.create(dto,userId);
   }
 
   @Get()
@@ -42,13 +43,16 @@ export class LandingPageController {
   @Patch(':id')
   @UseGuards(AuthGuard)
   update(@Param('id') id: string, @Body() updateLandingPageDto: UpdateLandingPageDto) {
+
     return this.landingPageService.update(id, updateLandingPageDto);
   }
 
   @Get('toggle-status/:id')
   @UseGuards(AuthGuard)
-  toggleStatus(@Param('id') id: string) {
-    return this.landingPageService.toggleStatus(id)
+  toggleStatus(@Param('id') id: string,@GetUser() user: any) {
+        const userId = user.id || user.sub
+
+    return this.landingPageService.toggleStatus(id , userId)
   }
 
   @Post('duplicate/:id')

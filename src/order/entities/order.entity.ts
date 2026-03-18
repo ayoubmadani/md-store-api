@@ -1,3 +1,4 @@
+import { LandingPage } from "src/landing-page/entities/landing-page.entity";
 import { Offer } from "../../product/entities/offer.entity";
 import { Product } from "../../product/entities/product.entity";
 import { VariantDetail } from "../../product/entities/variant-detail.entity";
@@ -133,6 +134,13 @@ export class Order {
 
   @Column({ type: 'timestamp', nullable: true })
   deliveredAt: Date;
+
+  @Column({nullable:true})
+  lpId?:string
+
+  @ManyToOne(()=> LandingPage , lp => lp.orders)
+  @JoinColumn({name:'lpId'})
+  lp?:LandingPage
 
   @Column({ type: 'timestamp', nullable: true })
   postponedUntil: Date; // التاريخ الذي سيتم فيه إعادة الاتصال أو الشحن

@@ -13,6 +13,8 @@ import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { Category } from '../category/entities/category.entity';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { Show } from 'src/show/entity/show.entity';
+import { Product } from 'src/product/entities/product.entity';
 
 @Injectable()
 export class StoreService {
@@ -349,6 +351,7 @@ export class StoreService {
         };
     }
 
+
     async getAllStores(userId?: string) {
         const query = this.storeRepository
             .createQueryBuilder('store')
@@ -356,14 +359,28 @@ export class StoreService {
             .leftJoinAndSelect('store.topBar', 'topBar')
             .leftJoinAndSelect('store.contact', 'contact')
             .leftJoinAndSelect('store.hero', 'hero')
-            .leftJoinAndSelect('store.products', 'products')
-            .leftJoinAndSelect('store.categories', 'categories')
             .leftJoinAndSelect('store.niche', 'niche')
             .leftJoinAndSelect('store.user', 'user')
-            .leftJoinAndSelect('store.pixels', 'pixels');
+            .leftJoinAndSelect('store.pixels', 'pixels')
+            .leftJoinAndSelect('store.shows', 'shows')
+            .leftJoinAndSelect('store.orders', 'orders')
+            .leftJoinAndSelect('store.products', 'products')
 
-        if (userId) query.where('user.id = :userId', { userId });
-        return query.getMany();
+        if (userId) {
+            query.andWhere('store.user.id = :userId', { userId });
+        }
+
+        const { entities, raw } = await query.getRawAndEntities();
+
+        // دمج البيانات الخام (Raw) مع الكيانات (Entities)
+        return entities.map((store, index) => {
+            const rawData = raw[index];
+            return {
+                ...store,
+                viewsCount: parseInt(rawData?.viewsCount || '0', 10),
+                productsCount: parseInt(rawData?.productsCount || '0', 10),
+            };
+        });
     }
 
     // ==================== TOGGLE STATUS ====================

@@ -57,6 +57,7 @@ export class OrdersService {
             variantDetailId: dto.variantDetailId,
             offerId: dto.offerId,
             platform: dto.platform || "mdstore",
+            lpId:dto.lpId
         } as any);
 
         const savedOrder = await this.ordersrepo.save(order);

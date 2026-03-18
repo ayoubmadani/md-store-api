@@ -4,6 +4,7 @@ import { LandingPageController } from './landing-page.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LandingPage } from './entities/landing-page.entity';
 import { AiModule } from '../ai/ai.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   controllers: [LandingPageController],
@@ -13,6 +14,7 @@ import { AiModule } from '../ai/ai.module';
   imports: [
     TypeOrmModule.forFeature([LandingPage]),
     AiModule,
+    SubscriptionModule,
   ],
 })
 export class LandingPageModule {}

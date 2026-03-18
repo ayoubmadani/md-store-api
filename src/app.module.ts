@@ -24,6 +24,7 @@ import { PaymentModule } from './payment/payment.module';
 import { ShippingProviderModule } from './shipping-provider/shipping-provider.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronJobModule } from './cron-job/cron-job.module';
+import { ShowModule } from './show/show.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { CronJobModule } from './cron-job/cron-job.module';
     PaymentModule,
     ShippingProviderModule,
     CronJobModule,
+    ShowModule,
   ],
   controllers: [AppController]
 })

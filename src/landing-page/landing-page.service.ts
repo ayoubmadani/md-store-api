@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { CreateLandingPageDto } from './dto/create-landing-page.dto';
 import { UpdateLandingPageDto } from './dto/update-landing-page.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LandingPage } from './entities/landing-page.entity';
 import { Repository } from 'typeorm';
 import { AiService } from '../ai/ai.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class LandingPageService {
@@ -14,13 +15,34 @@ export class LandingPageService {
     private readonly landingPageRope: Repository<LandingPage>,
 
     private readonly aiService: AiService,
+    private readonly subscriptionService: SubscriptionService,
   ) { }
+
+  private async getLPLimit(userId: string): Promise<number> {
+    const sub = await this.subscriptionService.findSub(userId);
+    // features.storeNumber هو المصدر الحقيقي للحد — لا اسم الخطة
+    return sub?.plan?.features?.landingPageNumber ?? 0;
+  }
+
+  private async assertLPLimitNotReached(userId: string, extraMessage?: string): Promise<void> {
+    const [limit, count] = await Promise.all([
+      this.getLPLimit(userId),
+      this.landingPageRope.count({ where: { isActive: true, product: { store: { user: { id: userId } } } } }),
+    ]);
+
+    if (count >= limit) {
+      throw new BadRequestException(
+        extraMessage ?? `لقد وصلت إلى الحد الأقصى للمتاجر النشطة في خطتك (${limit} صفحات الهبوط).`
+      );
+    }
+  }
 
   // ─────────────────────────────────────────
   // CRUD
   // ─────────────────────────────────────────
 
-  async create(dto: CreateLandingPageDto) {
+  async create(dto: CreateLandingPageDto, userId: string) {
+    await this.assertLPLimitNotReached(userId)
     const landingPage = this.landingPageRope.create({
       productId: dto.productId,
       domain: dto.domain,
@@ -85,6 +107,8 @@ export class LandingPageService {
         'product.attributes.variants',
         'product.variantDetails',
         'product.offers',
+        'shows',
+        'orders'
       ],
     });
 
@@ -136,10 +160,16 @@ export class LandingPageService {
     return { message: 'edit successfully' }
   }
 
-  async toggleStatus(id: string) {
+  async toggleStatus(id: string,userId:string) {
+    
+
     const landingpage = await this.landingPageRope.findOne({ where: { id } })
     if (!landingpage) {
       throw new NotFoundException('landing page note found')
+    }
+
+    if (!landingpage.isActive) {
+      await this.assertLPLimitNotReached(userId)
     }
 
     await this.landingPageRope.update(id, {
@@ -149,6 +179,8 @@ export class LandingPageService {
     return !landingpage.isActive
 
   }
+
+  
 
   async duplicate(id: string) {
     const getlandingpage = await this.landingPageRope.findOne({ where: { id } })
@@ -166,7 +198,7 @@ export class LandingPageService {
     return this.landingPageRope.save(landingPage)
   }
 
-  async updatePlatfor(id:string, platform: string) {
+  async updatePlatfor(id: string, platform: string) {
     const getlandingpage = await this.landingPageRope.findOne({ where: { id } })
     if (!getlandingpage) {
       throw new NotFoundException('landing page note found')
