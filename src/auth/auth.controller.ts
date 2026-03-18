@@ -4,9 +4,7 @@ import { CreateUserDto } from "../user/dto/create-user.dto";
 import { VerifyEmailDto } from "./dto/verifyEmail.dto";
 import { ResetPasswordDto } from "./dto/resetPassword";
 import { AuthGuard } from "@nestjs/passport";
-// ❌ WRONG: import express, { request } from 'express';
-// ✅ CORRECT: Import Response and Request from 'express'
-import type { Response, Request } from 'express';
+import express, { request } from 'express';
 import { ConfigService } from "@nestjs/config";
 import { CredentialLoginDto } from "./dto/credentialLogin.dto";
 
@@ -47,12 +45,13 @@ export class AuthController {
         return this.authService.forgotPassword(email);
     }
 
-    @Post('verify-otp')
+     @Post('verify-otp')
     @HttpCode(HttpStatus.OK)
     verifyOTP(@Body() dto: VerifyEmailDto) {
         return this.authService.verifyOTP(dto)
     }
 
+    // 5. تنفيذ تغيير كلمة المرور باستخدام الرمز
     @Post('reset-password')
     @HttpCode(HttpStatus.OK)
     async resetPassword(@Body() dto: ResetPasswordDto) {
@@ -61,27 +60,28 @@ export class AuthController {
 
     @Get('google')
     @UseGuards(AuthGuard('google'))
-    async googleAuth(@Req() req: Request) { }
+    async googleAuth(@Req() req) { }
 
     @Get('google/callback')
-@UseGuards(AuthGuard('google'))
-async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-    try {
-        // ✅ Check if user exists
-        if (!req.user) {
-            return res.redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=no_user_data`);
+    @UseGuards(AuthGuard('google'))
+    async googleAuthRedirect(@Req() req, @Res() res: express.Response) {
+        try {
+            const result = await this.authService.GoogleLogin(req.user);
+
+            if (result && result.access_token) {
+                const frontendUrl = `${this.config.get<string>('FRONT_URL')}/auth/callback?token=${result.access_token}`;
+                
+                return res.redirect(frontendUrl);
+            }
+
+            // في حال نجاح الدخول من جوجل ولكن فش   ل المنطق الخاص بك
+            return res.redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=auth_failed`);
+        } catch (error) {
+            // إعادة التوجيه لصفحة التسجيل مع رسالة خطأ
+            return res.redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=google_auth_error`);
         }
-
-        const result = await this.authService.GoogleLogin(req.user as any);
-
-        if (result && result.access_token) {
-            const frontendUrl = `${this.config.get<string>('FRONT_URL')}/auth/callback?token=${result.access_token}`;
-            return res.redirect(frontendUrl);
-        }
-
-        return res.redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=auth_failed`);
-    } catch (error) {
-        return res.redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=google_auth_error`);
     }
-}
+
+
+
 }
