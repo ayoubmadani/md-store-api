@@ -14,14 +14,14 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
-  ) {}
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    
+
     // استخراج الـ Authorization header
-    const authHeader = request.headers.authorization;
-    
+    const authHeader = (request as any).headers?.authorization;
+
     if (!authHeader) {
       throw new UnauthorizedException('Authorization header is missing');
     }
@@ -45,7 +45,7 @@ export class AuthGuard implements CanActivate {
 
       // إضافة بيانات المستخدم إلى الـ request
       request['user'] = payload;
-      
+
       return true;
     } catch (error) {
       // معالجة أنواع مختلفة من أخطاء JWT
@@ -55,7 +55,7 @@ export class AuthGuard implements CanActivate {
       if (error.name === 'JsonWebTokenError') {
         throw new UnauthorizedException('Invalid token');
       }
-      
+
       throw new UnauthorizedException('Authentication failed');
     }
   }

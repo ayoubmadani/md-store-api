@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'; // ← استبدال uuid
 
 @Injectable()
 export class S3Service {
-  private s3Client: S3Client;
+  private s3Client: any;
   private bucketName: string;
   private region: string;
 
@@ -38,10 +38,10 @@ export class S3Service {
   }
 
   async uploadFile(
-    file: Express.Multer.File, 
+    file: Express.Multer.File,
     folder: string = 'uploads'
-  ): Promise<{ 
-    key: string; 
+  ): Promise<{
+    key: string;
     url: string;
     originalName: string;
     mimeType: string;
@@ -67,7 +67,7 @@ export class S3Service {
 
       const endpoint = this.configService.get<string>('AWS_ENDPOINT');
       let url: string;
-      
+
       if (endpoint) {
         const cleanEndpoint = endpoint.replace(/\/$/, '');
         url = `${cleanEndpoint}/${this.bucketName}/${key}`;
@@ -75,8 +75,8 @@ export class S3Service {
         url = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${key}`;
       }
 
-      return { 
-        key, 
+      return {
+        key,
         url,
         originalName: file.originalname,
         mimeType: file.mimetype,
@@ -89,7 +89,7 @@ export class S3Service {
   }
 
   async uploadMultipleFiles(
-    files: Express.Multer.File[], 
+    files: Express.Multer.File[],
     folder: string = 'uploads'
   ): Promise<Array<{ key: string; url: string; originalName: string; mimeType: string; size: number }>> {
     const uploadPromises = files.map(file => this.uploadFile(file, folder));
