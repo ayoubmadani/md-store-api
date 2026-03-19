@@ -4,7 +4,7 @@ import { CreateUserDto } from "../user/dto/create-user.dto";
 import { VerifyEmailDto } from "./dto/verifyEmail.dto";
 import { ResetPasswordDto } from "./dto/resetPassword";
 import { AuthGuard } from "@nestjs/passport";
-import express, { request } from 'express';
+import { Response } from 'express';
 import { ConfigService } from "@nestjs/config";
 import { CredentialLoginDto } from "./dto/credentialLogin.dto";
 
@@ -64,7 +64,7 @@ export class AuthController {
 
     @Get('google/callback')
     @UseGuards(AuthGuard('google'))
-    async googleAuthRedirect(@Req() req, @Res() res: express.Response) {
+    async googleAuthRedirect(@Req() req, @Res() res: Response) {
         try {
             const result = await this.authService.GoogleLogin(req.user);
 
