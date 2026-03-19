@@ -72,11 +72,23 @@ export class CreateOrderDto {
 
   @ApiProperty({ description: 'الولاية' })
   @IsNumber()
-  customerWilayaId: number;
+  @IsOptional()
+  customerWilayaId?: number;
+
+  @ApiProperty({ description: 'الولاية' })
+  @IsNumber()
+  @IsOptional()
+  customerWilaya?: number;
 
   @ApiProperty({ description: 'البلدية' })
   @IsNumber()
-  customerCommuneId: number;
+  @IsOptional()
+  customerCommuneId?: number;
+
+  @ApiProperty({ description: 'البلدية' })
+  @IsNumber()
+  @IsOptional()
+  customerCommune?: number;
 
   @IsNotEmpty({ message: 'رقم الهاتف مطلوب' })
   @IsString()
@@ -102,5 +114,5 @@ export class CreateOrderDto {
 
   @IsOptional()
   @IsString()
-  lpId?:string
+  lpId?: string
 }
