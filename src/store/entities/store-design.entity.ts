@@ -19,7 +19,10 @@ export class StoreDesign {
   // Removed duplicate hero fields (heroImage, heroTitle, heroSubtitle)
   // These are now handled by StoreHeroSection entity
 
+  @Column()
+  storeId:string
+
   @OneToOne(() => Store, (store) => store.design, { onDelete: 'CASCADE' })
-  @JoinColumn()
+  @JoinColumn({name : "storeId"})
   store: Store;
 }

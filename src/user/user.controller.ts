@@ -37,9 +37,7 @@ export class UserController {
 
   @Post('init-sub')
   @UseGuards(AuthGuard)
-  initSub(@GetUser() user: any,) {
-    console.log("successfully");
-    
+  initSub(@GetUser() user: any,) {    
     const userId = user.id || user.sub;
     return this.userService.initSub(userId)
 

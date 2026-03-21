@@ -14,6 +14,7 @@ import { Product } from 'src/product/entities/product.entity';
 import { Subscription } from 'src/subscription/entities/subscription.entity';
 import { StorePixel } from 'src/store/entities/store-pixel.entity';
 import { LandingPage } from 'src/landing-page/entities/landing-page.entity';
+import { log } from 'console';
 
 @Injectable()
 export class UserService {
@@ -205,84 +206,84 @@ export class UserService {
   }
 
   async initSub(userId: string) {
-  const sub = await this.subRepo.findOne({
-    where: { userId },
-    relations: ['plan', 'plan.features']
-  });
 
-  if (!sub || !sub.plan.features) return;
+   const sub = await this.subRepo.findOne({
+      where: { userId, status: 'active' },
+      relations: ['plan', 'plan.features'],
+      order: { startDate: 'DESC' },
+    });
 
-  const f = sub.plan.features;
+    if (!sub || !sub.plan.features) return;
 
-  // ✅ count بـ createQueryBuilder لتجنب FK type errors
-  const storeCount = await this.storeRepo.createQueryBuilder("s")
-    .where('s."userId" = :userId', { userId })
-    .getCount();
+    const f = sub.plan.features;
+    // ✅ count بـ createQueryBuilder لتجنب FK type errors
+    const storeCount = await this.storeRepo.count({ where: { isActive: true, user: { id: userId } } })
 
-  const productCount = await this.productRepo.createQueryBuilder("p")
-    .where('p."storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
-    .getCount();
+    const productCount = await this.productRepo.count({ where: { isActive: true, store: { user: { id: userId } } } });
 
-  const pixelfbCount = await this.pixelRepo.createQueryBuilder("px")
-    .where('px.type = :type', { type: 'facebook' })
-    .andWhere('px."storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
-    .getCount();
+    const pixelfbCount = await this.pixelRepo.count({ where: { isActive: true, type: "facebook", store: { user: { id: userId } } } });
 
-  const pixeltikCount = await this.pixelRepo.createQueryBuilder("px")
-    .where('px.type = :type', { type: 'tiktok' })
-    .andWhere('px."storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
-    .getCount();
+    const pixeltikCount = await this.pixelRepo.count({ where: { isActive: true, type: "tiktok", store: { user: { id: userId } } } });
 
-  const lpCount = await this.lpRepo.createQueryBuilder("lp")
-    .where('lp."productId" IN (SELECT p.id FROM products p INNER JOIN stores s ON p."storeId" = s.id WHERE s."userId" = :userId)', { userId })
-    .getCount();
+    const lpCount = await this.lpRepo.count({ where: { isActive: true, product: { store: { user: { id: userId } } } } });
 
-  // المتاجر
-  if (storeCount > f.storeNumber) {
-    await this.storeRepo.createQueryBuilder()
-      .update()
-      .set({ isActive: false })
-      .where('"userId" = :userId', { userId })
-      .execute();
+    console.log({
+      storeCount,productCount,pixelfbCount,pixeltikCount,lpCount
+    });
+    
+
+    // المتاجر
+    if (storeCount > f.storeNumber) {
+      await this.storeRepo.createQueryBuilder()
+        .update()
+        .set({ isActive: false })
+        .where('"userId" = :userId', { userId })
+        .execute();
+    }
+
+    // المنتجات
+    if (productCount > f.productNumber) {
+      await this.productRepo.createQueryBuilder()
+        .update()
+        .set({ isActive: false })
+        .where('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+        .execute();
+    }
+
+    // بيكسل فيسبوك
+    if (pixelfbCount > f.pixelFacebookNumber) {
+      await this.pixelRepo.createQueryBuilder()
+        .update()
+        .set({ isActive: false })
+        .where('type = :type', { type: 'facebook' })
+        .andWhere('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+        .execute();
+    }
+
+    // بيكسل تيك توك
+    if (pixeltikCount > f.pixelTiktokNumber) {
+      await this.pixelRepo.createQueryBuilder()
+        .update()
+        .set({ isActive: false })
+        .where('type = :type', { type: 'tiktok' })
+        .andWhere('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+        .execute();
+    }
+
+    // صفحات الهبوط
+    if (lpCount > f.landingPageNumber) {
+      await this.lpRepo.createQueryBuilder()
+        .update()
+        .set({ isActive: false })
+        .where('"productId" IN (SELECT p.id FROM products p INNER JOIN stores s ON p."storeId" = s.id WHERE s."userId" = :userId)', { userId })
+        .execute();
+    }
   }
-
-  // المنتجات
-  if (productCount > f.productNumber) {
-    await this.productRepo.createQueryBuilder()
-      .update()
-      .set({ isActive: false })
-      .where('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
-      .execute();
-  }
-
-  // بيكسل فيسبوك
-  if (pixelfbCount > f.pixelFacebookNumber) {
-    await this.pixelRepo.createQueryBuilder()
-      .update()
-      .set({ isActive: false })
-      .where('type = :type', { type: 'facebook' })
-      .andWhere('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
-      .execute();
-  }
-
-  // بيكسل تيك توك
-  if (pixeltikCount > f.pixelTiktokNumber) {
-    await this.pixelRepo.createQueryBuilder()
-      .update()
-      .set({ isActive: false })
-      .where('type = :type', { type: 'tiktok' })
-      .andWhere('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
-      .execute();
-  }
-
-  // صفحات الهبوط
-  if (lpCount > f.landingPageNumber) {
-    await this.lpRepo.createQueryBuilder()
-      .update()
-      .set({ isActive: false })
-      .where('"productId" IN (SELECT p.id FROM products p INNER JOIN stores s ON p."storeId" = s.id WHERE s."userId" = :userId)', { userId })
-      .execute();
-  }
-}
 
 }
+/*
+ * flaturer categories يظهر الاسم فقط
+ * nav bar الرئيسية تواصل الخصوصية logo
+ * footer 3 sction logo name store slug , روابط  سياسة الخصوصية شروط الخدمة ملفات الارتباط اتصل بنا, 
+ */
+

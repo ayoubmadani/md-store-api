@@ -241,8 +241,10 @@ export class StoreService {
                 where,
                 relations: ['design', 'topBar', 'contact', 'hero'],
             });
+
             if (!store) throw new NotFoundException('Store not found or you do not have permission');
 
+            // تحديث بيانات المتجر الأساسية
             if (dto.store) {
                 Object.assign(store, {
                     name: dto.store.name ?? store.name,
@@ -250,16 +252,38 @@ export class StoreService {
                     currency: dto.store.currency ?? store.currency,
                     language: dto.store.language ?? store.language,
                 });
-                store.niche = { id: dto.store.nicheId } as any;
+                if (dto.store.nicheId) {
+                    store.niche = { id: dto.store.nicheId } as any;
+                }
             }
 
-            if (dto.design && store.design) { Object.assign(store.design, dto.design); await queryRunner.manager.save(StoreDesign, store.design); }
-            if (dto.topBar && store.topBar) { Object.assign(store.topBar, dto.topBar); await queryRunner.manager.save(StoreTopBar, store.topBar); }
-            if (dto.contact && store.contact) { Object.assign(store.contact, dto.contact); await queryRunner.manager.save(StoreContact, store.contact); }
-            if (dto.hero && store.hero) { Object.assign(store.hero, dto.hero); await queryRunner.manager.save(StoreHeroSection, store.hero); }
+            // دالة مساعدة لتحديث أو إنشاء الكائنات المرتبطة
+            const syncSection = async (sectionKey: string, entityClass: any, data: any) => {
+                if (!data) return;
+
+                if (store[sectionKey]) {
+                    // تحديث الموجود
+                    Object.assign(store[sectionKey], data);
+                    await queryRunner.manager.save(entityClass, store[sectionKey]);
+                } else {
+                    // إنشاء جديد إذا كان null
+                    store[sectionKey] = queryRunner.manager.create(entityClass, {
+                        ...data,
+                        store: { id: store.id } // ربطه بالمتجر
+                    });
+                    await queryRunner.manager.save(entityClass, store[sectionKey]);
+                }
+            };
+
+            // تنفيذ المزامنة لكل الأقسام
+            await syncSection('design', StoreDesign, dto.design);
+            await syncSection('topBar', StoreTopBar, dto.topBar);
+            await syncSection('contact', StoreContact, dto.contact);
+            await syncSection('hero', StoreHeroSection, dto.hero);
 
             await queryRunner.manager.save(Store, store);
             await queryRunner.commitTransaction();
+
             return this.getStore(storeId, userId);
         } catch (error) {
             await queryRunner.rollbackTransaction();

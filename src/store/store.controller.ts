@@ -71,8 +71,9 @@ export class StoreController {
     @Body() dto: UpdateFullStoreDto,
     @GetUser() user: any,
   ) {
+    
     const store = await this.storeService.updateFullStore(storeId, dto, this.getUserId(user));
-    return { success: true, data: store };
+    //return { success: true, data: store };
   }
 
   @Delete(':storeId')

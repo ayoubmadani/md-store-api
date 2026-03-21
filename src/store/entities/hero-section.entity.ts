@@ -16,7 +16,10 @@ export class StoreHeroSection {
   @Column({ nullable: true })
   subtitle?: string;
 
+   @Column()
+  storeId:string
+
   @OneToOne(() => Store, (store) => store.hero, { onDelete: 'CASCADE' })
-  @JoinColumn()
+  @JoinColumn({name: "storeId"})
   store: Store;
 }

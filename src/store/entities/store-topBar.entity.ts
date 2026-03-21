@@ -16,7 +16,10 @@ export class StoreTopBar {
   @Column({ default: '#6366f1' })
   color: string;
 
+  @Column()
+  storeId:string
+
   @OneToOne(() => Store, (store) => store.topBar, { onDelete: 'CASCADE' })
-  @JoinColumn()
+  @JoinColumn({name : "storeId"})
   store: Store;
 }

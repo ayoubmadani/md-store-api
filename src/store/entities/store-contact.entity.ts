@@ -16,7 +16,10 @@ export class StoreContact {
   @Column({ nullable: true })
   wilaya?: string;
 
+   @Column()
+  storeId:string
+
   @OneToOne(() => Store, (store) => store.contact, { onDelete: 'CASCADE' })
-  @JoinColumn()
+  @JoinColumn({name :"storeId"})
   store: Store;
 }
