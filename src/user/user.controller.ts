@@ -20,19 +20,29 @@ export class UserController {
   @UseGuards(AuthGuard)
   update(
     @GetUser() user: any,
-    @Body() dto:any
-  ){
-      const userId = user.id || user.sub;
-      return this.userService.updateUser(dto,userId)
+    @Body() dto: any
+  ) {
+    const userId = user.id || user.sub;
+    return this.userService.updateUser(dto, userId)
   }
 
   @Post('toggle-ntfy')
   @UseGuards(AuthGuard)
   toggleNtfy(
     @GetUser() user: any,
-  ){
-      const userId = user.id || user.sub;
-      return this.userService.toggleNtfy(userId)
+  ) {
+    const userId = user.id || user.sub;
+    return this.userService.toggleNtfy(userId)
+  }
+
+  @Post('init-sub')
+  @UseGuards(AuthGuard)
+  initSub(@GetUser() user: any,) {
+    console.log("successfully");
+    
+    const userId = user.id || user.sub;
+    return this.userService.initSub(userId)
+
   }
 
 }

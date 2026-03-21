@@ -39,19 +39,17 @@ export class OrdersService {
         if (!store) {
             throw new BadRequestException('Store not exist');
         }
-
-        const storeId = store.id;
         const order = this.ordersrepo.create({
             customerId: dto.customerId || uuidv4(),
             customerName: dto.customerName,
             customerPhone: dto.customerPhone,
-            customerWilayaId: dto.customerWilayaId || dto.customerWilaya,
+            customerWilayaId: dto.customerWilayaId || dto.customerWelaya,
             customerCommuneId: dto.customerCommuneId || dto.customerCommune,
             productId: dto.productId,
-            storeId: storeId,
-            priceShip: dto.priceShip || 0,
+            storeId: dto.storeId,
+            priceShip: dto.priceShip || dto.priceLivraison || 0,
             priceLoss: dto.priceLoss || 0,
-            typeShip: dto.typeShip || TypeShipEnum.HOME,
+            typeShip: dto.typeShip || dto.typeLivraison || TypeShipEnum.HOME,
             totalPrice: dto.totalPrice,
             quantity: dto.quantity || 1,
             variantDetailId: dto.variantDetailId,

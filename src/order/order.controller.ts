@@ -23,6 +23,17 @@ export class OrdersController {
         return this.ordersService.create(dto)
     }
 
+    @Post('create')
+    //@UseGuards(ThrottlerGuard) // ضروري جداً لتفعيل القيد على هذه الدالة
+    @Throttle({ default: { limit: 3, ttl: 60000 } })
+    create2(
+        @Body() dto: CreateOrderDto,
+        @Req() req
+    ) {
+        console.log(dto.domain);
+        return this.ordersService.create(dto)
+    }
+
     @Get(':storeId')
     getAllOrdersByStoreId(
         @Param('storeId') storeId: string,

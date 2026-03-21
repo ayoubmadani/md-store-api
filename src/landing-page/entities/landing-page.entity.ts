@@ -1,6 +1,6 @@
 import { Show } from "../../show/entity/show.entity";
 import { Product } from "../../product/entities/product.entity";
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
 import { Order } from "../../order/entities/order.entity";
 
 
@@ -34,4 +34,6 @@ export class LandingPage {
 
     @OneToMany(()=> Order ,orders => orders.lp)
     orders:Order[]
+
+    @CreateDateColumn() createdAt: Date
 }

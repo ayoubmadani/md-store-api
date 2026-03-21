@@ -36,13 +36,27 @@ export class CreateOrderDto {
 
   @ApiProperty({ description: 'نوع التوصيل', enum: TypeShipEnum, default: TypeShipEnum.OFFICE })
   @IsEnum(TypeShipEnum)
-  typeShip: TypeShipEnum = TypeShipEnum.OFFICE;
+  @IsOptional()
+  typeShip?: TypeShipEnum;
+
+  @ApiProperty({ description: 'نوع التوصيل', enum: TypeShipEnum, default: TypeShipEnum.OFFICE })
+  @IsEnum(TypeShipEnum)
+  @IsOptional()
+  typeLivraison?: TypeShipEnum;
 
   @ApiProperty({ description: 'سعر التوصيل' })
   @IsNumber()
   @Min(0)
   @Type(() => Number)
-  priceShip: number;
+  @IsOptional()
+  priceShip?: number;
+
+  @ApiProperty({ description: 'سعر التوصيل' })
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @IsOptional()
+  priceLivraison?: number
 
 
   @ApiProperty({ description: 'سعر التوصيل' })
@@ -78,7 +92,7 @@ export class CreateOrderDto {
   @ApiProperty({ description: 'الولاية' })
   @IsNumber()
   @IsOptional()
-  customerWilaya?: number;
+  customerWelaya?: number;
 
   @ApiProperty({ description: 'البلدية' })
   @IsNumber()
@@ -115,4 +129,8 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   lpId?: string
+
+  @IsOptional()
+  @IsString()
+  storeId?: string
 }

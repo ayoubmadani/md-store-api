@@ -10,6 +10,7 @@ import {
   HttpShippingException,
   TrackingIdNotFoundException,
 } from '../exceptions/shipping-exception.filter';
+import { Order } from '../../order/entities/order.entity';
 
 export abstract class YalidineProviderIntegration implements ShippingProviderContract {
   protected readonly apiId: string;
@@ -96,6 +97,38 @@ export abstract class YalidineProviderIntegration implements ShippingProviderCon
     }
 
     return orderResult;
+  }
+
+  async createOrderFromOrder(order: Order): Promise<Record<string, unknown>> {
+    const isStopdesk = order.typeShip !== 'home';
+
+    const payload: Record<string, unknown> = {
+      order_id: order.id,
+      from_wilaya_name: 'Alger',  // ← wilaya المتجر، يمكن إضافتها لـ StoreShippingSettings لاحقاً
+      firstname: order.customerName,
+      familyname: '',
+      contact_phone: order.customerPhone,
+      address: `${order.customerWilaya.ar_name} ${order.customerCommune.ar_name}`,
+      to_wilaya_name: order.customerWilaya.name,
+      to_commune_name: order.customerCommune.name,
+      product_list: 'Article1',
+      price: Number(order.totalPrice),
+      do_insurance: false,
+      declared_value: Number(order.totalPrice),
+      length: 1,
+      width: 1,
+      height: 1,
+      weight: 1,
+      freeshipping: false,
+      is_stopdesk: isStopdesk,
+      has_exchange: false,
+    };
+
+    if (isStopdesk) {
+      payload.stopdesk_id = ''; // ← يحتاج stopdesk_id حقيقي من إعدادات المتجر
+    }
+
+    return this.createOrder(payload);
   }
 
   async getOrder(trackingId: string): Promise<Record<string, unknown>> {

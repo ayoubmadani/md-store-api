@@ -1,3 +1,5 @@
+import { Order } from '../../order/entities/order.entity';
+
 export interface ProviderMetadata {
   name: string;
   title: string;
@@ -24,6 +26,7 @@ export interface ShippingProviderContract {
   getRates(fromWilayaId?: number, toWilayaId?: number): Promise<ShippingRate[]>;
   getCreateOrderValidationRules(): Record<string, string>;
   createOrder(orderData: Record<string, unknown>): Promise<Record<string, unknown>>;
+  createOrderFromOrder(order: Order): Promise<Record<string, unknown>>;
   getOrder(trackingId: string): Promise<Record<string, unknown>>;
   orderLabel(orderId: string): Promise<LabelResult>;
   metadata(): ProviderMetadata;

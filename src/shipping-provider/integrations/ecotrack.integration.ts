@@ -11,6 +11,7 @@ import {
   HttpShippingException,
   TrackingIdNotFoundException,
 } from '../exceptions/shipping-exception.filter';
+import { Order } from '../../order/entities/order.entity';
 
 export abstract class EcotrackProviderIntegration implements ShippingProviderContract {
   protected readonly token: string;
@@ -105,6 +106,24 @@ export abstract class EcotrackProviderIntegration implements ShippingProviderCon
     }
 
     return json;
+  }
+
+  async createOrderFromOrder(order: Order): Promise<Record<string, unknown>> {
+    const isStopdesk = order.typeShip !== 'home';
+
+    return this.createOrder({
+      reference: order.id,
+      nom_client: order.customerName,
+      telephone: order.customerPhone,
+      adresse: `${order.customerWilaya.ar_name} ${order.customerCommune.ar_name}`,
+      code_wilaya: order.customerWilayaId,
+      commune: order.customerCommune.ar_name,
+      montant: Number(order.totalPrice),
+      type: isStopdesk ? 2 : 1,   // 1=domicile, 2=stopdesk
+      stop_desk: isStopdesk ? '1' : '0',
+      produit: 'Article1',
+      quantite: order.quantity,
+    });
   }
 
   async getOrder(_trackingId: string): Promise<Record<string, unknown>> {

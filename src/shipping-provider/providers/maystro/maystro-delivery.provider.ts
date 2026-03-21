@@ -9,6 +9,7 @@ import {
   HttpShippingException,
   NotImplementedException,
 } from '../../exceptions/shipping-exception.filter';
+import { Order } from '../../../order/entities/order.entity';
 
 const BASE = 'https://backend.maystro-delivery.com/api/';
 
@@ -101,6 +102,22 @@ export class MaystroDeliveryProvider implements ShippingProviderContract {
       throw new HttpShippingException(`MaystroDelivery: failed to create order (${res.status})`);
     }
     return res.json();
+  }
+
+  async createOrderFromOrder(order: Order): Promise<Record<string, unknown>> {
+    return this.createOrder({
+      wilaya: String(order.customerWilayaId),
+      commune: String(order.customerCommuneId),
+      customer_name: order.customerName,
+      customer_phone: order.customerPhone,
+      destination_text: `${order.customerWilaya.ar_name} ${order.customerCommune.ar_name}`,
+      product_price: String(Math.round(Number(order.totalPrice))),
+      delivery_type: order.typeShip === 'home' ? '0' : '1',
+      note_to_driver: '',
+      products: JSON.stringify([{ description: 'Article1', quantity: order.quantity }]),
+      source: '4',
+      external_order_id: order.id,
+    });
   }
 
   async getOrder(orderId: string): Promise<Record<string, unknown>> {

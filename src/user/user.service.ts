@@ -9,12 +9,22 @@ import { ConfigService } from '@nestjs/config';
 import { MailService } from '../mail/mail.service';
 import { ResetNewPassword } from './dto/reset-new-password.dto';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { Store } from 'src/store/entities/store.entity';
+import { Product } from 'src/product/entities/product.entity';
+import { Subscription } from 'src/subscription/entities/subscription.entity';
+import { StorePixel } from 'src/store/entities/store-pixel.entity';
+import { LandingPage } from 'src/landing-page/entities/landing-page.entity';
 
 @Injectable()
 export class UserService {
   constructor(
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(Store) private readonly storeRepo: Repository<Store>,
+    @InjectRepository(Product) private readonly productRepo: Repository<Product>,
+    @InjectRepository(Subscription) private readonly subRepo: Repository<Subscription>,
+    @InjectRepository(StorePixel) private readonly pixelRepo: Repository<StorePixel>,
+    @InjectRepository(LandingPage) private readonly lpRepo: Repository<LandingPage>,
+
     private readonly config: ConfigService,
     private readonly mailService: MailService,
     private readonly subscriptionService: SubscriptionService,
@@ -158,15 +168,15 @@ export class UserService {
     throw new BadRequestException('Action not allowed for this account provider');
   }
 
-  private async getIsNotfy(userId: string){
+  private async getIsNotfy(userId: string) {
     const sub = await this.subscriptionService.findSub(userId);
     if (sub?.plan?.features?.isNtfy === false) {
-        throw new BadRequestException('خطة اشتراكك الحالية لا تدعم ميزة التنبيهات.');
+      throw new BadRequestException('خطة اشتراكك الحالية لا تدعم ميزة التنبيهات.');
     }
   }
 
-  async toggleNtfy(userId){
-    let user = await this.userRepo.findOne({where :{id: userId}})
+  async toggleNtfy(userId) {
+    let user = await this.userRepo.findOne({ where: { id: userId } })
     await this.getIsNotfy(userId);
     const apdateUser = await this.userRepo.update(userId, {
       isNtfy: !user?.isNtfy
@@ -181,7 +191,7 @@ export class UserService {
     }
 
     console.log(dto.isNtfy);
-    
+
 
     if (dto.isNtfy === true) {
       await this.getIsNotfy(id);
@@ -193,5 +203,86 @@ export class UserService {
 
     return this.findUserById(id); // إرجاع المستخدم المحدث
   }
+
+  async initSub(userId: string) {
+  const sub = await this.subRepo.findOne({
+    where: { userId },
+    relations: ['plan', 'plan.features']
+  });
+
+  if (!sub || !sub.plan.features) return;
+
+  const f = sub.plan.features;
+
+  // ✅ count بـ createQueryBuilder لتجنب FK type errors
+  const storeCount = await this.storeRepo.createQueryBuilder("s")
+    .where('s."userId" = :userId', { userId })
+    .getCount();
+
+  const productCount = await this.productRepo.createQueryBuilder("p")
+    .where('p."storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+    .getCount();
+
+  const pixelfbCount = await this.pixelRepo.createQueryBuilder("px")
+    .where('px.type = :type', { type: 'facebook' })
+    .andWhere('px."storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+    .getCount();
+
+  const pixeltikCount = await this.pixelRepo.createQueryBuilder("px")
+    .where('px.type = :type', { type: 'tiktok' })
+    .andWhere('px."storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+    .getCount();
+
+  const lpCount = await this.lpRepo.createQueryBuilder("lp")
+    .where('lp."productId" IN (SELECT p.id FROM products p INNER JOIN stores s ON p."storeId" = s.id WHERE s."userId" = :userId)', { userId })
+    .getCount();
+
+  // المتاجر
+  if (storeCount > f.storeNumber) {
+    await this.storeRepo.createQueryBuilder()
+      .update()
+      .set({ isActive: false })
+      .where('"userId" = :userId', { userId })
+      .execute();
+  }
+
+  // المنتجات
+  if (productCount > f.productNumber) {
+    await this.productRepo.createQueryBuilder()
+      .update()
+      .set({ isActive: false })
+      .where('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+      .execute();
+  }
+
+  // بيكسل فيسبوك
+  if (pixelfbCount > f.pixelFacebookNumber) {
+    await this.pixelRepo.createQueryBuilder()
+      .update()
+      .set({ isActive: false })
+      .where('type = :type', { type: 'facebook' })
+      .andWhere('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+      .execute();
+  }
+
+  // بيكسل تيك توك
+  if (pixeltikCount > f.pixelTiktokNumber) {
+    await this.pixelRepo.createQueryBuilder()
+      .update()
+      .set({ isActive: false })
+      .where('type = :type', { type: 'tiktok' })
+      .andWhere('"storeId" IN (SELECT id FROM stores WHERE "userId" = :userId)', { userId })
+      .execute();
+  }
+
+  // صفحات الهبوط
+  if (lpCount > f.landingPageNumber) {
+    await this.lpRepo.createQueryBuilder()
+      .update()
+      .set({ isActive: false })
+      .where('"productId" IN (SELECT p.id FROM products p INNER JOIN stores s ON p."storeId" = s.id WHERE s."userId" = :userId)', { userId })
+      .execute();
+  }
+}
 
 }

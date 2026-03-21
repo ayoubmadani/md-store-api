@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -6,20 +6,19 @@ import { StoreShippingSettings } from './entities/store-shipping-settings.entity
 import { createProvider, getAllProvidersMetadata } from './providers/provider.registry';
 import { ShippingProviderContract } from './interfaces/shipping-provider.interface';
 import { SetShippingProviderDto } from './dto/shipping.dto';
+import { Order } from '../order/entities/order.entity';
 
 @Injectable()
 export class ShippingProviderService {
   constructor(
     @InjectRepository(StoreShippingSettings)
     private readonly settingsRepo: Repository<StoreShippingSettings>,
+
+    @InjectRepository(Order) private readonly orderRepo: Repository<Order>
   ) {}
 
   // ─── Provider Registry ────────────────────────────────────────────────────
 
-  /**
-   * Returns metadata of all 26 available providers.
-   * Used to populate the provider selector in the dashboard.
-   */
   getAllProviders() {
     return getAllProvidersMetadata();
   }
@@ -30,39 +29,23 @@ export class ShippingProviderService {
     return this.settingsRepo.findOne({ where: { storeId } });
   }
 
-  /**
-   * Save or update the shipping provider & credentials for a store.
-   * Verifies credentials before saving.
-   */
   async setStoreProvider(storeId: string, dto: SetShippingProviderDto): Promise<{ isVerified: boolean }> {
-    // Validate provider exists by attempting instantiation
     const provider = createProvider(dto.providerName, dto.credentials);
-
-    // Test credentials
     const isVerified = await provider.testCredentials();
 
-    // Upsert settings
     let settings = await this.settingsRepo.findOne({ where: { storeId } });
-
-    if (!settings) {
-      settings = this.settingsRepo.create({ storeId });
-    }
+    if (!settings) settings = this.settingsRepo.create({ storeId });
 
     settings.providerName = dto.providerName;
     settings.setCredentials(dto.credentials);
     settings.isVerified = isVerified;
 
     await this.settingsRepo.save(settings);
-
     return { isVerified };
   }
 
   // ─── Provider Factory ─────────────────────────────────────────────────────
 
-  /**
-   * Loads the provider instance for a given store.
-   * Throws if no provider is configured.
-   */
   private async getProviderForStore(storeId: string): Promise<ShippingProviderContract> {
     const settings = await this.getStoreSettings(storeId);
 
@@ -94,7 +77,15 @@ export class ShippingProviderService {
 
   async createOrder(storeId: string, orderData: Record<string, unknown>) {
     const provider = await this.getProviderForStore(storeId);
-    return provider.createOrder(orderData);
+
+    const order = await this.orderRepo.findOne({
+      where: { id: orderData.id as string },
+      relations: ['customerWilaya', 'customerCommune'],
+    });
+
+    if (!order) throw new BadGatewayException('Order not found');
+
+    return provider.createOrderFromOrder(order);
   }
 
   async getOrder(storeId: string, trackingId: string) {

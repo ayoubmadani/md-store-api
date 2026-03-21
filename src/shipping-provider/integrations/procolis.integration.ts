@@ -11,6 +11,7 @@ import {
   HttpShippingException,
   TrackingIdNotFoundException,
 } from '../exceptions/shipping-exception.filter';
+import { Order } from '../../order/entities/order.entity';
 
 const PROCOLIS_BASE = 'https://procolis.com/api_v1';
 
@@ -84,24 +85,62 @@ export abstract class ProcolisProviderIntegration implements ShippingProviderCon
   }
 
   async createOrder(orderData: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const body = { Colis: [orderData] };
+
+    // 👇 مؤقتاً
+    console.log('[Procolis] token:', this.token);
+    console.log('[Procolis] key:', this.key);
+    console.log('[Procolis] payload:', JSON.stringify(body, null, 2));
+
     const res = await fetch(`${PROCOLIS_BASE}/add_colis`, {
       method: 'POST',
       headers: this.authHeaders,
-      body: JSON.stringify({ Colis: [orderData] }),
+      body: JSON.stringify(body),
     });
 
     const json = await res.json();
-    const colis = json.Colis?.[0];
+    console.log('[Procolis] response:', JSON.stringify(json));
+
+    if (json.Retour !== undefined) {
+      throw new CreateOrderException(`Provider rejected request: ${json.Retour}`);
+    }
+
+    if (!json.Colis || json.Colis.length === 0) {
+      throw new CreateOrderException(`Empty Colis response: ${JSON.stringify(json)}`);
+    }
+
+    const colis = json.Colis[0];
     const message = colis?.MessageRetour;
 
     if (message === 'Double Tracking') {
       throw new CreateOrderException('Duplicate Tracking ID');
     }
+
     if (message !== 'Good') {
-      throw new CreateOrderException(message ?? `HTTP ${res.status}`);
+      throw new CreateOrderException(message ?? `Unexpected response: ${JSON.stringify(colis)}`);
     }
 
     return colis;
+  }
+
+  async createOrderFromOrder(order: Order): Promise<Record<string, unknown>> {
+    return this.createOrder({
+      Tracking: '',
+      TypeLivraison: order.typeShip === 'home' ? '0' : '1',
+      TypeColis: '0',
+      Confrimee: '0',
+      Client: order.customerName,
+      MobileA: order.customerPhone,
+      MobileB: '',
+      Adresse: `${order.customerWilaya.ar_name} ${order.customerCommune.ar_name}`,
+      IDWilaya: String(order.customerWilayaId),
+      Commune: order.customerCommune.ar_name,
+      Total: order.totalPrice,
+      Note: '',
+      TProduit: 'Article1',
+      id_Externe: order.id,
+      Source: '',
+    });
   }
 
   async getOrder(trackingId: string): Promise<Record<string, unknown>> {
