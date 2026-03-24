@@ -24,7 +24,7 @@ export class ThemeController {
     @Query('isAdmin') isAdmin?: string,
     @Query('type') type?: any, // استخدم النوع المناسب للـ Enum الخاص بك
     @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
+    @Query('limit') limit: number = 100,
   ) {
     // تمرير القيم للسيرفس مع التأكد من تحويل الأرقام
     return this.themeService.findAll(query, type, Number(page), Number(limit) , Boolean(isAdmin));
