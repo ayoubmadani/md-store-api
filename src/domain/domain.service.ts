@@ -19,32 +19,70 @@ export class DomainService {
   ) { }
 
   async create(dto: CreateDomainDto) {
-    // 1. التحقق من وجود المتجر أولاً
     const store = await this.storeRepo.findOne({ where: { id: dto.storeId } });
-    if (!store) {
-      throw new NotFoundException(`المتجر رقم ${dto.storeId} غير موجود`);
-    }
+    if (!store) throw new NotFoundException(`المتجر رقم ${dto.storeId} غير موجود`);
 
-    // 2. التحقق من عدم تكرار الدومين
     const existing = await this.domainRepo.findOne({ where: { domain: dto.domain } });
-    if (existing) {
-      throw new BadRequestException('هذا الدومين مسجل مسبقاً في النظام');
-    }
+    if (existing) throw new BadRequestException('هذا الدومين مسجل مسبقاً في النظام');
 
-    // 3. طلب تفعيل SSL من Cloudflare أولاً (أو العكس حسب منطق العمل)
-    // نفضل الطلب الخارجي أولاً أو وضعه داخل Transaction
     const cfData = await this.registerWithCloudflare(dto.domain);
 
-    // 4. حفظ في قاعدة البيانات
     const newDomain = this.domainRepo.create({
       domain: dto.domain,
       storeId: dto.storeId,
-      isActive: dto.isActive || false,
-      cloudflareId: cfData.result.id, // نصيحة: احفظ معرف Cloudflare للعمليات المستقبلية
+      isActive: false,
+      cloudflareId: cfData.result?.id || null, 
     });
 
     return await this.domainRepo.save(newDomain);
   }
+
+  // --- دالة جديدة: جلب تعليمات الربط للمستخدم ليريها في الـ Frontend ---
+  async getConnectionInstructions(id: string) {
+    const domainRecord = await this.domainRepo.findOne({ where: { id } });
+    if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
+
+    const cfStatus = await this.getStatusFromCloudflare(domainRecord.domain);
+
+    return {
+      domain: domainRecord.domain,
+      status: cfStatus.status,
+      sslStatus: cfStatus.sslStatus,
+      // البيانات التي يجب على العميل إدخالها في Namecheap
+      instructions: [
+        {
+          type: 'CNAME',
+          host: '@',
+          value: this.configService.get('MAIN_DOMAIN_PROXY', 'ironium.mdstore.top'),
+          note: 'قم بتوجيه الدومين الرئيسي إلى سيرفرنا'
+        },
+        {
+          type: 'TXT',
+          host: cfStatus.ownershipVerification?.name || '_cf-custom-hostname',
+          value: cfStatus.ownershipVerification?.value || 'جاري المعالجة...',
+          note: 'أضف هذا السجل لتسريع عملية التحقق وتفعيل SSL'
+        }
+      ]
+    };
+  }
+
+  // --- دالة جديدة: مزامنة الحالة وتحديث قاعدة البيانات ---
+  async syncDomainStatus(id: string) {
+    const domainRecord = await this.domainRepo.findOne({ where: { id } });
+    if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
+
+    const cfStatus = await this.getStatusFromCloudflare(domainRecord.domain);
+
+    // إذا أصبح الدومين Active و الـ SSL أيضاً Active
+    if (cfStatus.status === 'active' && cfStatus.sslStatus === 'active') {
+      await this.domainRepo.update(id, { isActive: true });
+      return { isActive: true, ...cfStatus };
+    }
+
+    return { isActive: false, ...cfStatus };
+  }
+
+  // --- الدوال المساعدة ---
 
   private async registerWithCloudflare(hostname: string) {
     const zoneId = this.configService.get<string>('CLOUDFLARE_ZONE_ID');
@@ -55,30 +93,15 @@ export class DomainService {
         `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames`,
         {
           hostname: hostname,
-          ssl: {
-            method: 'http',
-            type: 'dv',
-            settings: { min_tls_version: '1.2' },
-          },
+          ssl: { method: 'http', type: 'dv', settings: { min_tls_version: '1.2' } },
         },
-        {
-          headers: {
-            Authorization: `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
+        { headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' } },
       );
-
       return response.data;
     } catch (error) {
-      this.logger.error(`Cloudflare API Error: ${error.response?.data?.errors?.[0]?.message || error.message}`);
-
-      // إذا كان الدومين موجوداً بالفعل في Cloudflare، لا نريد تعطيل العملية
-      if (error.response?.data?.errors?.[0]?.code === 1406) {
-        return { result: { id: 'already_exists' } };
-      }
-
-      throw new InternalServerErrorException('فشل الاتصال بمزود الخدمة السحابي لتأمين الدومين');
+      if (error.response?.data?.errors?.[0]?.code === 1406) return { result: { id: 'already_exists' } };
+      this.logger.error(`Cloudflare API Error: ${error.message}`);
+      throw new InternalServerErrorException('فشل الاتصال بمزود الخدمة السحابي');
     }
   }
 
@@ -89,77 +112,52 @@ export class DomainService {
     try {
       const { data } = await axios.get(
         `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames?hostname=${hostname}`,
-        {
-          headers: { Authorization: `Bearer ${apiToken}` },
-        },
+        { headers: { Authorization: `Bearer ${apiToken}` } },
       );
 
       if (data.result && data.result.length > 0) {
-        const result = data.result[0];
+        const res = data.result[0];
         return {
-          status: result.status,
-          sslStatus: result.ssl.status,
-          validationMethod: result.ssl.method,
-          // إرجاع سجلات الـ CNAME المطلوبة للتحقق إذا كانت الحالة pending
-          ownershipVerification: result.ownership_verification,
-          sslValidationRecords: result.ssl.validation_records
+          status: res.status, // 'active' or 'pending'
+          sslStatus: res.ssl?.status,
+          ownershipVerification: res.ownership_verification, // سجل الـ TXT المطلوب
+          sslValidationRecords: res.ssl?.validation_records // سجلات الـ DNS الأخرى إن وجدت
         };
       }
       throw new NotFoundException('الدومين غير موجود في Cloudflare');
     } catch (error) {
-      this.logger.error(`Fetch Status Error: ${error.message}`);
-      throw new InternalServerErrorException('تعذر جلب بيانات الحالة حالياً');
+      this.logger.error(`Status Fetch Error: ${error.message}`);
+      throw new InternalServerErrorException('فشل جلب حالة الدومين');
     }
+  }
+
+  async remove(id: string) {
+    const domainRecord = await this.domainRepo.findOne({ where: { id } });
+    if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
+    await this.deleteFromCloudflare(domainRecord.domain);
+    return await this.domainRepo.remove(domainRecord);
   }
 
   async findAllWithStore(storeId: string) {
     return await this.domainRepo.find({ where: { storeId } });
   }
 
-  async remove(id: string) {
-    // 1. البحث عن الدومين في قاعدة البيانات
-    const domainRecord = await this.domainRepo.findOne({ where: { id } });
-    if (!domainRecord) {
-      throw new NotFoundException('الدومين غير موجود في قاعدة البيانات');
-    }
-
-    // 2. حذف الدومين من Cloudflare أولاً
-    await this.deleteFromCloudflare(domainRecord.domain);
-
-    // 3. الحذف من قاعدة البيانات بعد التأكد من نجاح الخطوة السابقة (أو تجاوزها حسب منطقك)
-    return await this.domainRepo.remove(domainRecord);
-  }
-
   private async deleteFromCloudflare(hostname: string) {
     const zoneId = this.configService.get<string>('CLOUDFLARE_ZONE_ID');
     const apiToken = this.configService.get<string>('CLOUDFLARE_API_TOKEN');
-
     try {
-      // أ- نحتاج أولاً لمعرف الـ Custom Hostname (ID) المرتبط بهذا النطاق
-      const { data: searchData } = await axios.get(
+      const { data } = await axios.get(
         `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames?hostname=${hostname}`,
         { headers: { Authorization: `Bearer ${apiToken}` } },
       );
-
-      const cfHostnameId = searchData.result?.[0]?.id;
-
-      if (!cfHostnameId) {
-        this.logger.warn(`الدومين ${hostname} غير موجود في Cloudflare، سيتم حذفه من القاعدة فقط.`);
-        return;
+      const cfId = data.result?.[0]?.id;
+      if (cfId) {
+        await axios.delete(`https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames/${cfId}`, {
+          headers: { Authorization: `Bearer ${apiToken}` },
+        });
       }
-
-      // ب- إرسال طلب الحذف الفعلي
-      await axios.delete(
-        `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames/${cfHostnameId}`,
-        { headers: { Authorization: `Bearer ${apiToken}` } },
-      );
-
-      this.logger.log(`تم حذف الدومين ${hostname} بنجاح من Cloudflare.`);
     } catch (error) {
-      this.logger.error(`فشل حذف الدومين من Cloudflare: ${error.message}`);
-      // قرر هنا: هل تريد إيقاف الحذف من قاعدة بياناتك إذا فشل Cloudflare؟
-      // عادةً نكتفي بتسجيل الخطأ (Log) ونستمر في الحذف محلياً لتجنب تعليق الطلب.
-      throw new InternalServerErrorException('حدث خطأ أثناء محاولة إزالة الدومين من المزود الخارجي');
+      this.logger.error(`Cloudflare Delete Error: ${error.message}`);
     }
   }
 }

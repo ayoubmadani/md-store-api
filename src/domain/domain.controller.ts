@@ -1,7 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, UseGuards, Patch } from '@nestjs/common';
 import { DomainService } from './domain.service';
 import { CreateDomainDto } from './dto/create-domain.dto';
-import { UpdateDomainDto } from './dto/update-domain.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
 
 @Controller('domain')
@@ -9,44 +8,39 @@ import { AuthGuard } from '../auth/guard/auth.guard';
 export class DomainController {
   constructor(private readonly domainService: DomainService) {}
 
+  // 1. إنشاء دومين جديد (يربطه بالمتجر ويطلبه من Cloudflare)
   @Post()
   create(@Body() createDomainDto: CreateDomainDto) {
     return this.domainService.create(createDomainDto);
   }
 
+  // 2. جلب جميع الدومينات الخاصة بمتجر معين
   @Get('store/:storeId')
-  sindAllWithStore(@Param('storeId') storeId : string){
-    return this.domainService.findAllWithStore(storeId)
+  findAllWithStore(@Param('storeId') storeId: string) {
+    return this.domainService.findAllWithStore(storeId);
   }
 
-  @Get('status/:hostname')
-  getStatusFromCloudflare(@Param('hostname') hostname : string){
-    return this.domainService.getStatusFromCloudflare(hostname)
+  // 3. جلب تعليمات الربط (CNAME و TXT) لكي يراها العميل في لوحة التحكم
+  @Get('setup-instructions/:id')
+  getConnectionInstructions(@Param('id') id: string) {
+    return this.domainService.getConnectionInstructions(id);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id : string){
-    return this.domainService.remove(id)
+  // 4. زر "تحديث الحالة" - يفحص Cloudflare ويحدث isActive في قاعدة البيانات
+  @Patch('sync/:id')
+  syncStatus(@Param('id') id: string) {
+    return this.domainService.syncDomainStatus(id);
   }
 
-
-  /*@Get()
-  findAll() {
-    return this.domainService.findAll();
+  // 5. فحص الحالة مباشرة من Cloudflare (للمسؤولين أو للتأكد التقني)
+  @Get('cloudflare-status/:hostname')
+  getStatusFromCloudflare(@Param('hostname') hostname: string) {
+    return this.domainService.getStatusFromCloudflare(hostname);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.domainService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateDomainDto: UpdateDomainDto) {
-    return this.domainService.update(+id, updateDomainDto);
-  }
-
+  // 6. حذف الدومين من قاعدة البيانات ومن Cloudflare
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.domainService.remove(+id);
-  }*/
+    return this.domainService.remove(id);
+  }
 }
