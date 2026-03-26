@@ -465,24 +465,37 @@ export class ProductService {
   // ══════════════════════════════════════════════════════════════════════════
 
   async findAllByDomain(
-    subdomain: string, page = 1, limit = 20, categoryId?: string, search?: string,
-  ): Promise<{ products: Product[]; total: number; page: number; totalPages: number }> {
+    domainName: string, // غيرنا الاسم ليكون أوضح
+    page = 1, 
+    limit = 20, 
+    categoryId?: string, 
+    search?: string,
+  ) {
+    // تنظيف الدومين من www. لضمان المطابقة
+    const cleanDomain = domainName.replace(/^www\./, '');
+
     const qb = this.productRepository
       .createQueryBuilder('product')
       .innerJoin('product.store', 'store')
+      // إضافة Join لجدول الدومينات لنتحقق من الدومين الخارجي أيضاً
+      .leftJoin('store.domains', 'storeDomain') 
       .leftJoinAndSelect('product.category', 'category')
       .leftJoinAndSelect('product.imagesProduct', 'images')
       .leftJoinAndSelect('product.attributes', 'attributes')
       .leftJoinAndSelect('attributes.variants', 'variants')
-      .where('store.subdomain = :subdomain', { subdomain })
+      // هنا التعديل الجوهري: ابحث في السبدومين "أو" في الدومين الخارجي
+      .where('(store.subdomain = :identifier OR storeDomain.domain = :identifier)', { identifier: cleanDomain })
       .andWhere('product.isActive = :isActive', { isActive: true })
       .andWhere('product.deletedAt IS NULL');
 
+    // ... بقية الكود (categoryId, search, pagination) كما هي
+    
     if (categoryId) qb.andWhere('product.categoryId = :categoryId', { categoryId });
     if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
 
     qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
     const [products, total] = await qb.getManyAndCount();
+    
     return { products, total, page, totalPages: Math.ceil(total / limit) };
   }
 
