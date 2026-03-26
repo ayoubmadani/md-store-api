@@ -106,18 +106,21 @@ export class DomainService {
   }
 
   // 6. ربط الدومين بـ Vercel (Private - تستخدم داخلياً فقط)
+  // 6. ربط الدومين بـ Vercel
   private async registerWithVercel(domain: string) {
     const projectId = this.configService.get('VERCEL_PROJECT_ID');
     const token = this.configService.get('VERCEL_AUTH_TOKEN');
 
     try {
+      // التغيير هنا: أضفنا ?teamId إذا كنت في فريق، والأهم ?projectId في نهاية الرابط
       await axios.post(
-        `${this.VERCEL_API_URL}/${projectId}/domains`,
+        `https://api.vercel.com/v9/projects/${projectId}/domains?projectId=${projectId}`,
         { name: domain },
         { headers: { Authorization: `Bearer ${token}` } }
       );
     } catch (error) {
       if (error.response?.data?.error?.code === 'domain_already_in_use') return;
+      this.logger.error(`Vercel Registration Error: ${JSON.stringify(error.response?.data)}`); // أضف هذا السطر لترى الخطأ الحقيقي
       throw new InternalServerErrorException('فشل ربط الدومين بـ Vercel');
     }
   }
@@ -129,7 +132,7 @@ export class DomainService {
 
     const projectId = this.configService.get('VERCEL_PROJECT_ID');
     const token = this.configService.get('VERCEL_AUTH_TOKEN');
-    
+
     try {
       await axios.delete(`${this.VERCEL_API_URL}/${projectId}/domains/${domainRecord.domain}`, {
         headers: { Authorization: `Bearer ${token}` }
