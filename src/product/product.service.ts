@@ -466,9 +466,9 @@ export class ProductService {
 
   async findAllByDomain(
     domainName: string, // غيرنا الاسم ليكون أوضح
-    page = 1, 
-    limit = 20, 
-    categoryId?: string, 
+    page = 1,
+    limit = 20,
+    categoryId?: string,
     search?: string,
   ) {
     // تنظيف الدومين من www. لضمان المطابقة
@@ -478,7 +478,7 @@ export class ProductService {
       .createQueryBuilder('product')
       .innerJoin('product.store', 'store')
       // إضافة Join لجدول الدومينات لنتحقق من الدومين الخارجي أيضاً
-      .leftJoin('store.domains', 'storeDomain') 
+      .leftJoin('store.domains', 'storeDomain')
       .leftJoinAndSelect('product.category', 'category')
       .leftJoinAndSelect('product.imagesProduct', 'images')
       .leftJoinAndSelect('product.attributes', 'attributes')
@@ -489,24 +489,33 @@ export class ProductService {
       .andWhere('product.deletedAt IS NULL');
 
     // ... بقية الكود (categoryId, search, pagination) كما هي
-    
+
     if (categoryId) qb.andWhere('product.categoryId = :categoryId', { categoryId });
     if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
 
     qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
     const [products, total] = await qb.getManyAndCount();
-    
+
     return { products, total, page, totalPages: Math.ceil(total / limit) };
   }
 
-  async findOneByDomain(subdomain: string, productId: string): Promise<any> {
+  async findOneByDomain(domainName: string, productId: string): Promise<any> {
+    // 1. تنظيف الدومين من www.
+    const cleanDomain = domainName.replace(/^www\./, '');
+
     const product = await this.productRepository.findOne({
       where: [
-        { id: productId, isActive: true, store: { subdomain } },
-        { slug: productId, isActive: true, store: { subdomain } },
+        // البحث بالـ ID والتحقق من السبدومين "أو" الدومين الخارجي
+        { id: productId, isActive: true, store: { subdomain: cleanDomain } },
+        { id: productId, isActive: true, store: { domains: { domain: cleanDomain } } },
+
+        // البحث بالـ Slug والتحقق من السبدومين "أو" الدومين الخارجي
+        { slug: productId, isActive: true, store: { subdomain: cleanDomain } },
+        { slug: productId, isActive: true, store: { domains: { domain: cleanDomain } } },
       ],
       relations: [
         'store', 'store.themeUser', 'store.themeUser.theme', 'store.user',
+        'store.domains', // مهم جداً إضافة هذه العلاقة ليتمكن TypeORM من البحث فيها
         'category', 'imagesProduct', 'attributes', 'attributes.variants',
         'variantDetails', 'offers',
       ],
