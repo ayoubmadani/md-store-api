@@ -144,8 +144,8 @@ export class DomainService {
 
   // 5. جلب حالة الدومين - تحديث الرابط ليكون صريحاً جداً
   public async getVercelDomainStatus(domain: string) {
-    const projectId = this.configService.get('VERCEL_PROJECT_ID');
-    const token = this.configService.get('VERCEL_AUTH_TOKEN');
+    const projectId = this.configService.get('TARGET_STORE_ID');
+    const token = this.configService.get('MY_SECRET_TOKEN');
 
     try {
       const { data } = await axios.get(
@@ -183,8 +183,8 @@ private async registerWithVercel(domain: string) {
     const domainRecord = await this.domainRepo.findOne({ where: { id } });
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
 
-    const projectId = this.configService.get('VERCEL_PROJECT_ID');
-    const token = this.configService.get('VERCEL_AUTH_TOKEN');
+    const projectId = this.configService.get('TARGET_STORE_ID');
+    const token = this.configService.get('MY_SECRET_TOKEN');
 
     try {
       await axios.delete(
