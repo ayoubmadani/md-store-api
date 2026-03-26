@@ -12,6 +12,7 @@ import { Store } from '../store/entities/store.entity';
 @Injectable()
 export class DomainService {
   private readonly logger = new Logger(DomainService.name);
+  private readonly VERCEL_API_URL = 'https://api.vercel.com/v9/projects';
 
   constructor(
     @InjectRepository(Domain) private readonly domainRepo: Repository<Domain>,
@@ -19,175 +20,128 @@ export class DomainService {
     private readonly configService: ConfigService,
   ) { }
 
-  // --- إنشاء دومين جديد وربطه بـ Cloudflare ---
+  // 1. إضافة دومين جديد
   async create(dto: CreateDomainDto) {
     const store = await this.storeRepo.findOne({ where: { id: dto.storeId } });
-    if (!store) throw new NotFoundException(`المتجر رقم ${dto.storeId} غير موجود`);
+    if (!store) throw new NotFoundException(`المتجر غير موجود`);
 
     const existing = await this.domainRepo.findOne({ where: { domain: dto.domain } });
-    if (existing) throw new BadRequestException('هذا الدومين مسجل مسبقاً في النظام');
+    if (existing) throw new BadRequestException('هذا الدومين مسجل مسبقاً');
 
-    const cfData = await this.registerWithCloudflare(dto.domain);
+    await this.registerWithVercel(dto.domain);
 
     const newDomain = this.domainRepo.create({
       domain: dto.domain,
       storeId: dto.storeId,
       isActive: false,
-      cloudflareId: cfData.result?.id || null, 
     });
 
     return await this.domainRepo.save(newDomain);
   }
 
-  // --- الفحص الدوري: يعمل كل ساعة لتفعيل الدومينات التي جهزها العملاء ---
+  // 2. الفحص الدوري (تفعيل آلي)
   @Cron(CronExpression.EVERY_HOUR)
   async handleCron() {
-    this.logger.log('بدء عملية الفحص الدوري للدومينات المعلقة...');
-
+    this.logger.log('بدء فحص حالة الدومينات على Vercel...');
     const pendingDomains = await this.domainRepo.find({ where: { isActive: false } });
-
-    if (pendingDomains.length === 0) {
-      this.logger.log('لا توجد دومينات معلقة حالياً.');
-      return;
-    }
 
     for (const domain of pendingDomains) {
       try {
-        // نستخدم المزامنة لتحديث الحالة تلقائياً في قاعدة البيانات
-        await this.syncDomainStatus(domain.id);
+        const status = await this.getVercelDomainStatus(domain.domain);
+        if (status.verified && !status.misconfigured) {
+          await this.domainRepo.update(domain.id, { isActive: true });
+          this.logger.log(`تم تفعيل المتجر بنجاح: ${domain.domain}`);
+        }
       } catch (error) {
-        this.logger.error(`فشل فحص الدومين ${domain.domain}: ${error.message}`);
+        this.logger.error(`خطأ في فحص ${domain.domain}: ${error.message}`);
       }
     }
-    this.logger.log('انتهت عملية الفحص الدوري بنجاح.');
   }
 
-  // --- جلب تعليمات الربط (لإظهارها في الـ Frontend) ---
-  async getConnectionInstructions(id: string) {
-    const domainRecord = await this.domainRepo.findOne({ 
-        where: { id }, 
-        relations: ['store'] 
-    });
-    
-    if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
-    
-    const cfStatus = await this.getStatusFromCloudflare(domainRecord.domain);
-
-    // القيمة التي يوجه العميل الدومين إليها (Target)
-    const cnameTarget = `${domainRecord.store.subdomain}.mdstore.top`;
-
-    return {
-      domain: domainRecord.domain,
-      status: cfStatus.status,
-      sslStatus: cfStatus.sslStatus,
-      instructions: [
-        {
-          type: 'CNAME',
-          host: '@',
-          value: cnameTarget,
-          note: 'قم بتوجيه الدومين الرئيسي لهذا العنوان'
-        },
-        {
-          type: 'TXT',
-          host: cfStatus.ownershipVerification?.name || '_cf-custom-hostname',
-          value: cfStatus.ownershipVerification?.value || 'جاري التحميل...',
-          note: 'أضف هذا السجل لتفعيل شهادة الأمان SSL'
-        }
-      ]
-    };
-  }
-
-  // --- تحديث حالة الدومين بناءً على بيانات Cloudflare الفورية ---
+  // 3. تحديث يدوي للحالة (يستدعيه الـ Controller)
   async syncDomainStatus(id: string) {
     const domainRecord = await this.domainRepo.findOne({ where: { id } });
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
 
-    const cfStatus = await this.getStatusFromCloudflare(domainRecord.domain);
+    const status = await this.getVercelDomainStatus(domainRecord.domain);
 
-    // التفعيل فقط إذا كان الدومين والـ SSL كلاهما جاهزين
-    if (cfStatus.status === 'active' && cfStatus.sslStatus === 'active') {
+    if (status.verified && !status.misconfigured) {
       await this.domainRepo.update(id, { isActive: true });
-      this.logger.log(`تم تفعيل الدومين بنجاح: ${domainRecord.domain}`);
-      return { isActive: true, ...cfStatus };
+      return { isActive: true, ...status };
     }
 
-    return { isActive: false, ...cfStatus };
+    return { isActive: false, ...status };
   }
 
-  // --- التعامل مع Cloudflare API ---
-
-  private async registerWithCloudflare(hostname: string) {
-    const zoneId = this.configService.get('CLOUDFLARE_ZONE_ID');
-    const apiToken = this.configService.get('CLOUDFLARE_API_TOKEN');
-
-    try {
-      const response = await axios.post(
-        `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames`,
-        {
-          hostname,
-          ssl: { method: 'http', type: 'dv', settings: { min_tls_version: '1.2' } },
-        },
-        { headers: { Authorization: `Bearer ${apiToken}` } },
-      );
-      return response.data;
-    } catch (error) {
-      if (error.response?.data?.errors?.[0]?.code === 1406) return { result: { id: 'already_exists' } };
-      throw new InternalServerErrorException('خطأ في الاتصال بـ Cloudflare');
-    }
+  // 4. تعليمات الربط
+  async getConnectionInstructions(domain: string) {
+    return {
+      domain,
+      recommendation: "قم بإضافة السجلات التالية في لوحة تحكم الدومين الخاص بك",
+      records: [
+        { type: 'A', host: '@', value: '76.76.21.21', note: 'IP الخاص بـ Vercel' },
+        { type: 'CNAME', host: 'www', value: 'cname.vercel-dns.com' }
+      ]
+    };
   }
 
-  async getStatusFromCloudflare(hostname: string) {
-    const zoneId = this.configService.get('CLOUDFLARE_ZONE_ID');
-    const apiToken = this.configService.get('CLOUDFLARE_API_TOKEN');
+  // 5. جلب حالة الدومين من Vercel (مبنية كـ Public ليراها الـ Controller)
+  public async getVercelDomainStatus(domain: string) {
+    const projectId = this.configService.get('VERCEL_PROJECT_ID');
+    const token = this.configService.get('VERCEL_AUTH_TOKEN');
 
     try {
       const { data } = await axios.get(
-        `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames?hostname=${hostname}`,
-        { headers: { Authorization: `Bearer ${apiToken}` } },
+        `${this.VERCEL_API_URL}/${projectId}/domains/${domain}`,
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      if (data.result?.length > 0) {
-        const res = data.result[0];
-        return {
-          status: res.status,
-          sslStatus: res.ssl?.status,
-          ownershipVerification: res.ownership_verification,
-        };
-      }
-      throw new NotFoundException('الدومين غير موجود في سجلات السحابة');
+      return {
+        verified: data.verified,
+        misconfigured: data.misconfigured
+      };
     } catch (error) {
-      throw new InternalServerErrorException('فشل جلب الحالة من Cloudflare');
+      this.logger.error(`Vercel Fetch Error: ${error.message}`);
+      return { verified: false, misconfigured: true };
     }
   }
 
-  // --- حذف الدومين نهائياً ---
+  // 6. ربط الدومين بـ Vercel (Private - تستخدم داخلياً فقط)
+  private async registerWithVercel(domain: string) {
+    const projectId = this.configService.get('VERCEL_PROJECT_ID');
+    const token = this.configService.get('VERCEL_AUTH_TOKEN');
+
+    try {
+      await axios.post(
+        `${this.VERCEL_API_URL}/${projectId}/domains`,
+        { name: domain },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    } catch (error) {
+      if (error.response?.data?.error?.code === 'domain_already_in_use') return;
+      throw new InternalServerErrorException('فشل ربط الدومين بـ Vercel');
+    }
+  }
+
+  // 7. حذف الدومين
   async remove(id: string) {
     const domainRecord = await this.domainRepo.findOne({ where: { id } });
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
-    await this.deleteFromCloudflare(domainRecord.domain);
+
+    const projectId = this.configService.get('VERCEL_PROJECT_ID');
+    const token = this.configService.get('VERCEL_AUTH_TOKEN');
+    
+    try {
+      await axios.delete(`${this.VERCEL_API_URL}/${projectId}/domains/${domainRecord.domain}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (e) {
+      this.logger.warn(`الدومين محذوف مسبقاً من Vercel أو حدث خطأ بسيط`);
+    }
+
     return await this.domainRepo.remove(domainRecord);
   }
 
   async findAllWithStore(storeId: string) {
     return await this.domainRepo.find({ where: { storeId } });
-  }
-
-  private async deleteFromCloudflare(hostname: string) {
-    const zoneId = this.configService.get('CLOUDFLARE_ZONE_ID');
-    const apiToken = this.configService.get('CLOUDFLARE_API_TOKEN');
-    try {
-      const { data } = await axios.get(
-        `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames?hostname=${hostname}`,
-        { headers: { Authorization: `Bearer ${apiToken}` } },
-      );
-      const cfId = data.result?.[0]?.id;
-      if (cfId) {
-        await axios.delete(`https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames/${cfId}`, {
-          headers: { Authorization: `Bearer ${apiToken}` },
-        });
-      }
-    } catch (error) {
-      this.logger.error(`فشل حذف الدومين من Cloudflare: ${error.message}`);
-    }
   }
 }

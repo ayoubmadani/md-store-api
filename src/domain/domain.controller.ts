@@ -8,37 +8,38 @@ import { AuthGuard } from '../auth/guard/auth.guard';
 export class DomainController {
   constructor(private readonly domainService: DomainService) {}
 
-  // 1. إنشاء دومين جديد (يربطه بالمتجر ويطلبه من Cloudflare)
+  // 1. إضافة دومين جديد لمتجر التاجر (يربطه بـ Vercel ويحفظه في DB)
   @Post()
   create(@Body() createDomainDto: CreateDomainDto) {
     return this.domainService.create(createDomainDto);
   }
 
-  // 2. جلب جميع الدومينات الخاصة بمتجر معين
+  // 2. جلب جميع الدومينات المربوطة بمتجر معين (لعرضها في الجدول)
   @Get('store/:storeId')
   findAllWithStore(@Param('storeId') storeId: string) {
     return this.domainService.findAllWithStore(storeId);
   }
 
-  // 3. جلب تعليمات الربط (CNAME و TXT) لكي يراها العميل في لوحة التحكم
-  @Get('setup-instructions/:id')
-  getConnectionInstructions(@Param('id') id: string) {
-    return this.domainService.getConnectionInstructions(id);
+  // 3. جلب بيانات الـ DNS (A Record و CNAME) ليقوم العميل بوضعها في Namecheap
+  @Get('setup-instructions/:domain')
+  getConnectionInstructions(@Param('domain') domain: string) {
+    return this.domainService.getConnectionInstructions(domain);
   }
 
-  // 4. زر "تحديث الحالة" - يفحص Cloudflare ويحدث isActive في قاعدة البيانات
+  // 4. زر "تحديث الحالة" - يفحص Vercel الآن ويحدث isActive إذا اكتمل الربط
   @Patch('sync/:id')
   syncStatus(@Param('id') id: string) {
     return this.domainService.syncDomainStatus(id);
   }
 
-  // 5. فحص الحالة مباشرة من Cloudflare (للمسؤولين أو للتأكد التقني)
-  @Get('cloudflare-status/:hostname')
-  getStatusFromCloudflare(@Param('hostname') hostname: string) {
-    return this.domainService.getStatusFromCloudflare(hostname);
+  // 5. فحص الحالة التقنية مباشرة من Vercel (للتحقق من الـ SSL والـ DNS)
+  @Get('vercel-status/:hostname')
+  getVercelStatus(@Param('hostname') hostname: string) {
+    // قمنا بتغيير اسم الدالة لتعبر عن Vercel بدلاً من Cloudflare
+    return this.domainService.getVercelDomainStatus(hostname);
   }
 
-  // 6. حذف الدومين من قاعدة البيانات ومن Cloudflare
+  // 6. حذف الدومين نهائياً (من قاعدة بياناتك ومن مشروع Vercel)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.domainService.remove(id);
