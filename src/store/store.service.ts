@@ -317,52 +317,52 @@ export class StoreService {
     }
 
     async getStoreByDomain(subdomain: string, categoryId?: string) {
-        let categoryIds: string[] = [];
+    let categoryIds: string[] = [];
 
-        if (categoryId) {
-            const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
-            if (category) {
-                const descendants = await this.categoryRepository.findDescendants(category);
-                categoryIds = descendants.map(c => c.id);
-            }
+    if (categoryId) {
+        const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
+        if (category) {
+            const descendants = await this.categoryRepository.findDescendants(category);
+            categoryIds = descendants.map(c => c.id);
         }
-
-        const qb = this.storeRepository
-            .createQueryBuilder('store')
-            .leftJoinAndSelect('store.design', 'design')
-            .leftJoinAndSelect('store.topBar', 'topBar')
-            .leftJoinAndSelect('store.contact', 'contact')
-            .leftJoinAndSelect('store.hero', 'hero')
-            .leftJoinAndSelect('store.categories', 'categories')
-            .leftJoinAndSelect('store.pixels', 'pixels')
-            .leftJoinAndSelect('store.themeUser', 'themeUser')
-            .leftJoinAndSelect('themeUser.theme', 'theme')
-            .leftJoinAndSelect(
-                'store.products',
-                'products',
-                categoryId && categoryIds.length > 0
-                    ? 'products.isActive = true AND products.categoryId IN (:...categoryIds)'
-                    : 'products.isActive = true',
-                categoryIds.length > 0 ? { categoryIds } : {},
-            )
-            .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
-            .leftJoinAndSelect('products.category', 'productCategory')
-
-            // التعديل السحري هنا لدعم الدومين المخصص
-            .where('(store.subdomain = :subdomain OR store.customDomain = :subdomain)', { subdomain })
-
-            .addOrderBy('categories.sortOrder', 'ASC');
-
-        const store = await qb.getOne();
-
-        // حماية إضافية: إذا لم يجد المتجر، لا نترك الكود ينهار
-        if (!store) {
-            console.error(`Store not found for identifier: ${subdomain}`);
-            return null;
-        }
-
-        return store;
     }
+
+    const qb = this.storeRepository
+        .createQueryBuilder('store')
+        // 1. ربط جدول الدومينات (تأكد من استخدام الاسم الصحيح للعلاقة 'domains')
+        .leftJoinAndSelect('store.domains', 'domains') 
+        .leftJoinAndSelect('store.design', 'design')
+        .leftJoinAndSelect('store.topBar', 'topBar')
+        .leftJoinAndSelect('store.contact', 'contact')
+        .leftJoinAndSelect('store.hero', 'hero')
+        .leftJoinAndSelect('store.categories', 'categories')
+        .leftJoinAndSelect('store.pixels', 'pixels')
+        .leftJoinAndSelect('store.themeUser', 'themeUser')
+        .leftJoinAndSelect('themeUser.theme', 'theme')
+        .leftJoinAndSelect(
+            'store.products',
+            'products',
+            categoryId && categoryIds.length > 0
+                ? 'products.isActive = true AND products.categoryId IN (:...categoryIds)'
+                : 'products.isActive = true',
+            categoryIds.length > 0 ? { categoryIds } : {},
+        )
+        .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
+        .leftJoinAndSelect('products.category', 'productCategory')
+        
+        // 2. البحث في عمود subdomain (للمتاجر العادية) أو عمود domain في جدول domains (للمتاجر المخصصة)
+        .where('(store.subdomain = :identifier OR domains.domain = :identifier)', { identifier: subdomain })
+        
+        .addOrderBy('categories.sortOrder', 'ASC');
+
+    const store = await qb.getOne();
+
+    if (!store) {
+        return null;
+    }
+
+    return store;
+}
 
     async deactivateAllStores(userId: string) {
         await this.storeRepository.update({ user: { id: userId } }, { isActive: false });
