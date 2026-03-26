@@ -3,11 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import axios from 'axios';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { CreateDomainDto } from './dto/create-domain.dto';
 import { Domain } from './entities/domain.entity';
 import { Store } from '../store/entities/store.entity';
-import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class DomainService {
@@ -19,6 +19,7 @@ export class DomainService {
     private readonly configService: ConfigService,
   ) { }
 
+  // --- إنشاء دومين جديد وربطه بـ Cloudflare ---
   async create(dto: CreateDomainDto) {
     const store = await this.storeRepo.findOne({ where: { id: dto.storeId } });
     if (!store) throw new NotFoundException(`المتجر رقم ${dto.storeId} غير موجود`);
@@ -38,11 +39,11 @@ export class DomainService {
     return await this.domainRepo.save(newDomain);
   }
 
+  // --- الفحص الدوري: يعمل كل ساعة لتفعيل الدومينات التي جهزها العملاء ---
   @Cron(CronExpression.EVERY_HOUR)
   async handleCron() {
     this.logger.log('بدء عملية الفحص الدوري للدومينات المعلقة...');
 
-    // جلب كل الدومينات التي لم يتم تفعيلها بعد
     const pendingDomains = await this.domainRepo.find({ where: { isActive: false } });
 
     if (pendingDomains.length === 0) {
@@ -52,28 +53,27 @@ export class DomainService {
 
     for (const domain of pendingDomains) {
       try {
-        this.logger.debug(`فحص حالة الدومين: ${domain.domain}`);
+        // نستخدم المزامنة لتحديث الحالة تلقائياً في قاعدة البيانات
         await this.syncDomainStatus(domain.id);
       } catch (error) {
         this.logger.error(`فشل فحص الدومين ${domain.domain}: ${error.message}`);
       }
     }
-    this.logger.log('انتهت عملية الفحص الدوري.');
+    this.logger.log('انتهت عملية الفحص الدوري بنجاح.');
   }
 
-  // 2. تصحيح منطق الـ CNAME في تعليمات الربط
+  // --- جلب تعليمات الربط (لإظهارها في الـ Frontend) ---
   async getConnectionInstructions(id: string) {
     const domainRecord = await this.domainRepo.findOne({ 
         where: { id }, 
-        relations: ['store'] // التأكد من وجود العلاقة
+        relations: ['store'] 
     });
     
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
     
     const cfStatus = await this.getStatusFromCloudflare(domainRecord.domain);
 
-    // ملاحظة: قمت بتغيير منطق الـ CNAME Value ليكون الدومين الفرعي مباشرة
-    // العميل يحتاج توجيه الدومين إلى: subdomain.mdstore.top
+    // القيمة التي يوجه العميل الدومين إليها (Target)
     const cnameTarget = `${domainRecord.store.subdomain}.mdstore.top`;
 
     return {
@@ -85,60 +85,60 @@ export class DomainService {
           type: 'CNAME',
           host: '@',
           value: cnameTarget,
-          note: 'قم بتوجيه الدومين الرئيسي إلى هذا العنوان'
+          note: 'قم بتوجيه الدومين الرئيسي لهذا العنوان'
         },
         {
           type: 'TXT',
           host: cfStatus.ownershipVerification?.name || '_cf-custom-hostname',
-          value: cfStatus.ownershipVerification?.value || 'جاري المعالجة...',
-          note: 'أضف هذا السجل لتسريع عملية التحقق وتفعيل SSL'
+          value: cfStatus.ownershipVerification?.value || 'جاري التحميل...',
+          note: 'أضف هذا السجل لتفعيل شهادة الأمان SSL'
         }
       ]
     };
   }
 
-  // --- دالة جديدة: مزامنة الحالة وتحديث قاعدة البيانات ---
+  // --- تحديث حالة الدومين بناءً على بيانات Cloudflare الفورية ---
   async syncDomainStatus(id: string) {
     const domainRecord = await this.domainRepo.findOne({ where: { id } });
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
 
     const cfStatus = await this.getStatusFromCloudflare(domainRecord.domain);
 
-    // إذا أصبح الدومين Active و الـ SSL أيضاً Active
+    // التفعيل فقط إذا كان الدومين والـ SSL كلاهما جاهزين
     if (cfStatus.status === 'active' && cfStatus.sslStatus === 'active') {
       await this.domainRepo.update(id, { isActive: true });
+      this.logger.log(`تم تفعيل الدومين بنجاح: ${domainRecord.domain}`);
       return { isActive: true, ...cfStatus };
     }
 
     return { isActive: false, ...cfStatus };
   }
 
-  // --- الدوال المساعدة ---
+  // --- التعامل مع Cloudflare API ---
 
   private async registerWithCloudflare(hostname: string) {
-    const zoneId = this.configService.get<string>('CLOUDFLARE_ZONE_ID');
-    const apiToken = this.configService.get<string>('CLOUDFLARE_API_TOKEN');
+    const zoneId = this.configService.get('CLOUDFLARE_ZONE_ID');
+    const apiToken = this.configService.get('CLOUDFLARE_API_TOKEN');
 
     try {
       const response = await axios.post(
         `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames`,
         {
-          hostname: hostname,
+          hostname,
           ssl: { method: 'http', type: 'dv', settings: { min_tls_version: '1.2' } },
         },
-        { headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' } },
+        { headers: { Authorization: `Bearer ${apiToken}` } },
       );
       return response.data;
     } catch (error) {
       if (error.response?.data?.errors?.[0]?.code === 1406) return { result: { id: 'already_exists' } };
-      this.logger.error(`Cloudflare API Error: ${error.message}`);
-      throw new InternalServerErrorException('فشل الاتصال بمزود الخدمة السحابي');
+      throw new InternalServerErrorException('خطأ في الاتصال بـ Cloudflare');
     }
   }
 
   async getStatusFromCloudflare(hostname: string) {
-    const zoneId = this.configService.get<string>('CLOUDFLARE_ZONE_ID');
-    const apiToken = this.configService.get<string>('CLOUDFLARE_API_TOKEN');
+    const zoneId = this.configService.get('CLOUDFLARE_ZONE_ID');
+    const apiToken = this.configService.get('CLOUDFLARE_API_TOKEN');
 
     try {
       const { data } = await axios.get(
@@ -146,22 +146,21 @@ export class DomainService {
         { headers: { Authorization: `Bearer ${apiToken}` } },
       );
 
-      if (data.result && data.result.length > 0) {
+      if (data.result?.length > 0) {
         const res = data.result[0];
         return {
-          status: res.status, // 'active' or 'pending'
+          status: res.status,
           sslStatus: res.ssl?.status,
-          ownershipVerification: res.ownership_verification, // سجل الـ TXT المطلوب
-          sslValidationRecords: res.ssl?.validation_records // سجلات الـ DNS الأخرى إن وجدت
+          ownershipVerification: res.ownership_verification,
         };
       }
-      throw new NotFoundException('الدومين غير موجود في Cloudflare');
+      throw new NotFoundException('الدومين غير موجود في سجلات السحابة');
     } catch (error) {
-      this.logger.error(`Status Fetch Error: ${error.message}`);
-      throw new InternalServerErrorException('فشل جلب حالة الدومين');
+      throw new InternalServerErrorException('فشل جلب الحالة من Cloudflare');
     }
   }
 
+  // --- حذف الدومين نهائياً ---
   async remove(id: string) {
     const domainRecord = await this.domainRepo.findOne({ where: { id } });
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
@@ -174,8 +173,8 @@ export class DomainService {
   }
 
   private async deleteFromCloudflare(hostname: string) {
-    const zoneId = this.configService.get<string>('CLOUDFLARE_ZONE_ID');
-    const apiToken = this.configService.get<string>('CLOUDFLARE_API_TOKEN');
+    const zoneId = this.configService.get('CLOUDFLARE_ZONE_ID');
+    const apiToken = this.configService.get('CLOUDFLARE_API_TOKEN');
     try {
       const { data } = await axios.get(
         `https://api.cloudflare.com/client/v4/zones/${zoneId}/custom_hostnames?hostname=${hostname}`,
@@ -188,7 +187,7 @@ export class DomainService {
         });
       }
     } catch (error) {
-      this.logger.error(`Cloudflare Delete Error: ${error.message}`);
+      this.logger.error(`فشل حذف الدومين من Cloudflare: ${error.message}`);
     }
   }
 }

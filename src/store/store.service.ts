@@ -347,10 +347,21 @@ export class StoreService {
             )
             .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
             .leftJoinAndSelect('products.category', 'productCategory')
-            .where('store.subdomain = :subdomain', { subdomain })
+
+            // التعديل السحري هنا لدعم الدومين المخصص
+            .where('(store.subdomain = :subdomain OR store.customDomain = :subdomain)', { subdomain })
+
             .addOrderBy('categories.sortOrder', 'ASC');
 
-        return qb.getOne();
+        const store = await qb.getOne();
+
+        // حماية إضافية: إذا لم يجد المتجر، لا نترك الكود ينهار
+        if (!store) {
+            console.error(`Store not found for identifier: ${subdomain}`);
+            return null;
+        }
+
+        return store;
     }
 
     async deactivateAllStores(userId: string) {
