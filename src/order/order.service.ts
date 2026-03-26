@@ -34,11 +34,17 @@ export class OrdersService {
         return name.length > limit ? name.substring(0, limit) + '...' : name;
     };
 
+    
+
     async create(dto: CreateOrderDto) {
         const store = await this.storesrepo.findOne({ where: { subdomain: dto.domain } });
         if (!store) {
             throw new BadRequestException('Store not exist');
         }
+
+            console.log(dto);
+
+
         const order = this.ordersrepo.create({
             customerId: dto.customerId || uuidv4(),
             customerName: dto.customerName,

@@ -21,6 +21,7 @@ import { StorePixel } from "./store-pixel.entity";
 import { Order } from "../../order/entities/order.entity";
 import { ThemeUser } from "../../theme/entities/theme-user.entity";
 import { Show } from "../../show/entity/show.entity";
+import { Domain } from "src/domain/entities/domain.entity";
 
 @Entity({ name: 'stores' })
 export class Store {
@@ -95,4 +96,7 @@ export class Store {
 
   @OneToMany(() => Show, show => show.store)
   shows: Show[]
+
+  @OneToMany(() => Domain, domains => domains.store)
+  domains:Domain[]
 }

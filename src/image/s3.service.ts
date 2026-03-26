@@ -65,13 +65,15 @@ export class S3Service {
 
       await this.s3Client.send(command);
 
-      const endpoint = this.configService.get<string>('AWS_ENDPOINT');
+      const publicUrl = this.configService.get<string>('AWS_PUBLIC_URL');
       let url: string;
 
-      if (endpoint) {
-        const cleanEndpoint = endpoint.replace(/\/$/, '');
-        url = `${cleanEndpoint}/${this.bucketName}/${key}`;
+      if (publicUrl) {
+        const cleanPublicUrl = publicUrl.replace(/\/$/, '');
+        // حذفنا ${this.bucketName} لأن الـ Public URL موجه للـ bucket فعلياً
+        url = `${cleanPublicUrl}/${key}`;
       } else {
+        // هذا السطر يبقى كما هو كاحتياط لـ AWS S3 الأصلي
         url = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${key}`;
       }
 

@@ -25,6 +25,7 @@ import { ShippingProviderModule } from './shipping-provider/shipping-provider.mo
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronJobModule } from './cron-job/cron-job.module';
 import { ShowModule } from './show/show.module';
+import { DomainModule } from './domain/domain.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { ShowModule } from './show/show.module';
     ShippingProviderModule,
     CronJobModule,
     ShowModule,
+    DomainModule,
   ],
   controllers: [AppController]
 })
