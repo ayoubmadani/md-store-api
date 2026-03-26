@@ -160,23 +160,23 @@ export class DomainService {
   }
 
   // 6. ربط الدومين - إضافة البراميترات لمنع التداخل
-  private async registerWithVercel(domain: string) {
-    const projectId = this.configService.get('VERCEL_PROJECT_ID');
-    const token = this.configService.get('VERCEL_AUTH_TOKEN');
+  // مثال لدالة التسجيل (طبق نفس المنطق على البقية)
+private async registerWithVercel(domain: string) {
+  const projectId = this.configService.get('VERCEL_PROJECT_ID');
+  const token = this.configService.get('VERCEL_AUTH_TOKEN');
+  const teamId = this.configService.get('VERCEL_TEAM_ID'); // أضف هذا
 
-    try {
-      // استخدام الإصدار v10 لربط الدومينات هو الأكثر استقراراً حالياً
-      await axios.post(
-        `${this.VERCEL_BASE_URL}/v10/projects/${projectId}/domains?projectId=${projectId}`,
-        { name: domain },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-    } catch (error) {
-      if (error.response?.data?.error?.code === 'domain_already_in_use') return;
-      this.logger.error(`Vercel Registration Error: ${JSON.stringify(error.response?.data)}`);
-      throw new InternalServerErrorException('فشل ربط الدومين بـ Vercel');
-    }
+  try {
+    // نرسل teamId و projectId معاً في الرابط
+    await axios.post(
+      `https://api.vercel.com/v10/projects/${projectId}/domains?teamId=${teamId}`, 
+      { name: domain },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+  } catch (error) {
+    // ...
   }
+}
 
   // 7. حذف الدومين - تحديث الرابط
   async remove(id: string) {
