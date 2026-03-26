@@ -162,8 +162,8 @@ export class DomainService {
   // 6. ربط الدومين - إضافة البراميترات لمنع التداخل
   // مثال لدالة التسجيل (طبق نفس المنطق على البقية)
 private async registerWithVercel(domain: string) {
-  const projectId = this.configService.get('VERCEL_PROJECT_ID');
-  const token = this.configService.get('VERCEL_AUTH_TOKEN');
+  const projectId = this.configService.get('TARGET_STORE_ID');
+  const token = this.configService.get('MY_SECRET_TOKEN');
   const teamId = this.configService.get('VERCEL_TEAM_ID'); // أضف هذا
 
   try {
