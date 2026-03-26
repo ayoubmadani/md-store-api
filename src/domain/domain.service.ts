@@ -7,6 +7,7 @@ import axios from 'axios';
 import { CreateDomainDto } from './dto/create-domain.dto';
 import { Domain } from './entities/domain.entity';
 import { Store } from '../store/entities/store.entity';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class DomainService {
@@ -37,24 +38,54 @@ export class DomainService {
     return await this.domainRepo.save(newDomain);
   }
 
-  // --- دالة جديدة: جلب تعليمات الربط للمستخدم ليريها في الـ Frontend ---
-  async getConnectionInstructions(id: string) {
-    const domainRecord = await this.domainRepo.findOne({ where: { id } });
-    if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleCron() {
+    this.logger.log('بدء عملية الفحص الدوري للدومينات المعلقة...');
 
+    // جلب كل الدومينات التي لم يتم تفعيلها بعد
+    const pendingDomains = await this.domainRepo.find({ where: { isActive: false } });
+
+    if (pendingDomains.length === 0) {
+      this.logger.log('لا توجد دومينات معلقة حالياً.');
+      return;
+    }
+
+    for (const domain of pendingDomains) {
+      try {
+        this.logger.debug(`فحص حالة الدومين: ${domain.domain}`);
+        await this.syncDomainStatus(domain.id);
+      } catch (error) {
+        this.logger.error(`فشل فحص الدومين ${domain.domain}: ${error.message}`);
+      }
+    }
+    this.logger.log('انتهت عملية الفحص الدوري.');
+  }
+
+  // 2. تصحيح منطق الـ CNAME في تعليمات الربط
+  async getConnectionInstructions(id: string) {
+    const domainRecord = await this.domainRepo.findOne({ 
+        where: { id }, 
+        relations: ['store'] // التأكد من وجود العلاقة
+    });
+    
+    if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
+    
     const cfStatus = await this.getStatusFromCloudflare(domainRecord.domain);
+
+    // ملاحظة: قمت بتغيير منطق الـ CNAME Value ليكون الدومين الفرعي مباشرة
+    // العميل يحتاج توجيه الدومين إلى: subdomain.mdstore.top
+    const cnameTarget = `${domainRecord.store.subdomain}.mdstore.top`;
 
     return {
       domain: domainRecord.domain,
       status: cfStatus.status,
       sslStatus: cfStatus.sslStatus,
-      // البيانات التي يجب على العميل إدخالها في Namecheap
       instructions: [
         {
           type: 'CNAME',
           host: '@',
-          value: this.configService.get('MAIN_DOMAIN_PROXY', 'ironium.mdstore.top'),
-          note: 'قم بتوجيه الدومين الرئيسي إلى سيرفرنا'
+          value: cnameTarget,
+          note: 'قم بتوجيه الدومين الرئيسي إلى هذا العنوان'
         },
         {
           type: 'TXT',
