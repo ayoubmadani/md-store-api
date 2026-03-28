@@ -100,26 +100,19 @@ export class DomainService {
   // 3. تحديث يدوي للحالة (يستدعيه الـ Controller)
 
   async syncDomainStatus(id: string) {
-
     const domainRecord = await this.domainRepo.findOne({ where: { id } });
-
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
-
 
     const status = await this.getVercelDomainStatus(domainRecord.domain);
 
+    // تحديث قاعدة البيانات بناءً على الحالة الفعلية من Vercel
+    const isActuallyActive = status.verified && !status.misconfigured;
 
-    if (status.verified && !status.misconfigured) {
+    await this.domainRepo.update(id, {
+      isActive: isActuallyActive
+    });
 
-      await this.domainRepo.update(id, { isActive: true });
-
-      return { isActive: true, ...status };
-
-    }
-
-
-    return { isActive: false, ...status };
-
+    return { isActive: isActuallyActive, ...status };
   }
 
 
