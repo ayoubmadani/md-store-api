@@ -15,6 +15,7 @@ import { Category } from '../category/entities/category.entity';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { Show } from '../show/entity/show.entity';
 import { Product } from '../product/entities/product.entity';
+import { Domain } from '../domain/entities/domain.entity';
 
 @Injectable()
 export class StoreService {
@@ -204,6 +205,8 @@ export class StoreService {
             await queryRunner.manager.save(StoreTopBar, queryRunner.manager.create(StoreTopBar, { ...topBar, store: savedStore }));
             await queryRunner.manager.save(StoreContact, queryRunner.manager.create(StoreContact, { ...contact, store: savedStore }));
             await queryRunner.manager.save(StoreHeroSection, queryRunner.manager.create(StoreHeroSection, { ...hero, store: savedStore }));
+            await queryRunner.manager.save(Domain, queryRunner.manager.create(Domain, { domain: `${storeDto.subdomain}.mdstore.top`, store: savedStore }));
+
 
             await queryRunner.commitTransaction();
 
@@ -237,50 +240,71 @@ export class StoreService {
             const where: any = { id: storeId };
             if (userId) where.user = { id: userId };
 
+            // 1. جلب المتجر مع العلاقات
             const store = await queryRunner.manager.findOne(Store, {
                 where,
                 relations: ['design', 'topBar', 'contact', 'hero'],
             });
 
-            if (!store) throw new NotFoundException('Store not found or you do not have permission');
+            if (!store) throw new NotFoundException('المتجر غير موجود أو لا تملك صلاحية الوصول');
 
-            // تحديث بيانات المتجر الأساسية
-            if (dto.store) {
-                Object.assign(store, {
-                    name: dto.store.name ?? store.name,
-                    subdomain: dto.store.subdomain ?? store.subdomain,
-                    currency: dto.store.currency ?? store.currency,
-                    language: dto.store.language ?? store.language,
+            // 2. معالجة تحديث السبدومين (إذا تغير)
+            if (dto.store?.subdomain && dto.store.subdomain !== store.subdomain) {
+                const newSubdomain = dto.store.subdomain.toLowerCase().trim();
+
+                // فحص هل السبدومين الجديد محجوز لمتجر آخر؟
+                const isTaken = await queryRunner.manager.findOne(Store, {
+                    where: { subdomain: newSubdomain }
                 });
+                if (isTaken && isTaken.id !== storeId) {
+                    throw new BadRequestException('هذا الرابط محجوز مسبقاً، اختر اسماً آخر');
+                }
+
+                // تحديث سجل الدومين المرتبط لكي لا ينقطع الاتصال
+                const oldFullDomain = `${store.subdomain}.mdstore.top`;
+                const newFullDomain = `${newSubdomain}.mdstore.top`;
+
+                await queryRunner.manager.update(
+                    Domain,
+                    { domain: oldFullDomain, store: { id: storeId } },
+                    { domain: newFullDomain }
+                );
+
+                // تحديث القيمة في كائن المتجر
+                store.subdomain = newSubdomain;
+            }
+
+            // 3. تحديث باقي بيانات المتجر الأساسية
+            if (dto.store) {
+                store.name = dto.store.name ?? store.name;
+                store.currency = dto.store.currency ?? store.currency;
+                store.language = dto.store.language ?? store.language;
                 if (dto.store.nicheId) {
                     store.niche = { id: dto.store.nicheId } as any;
                 }
             }
 
-            // دالة مساعدة لتحديث أو إنشاء الكائنات المرتبطة
+            // 4. دالة المزامنة للأقسام (Design, Hero, etc.)
             const syncSection = async (sectionKey: string, entityClass: any, data: any) => {
                 if (!data) return;
-
                 if (store[sectionKey]) {
-                    // تحديث الموجود
                     Object.assign(store[sectionKey], data);
                     await queryRunner.manager.save(entityClass, store[sectionKey]);
                 } else {
-                    // إنشاء جديد إذا كان null
                     store[sectionKey] = queryRunner.manager.create(entityClass, {
                         ...data,
-                        store: { id: store.id } // ربطه بالمتجر
+                        store: { id: store.id }
                     });
                     await queryRunner.manager.save(entityClass, store[sectionKey]);
                 }
             };
 
-            // تنفيذ المزامنة لكل الأقسام
             await syncSection('design', StoreDesign, dto.design);
             await syncSection('topBar', StoreTopBar, dto.topBar);
             await syncSection('contact', StoreContact, dto.contact);
             await syncSection('hero', StoreHeroSection, dto.hero);
 
+            // 5. حفظ التغييرات النهائية
             await queryRunner.manager.save(Store, store);
             await queryRunner.commitTransaction();
 
@@ -317,52 +341,52 @@ export class StoreService {
     }
 
     async getStoreByDomain(subdomain: string, categoryId?: string) {
-    let categoryIds: string[] = [];
+        let categoryIds: string[] = [];
 
-    if (categoryId) {
-        const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
-        if (category) {
-            const descendants = await this.categoryRepository.findDescendants(category);
-            categoryIds = descendants.map(c => c.id);
+        if (categoryId) {
+            const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
+            if (category) {
+                const descendants = await this.categoryRepository.findDescendants(category);
+                categoryIds = descendants.map(c => c.id);
+            }
         }
+
+        const qb = this.storeRepository
+            .createQueryBuilder('store')
+            // 1. ربط جدول الدومينات (تأكد من استخدام الاسم الصحيح للعلاقة 'domains')
+            .leftJoinAndSelect('store.domains', 'domains')
+            .leftJoinAndSelect('store.design', 'design')
+            .leftJoinAndSelect('store.topBar', 'topBar')
+            .leftJoinAndSelect('store.contact', 'contact')
+            .leftJoinAndSelect('store.hero', 'hero')
+            .leftJoinAndSelect('store.categories', 'categories')
+            .leftJoinAndSelect('store.pixels', 'pixels')
+            .leftJoinAndSelect('store.themeUser', 'themeUser')
+            .leftJoinAndSelect('themeUser.theme', 'theme')
+            .leftJoinAndSelect(
+                'store.products',
+                'products',
+                categoryId && categoryIds.length > 0
+                    ? 'products.isActive = true AND products.categoryId IN (:...categoryIds)'
+                    : 'products.isActive = true',
+                categoryIds.length > 0 ? { categoryIds } : {},
+            )
+            .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
+            .leftJoinAndSelect('products.category', 'productCategory')
+
+            // 2. البحث في عمود subdomain (للمتاجر العادية) أو عمود domain في جدول domains (للمتاجر المخصصة)
+            .where('(store.subdomain = :identifier OR domains.domain = :identifier)', { identifier: subdomain })
+
+            .addOrderBy('categories.sortOrder', 'ASC');
+
+        const store = await qb.getOne();
+
+        if (!store) {
+            return null;
+        }
+
+        return store;
     }
-
-    const qb = this.storeRepository
-        .createQueryBuilder('store')
-        // 1. ربط جدول الدومينات (تأكد من استخدام الاسم الصحيح للعلاقة 'domains')
-        .leftJoinAndSelect('store.domains', 'domains') 
-        .leftJoinAndSelect('store.design', 'design')
-        .leftJoinAndSelect('store.topBar', 'topBar')
-        .leftJoinAndSelect('store.contact', 'contact')
-        .leftJoinAndSelect('store.hero', 'hero')
-        .leftJoinAndSelect('store.categories', 'categories')
-        .leftJoinAndSelect('store.pixels', 'pixels')
-        .leftJoinAndSelect('store.themeUser', 'themeUser')
-        .leftJoinAndSelect('themeUser.theme', 'theme')
-        .leftJoinAndSelect(
-            'store.products',
-            'products',
-            categoryId && categoryIds.length > 0
-                ? 'products.isActive = true AND products.categoryId IN (:...categoryIds)'
-                : 'products.isActive = true',
-            categoryIds.length > 0 ? { categoryIds } : {},
-        )
-        .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
-        .leftJoinAndSelect('products.category', 'productCategory')
-        
-        // 2. البحث في عمود subdomain (للمتاجر العادية) أو عمود domain في جدول domains (للمتاجر المخصصة)
-        .where('(store.subdomain = :identifier OR domains.domain = :identifier)', { identifier: subdomain })
-        
-        .addOrderBy('categories.sortOrder', 'ASC');
-
-    const store = await qb.getOne();
-
-    if (!store) {
-        return null;
-    }
-
-    return store;
-}
 
     async deactivateAllStores(userId: string) {
         await this.storeRepository.update({ user: { id: userId } }, { isActive: false });
