@@ -31,6 +31,17 @@ export class DomainService {
       .replace(/^https?:\/\//, '') // إزالة البروتوكول إن وجد
       .replace(/^www\./, '');      // إزالة www لتوحيد البيانات
 
+
+    const domainSplit = cleanDomain.split('.')
+
+    if (domainSplit.length > 3) throw new NotFoundException(`دومين غير مقبول`);
+
+    if (domainSplit.length === 3) {
+      if (domainSplit[1] !== "mdstore" || domainSplit[2] !== "top") {
+        throw new NotFoundException(`دومين غير مقبول`);
+      }
+    }
+
     // 2. التحقق من وجود المتجر
     const store = await this.storeRepo.findOne({ where: { id: dto.storeId } });
     if (!store) throw new NotFoundException(`المتجر غير موجود`);
@@ -54,7 +65,7 @@ export class DomainService {
     const newDomain = this.domainRepo.create({
       domain: cleanDomain,
       storeId: dto.storeId,
-      isActive: false, // يبقى غير نشط حتى يتحقق الـ Cron Job أو الفحص اليدوي
+      isActive: true,
     });
 
     return await this.domainRepo.save(newDomain);
@@ -105,14 +116,12 @@ export class DomainService {
 
     const status = await this.getVercelDomainStatus(domainRecord.domain);
 
-    // تحديث قاعدة البيانات بناءً على الحالة الفعلية من Vercel
-    const isActuallyActive = status.verified && !status.misconfigured;
-
+    // تحديث مباشرة باستخدام القيمة الجاهزة من الدالة
     await this.domainRepo.update(id, {
-      isActive: isActuallyActive
+      isActive: status.isActive
     });
 
-    return { isActive: isActuallyActive, ...status };
+    return { ...status };
   }
 
 
@@ -146,16 +155,34 @@ export class DomainService {
   public async getVercelDomainStatus(domain: string) {
     const projectId = this.configService.get('TARGET_STORE_ID');
     const token = this.configService.get('MY_SECRET_TOKEN');
+    const headers = { Authorization: `Bearer ${token}` };
 
     try {
-      const { data } = await axios.get(
+      // 1. جلب بيانات الملكية (v9)
+      const domainRes = await axios.get(
         `${this.VERCEL_BASE_URL}/v9/projects/${projectId}/domains/${domain}?projectId=${projectId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers }
       );
-      return { verified: data.verified, misconfigured: data.misconfigured };
+
+      // 2. جلب بيانات الإعدادات والـ DNS (v6)
+      const configRes = await axios.get(
+        `${this.VERCEL_BASE_URL}/v6/domains/${domain}/config?projectId=${projectId}`,
+        { headers }
+      );
+
+      const isVerified = domainRes.data.verified === true;
+      const isMisconfigured = configRes.data.misconfigured === true;
+
+      // الشرط الذهبي: يجب أن يكون Verified وليس Misconfigured
+      return {
+        verified: isVerified,
+        misconfigured: isMisconfigured,
+        isActive: isVerified && !isMisconfigured // هذه القيمة التي ستستخدمها لتحديث isActive في قاعدة بياناتك
+      };
+
     } catch (error) {
-      this.logger.error(`Vercel Fetch Error: ${error.response?.data?.error?.message || error.message}`);
-      return { verified: false, misconfigured: true };
+      this.logger.error(`Vercel Fetch Error for ${domain}: ${error.message}`);
+      return { verified: false, misconfigured: true, isActive: false };
     }
   }
 
