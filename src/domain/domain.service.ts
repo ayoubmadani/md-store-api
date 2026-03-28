@@ -24,33 +24,40 @@ export class DomainService {
   // 1. إضافة دومين جديد
 
   async create(dto: CreateDomainDto) {
+    // 1. تنظيف الدومين: إزالة الفراغات، تحويله لأحرف صغيرة، وإزالة www.
+    const cleanDomain = dto.domain
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, '') // إزالة البروتوكول إن وجد
+      .replace(/^www\./, '');      // إزالة www لتوحيد البيانات
 
+    // 2. التحقق من وجود المتجر
     const store = await this.storeRepo.findOne({ where: { id: dto.storeId } });
-
     if (!store) throw new NotFoundException(`المتجر غير موجود`);
 
-
-    const existing = await this.domainRepo.findOne({ where: { domain: dto.domain } });
-
+    // 3. التحقق من تكرار الدومين (استخدام الاسم النظيف)
+    const existing = await this.domainRepo.findOne({ where: { domain: cleanDomain } });
     if (existing) throw new BadRequestException('هذا الدومين مسجل مسبقاً');
 
+    // 4. تسجيل الدومين في Vercel إذا كان خارجياً
+    if (!cleanDomain.endsWith('.mdstore.top')) {
+      try {
+        await this.registerWithVercel(cleanDomain);
+      } catch (error) {
+        // تسجيل الخطأ وتنبيه المستخدم بأن الربط التقني فشل
+        console.error('Vercel Registration Error:', error);
+        throw new BadRequestException('فشل ربط الدومين مع نظام الاستضافة، يرجى التحقق من صحة النطاق');
+      }
+    }
 
-    await this.registerWithVercel(dto.domain);
-
-
+    // 5. الحفظ في قاعدة البيانات
     const newDomain = this.domainRepo.create({
-
-      domain: dto.domain,
-
+      domain: cleanDomain,
       storeId: dto.storeId,
-
-      isActive: false,
-
+      isActive: false, // يبقى غير نشط حتى يتحقق الـ Cron Job أو الفحص اليدوي
     });
 
-
     return await this.domainRepo.save(newDomain);
-
   }
 
 
@@ -161,22 +168,22 @@ export class DomainService {
 
   // 6. ربط الدومين - إضافة البراميترات لمنع التداخل
   // مثال لدالة التسجيل (طبق نفس المنطق على البقية)
-private async registerWithVercel(domain: string) {
-  const projectId = this.configService.get('TARGET_STORE_ID');
-  const token = this.configService.get('MY_SECRET_TOKEN');
-  const teamId = this.configService.get('VERCEL_TEAM_ID'); // أضف هذا
+  private async registerWithVercel(domain: string) {
+    const projectId = this.configService.get('TARGET_STORE_ID');
+    const token = this.configService.get('MY_SECRET_TOKEN');
+    const teamId = this.configService.get('VERCEL_TEAM_ID'); // أضف هذا
 
-  try {
-    // نرسل teamId و projectId معاً في الرابط
-    await axios.post(
-      `https://api.vercel.com/v10/projects/${projectId}/domains?teamId=${teamId}`, 
-      { name: domain },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-  } catch (error) {
-    // ...
+    try {
+      // نرسل teamId و projectId معاً في الرابط
+      await axios.post(
+        `https://api.vercel.com/v10/projects/${projectId}/domains?teamId=${teamId}`,
+        { name: domain },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    } catch (error) {
+      // ...
+    }
   }
-}
 
   // 7. حذف الدومين - تحديث الرابط
   async remove(id: string) {
