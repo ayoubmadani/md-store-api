@@ -38,15 +38,15 @@ export class Show {
     
     // ... العلاقات
 
-    @ManyToOne(() => Store, store => store.shows)
+    @ManyToOne(() => Store, store => store.shows, { onDelete: "CASCADE" }) // 👈 أضفنا هذا الجزء
     @JoinColumn({ name: "storeId" })
     store?: Store
 
-    @ManyToOne(() => LandingPage, lp => lp.shows)
+    @ManyToOne(() => LandingPage, lp => lp.shows, { onDelete: "CASCADE" }) // 👈 يفضل إضافتها هنا أيضاً
     @JoinColumn({ name: "lpId" })
     lp?: LandingPage
 
-    @ManyToOne(() => Product, product => product.shows)
+    @ManyToOne(() => Product, product => product.shows, { onDelete: "CASCADE" }) // 👈 وهنا أيضاً لضمان سلامة البيانات
     @JoinColumn({ name: "productId" })
     product?: Product
 
