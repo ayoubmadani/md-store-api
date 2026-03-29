@@ -208,25 +208,21 @@ export class UserService {
   async initSub(userId: string) {
 
    const sub = await this.subRepo.findOne({
-      where: { userId, status: 'active' },
-      relations: ['plan', 'plan.features'],
-      order: { startDate: 'DESC' },
+        where: { userId, status: 'active' },
+        relations: ['plan', 'plan.features'],
+        order: { startDate: 'DESC' },
     });
-
+ 
     if (!sub || !sub.plan.features) return;
-
     const f = sub.plan.features;
-    // ✅ count بـ createQueryBuilder لتجنب FK type errors
-    const storeCount = await this.storeRepo.count({ where: { isActive: true, user: { id: userId } } })
 
-    const productCount = await this.productRepo.count({ where: { isActive: true, store: { user: { id: userId } } } });
-
-    const pixelfbCount = await this.pixelRepo.count({ where: { isActive: true, type: "facebook", store: { user: { id: userId } } } });
-
-    const pixeltikCount = await this.pixelRepo.count({ where: { isActive: true, type: "tiktok", store: { user: { id: userId } } } });
-
-    const lpCount = await this.lpRepo.count({ where: { isActive: true, product: { store: { user: { id: userId } } } } });
-
+    const [storeCount, productCount, pixelfbCount, pixeltikCount, lpCount] = await Promise.all([
+        this.storeRepo.count({ where: { isActive: true, user: { id: userId } } }),
+        this.productRepo.count({ where: { isActive: true, store: { user: { id: userId } } } }),
+        this.pixelRepo.count({ where: { isActive: true, type: 'facebook', store: { user: { id: userId } } } }),
+        this.pixelRepo.count({ where: { isActive: true, type: 'tiktok', store: { user: { id: userId } } } }),
+        this.lpRepo.count({ where: { isActive: true, product: { store: { user: { id: userId } } } } }),
+    ]);
     console.log({
       storeCount,productCount,pixelfbCount,pixeltikCount,lpCount
     });

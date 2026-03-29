@@ -31,7 +31,7 @@ export class DomainService {
       .replace(/^https?:\/\//, '') // إزالة البروتوكول إن وجد
       .replace(/^www\./, '');      // إزالة www لتوحيد البيانات
 
-
+    let isActive = true
     const domainSplit = cleanDomain.split('.')
 
     if (domainSplit.length > 3) throw new NotFoundException(`دومين غير مقبول`);
@@ -40,7 +40,14 @@ export class DomainService {
       if (domainSplit[1] !== "mdstore" || domainSplit[2] !== "top") {
         throw new NotFoundException(`دومين غير مقبول`);
       }
+
+      const getCountDomain = await this.domainRepo.count({ where: { storeId: dto.storeId, isSub: true } })
+      if (getCountDomain >= 3) {
+        throw new NotFoundException(`لديك الكثير من الدومينات الفرعية`);
+      }
     }
+
+
 
     // 2. التحقق من وجود المتجر
     const store = await this.storeRepo.findOne({ where: { id: dto.storeId } });
@@ -53,6 +60,7 @@ export class DomainService {
     // 4. تسجيل الدومين في Vercel إذا كان خارجياً
     if (!cleanDomain.endsWith('.mdstore.top')) {
       try {
+        isActive = false
         await this.registerWithVercel(cleanDomain);
       } catch (error) {
         // تسجيل الخطأ وتنبيه المستخدم بأن الربط التقني فشل
@@ -65,7 +73,8 @@ export class DomainService {
     const newDomain = this.domainRepo.create({
       domain: cleanDomain,
       storeId: dto.storeId,
-      isActive: true,
+      isActive: isActive,
+      isSub: domainSplit.length === 3
     });
 
     return await this.domainRepo.save(newDomain);
@@ -75,37 +84,33 @@ export class DomainService {
   // 2. الفحص الدوري (تفعيل آلي)
 
   @Cron(CronExpression.EVERY_HOUR)
-
-  async handleCron() {
-
+async handleCron() {
     this.logger.log('بدء فحص حالة الدومينات على Vercel...');
-
-    const pendingDomains = await this.domainRepo.find({ where: { isActive: false } });
-
-
-    for (const domain of pendingDomains) {
-
-      try {
-
-        const status = await this.getVercelDomainStatus(domain.domain);
-
-        if (status.verified && !status.misconfigured) {
-
-          await this.domainRepo.update(domain.id, { isActive: true });
-
-          this.logger.log(`تم تفعيل المتجر بنجاح: ${domain.domain}`);
-
-        }
-
-      } catch (error) {
-
-        this.logger.error(`خطأ في فحص ${domain.domain}: ${error.message}`);
-
-      }
-
+ 
+    // ✅ فقط الدومينات الخارجية (ليست mdstore.top) هي التي تحتاج فحص Vercel
+    const pendingDomains = await this.domainRepo.find({
+        where: { isActive: false, isSub: false }, // isSub: false = دومين خارجي
+    });
+ 
+    if (pendingDomains.length === 0) return;
+ 
+    // ✅ batch بدل sequential — 5 في وقت واحد بدل واحد واحد
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < pendingDomains.length; i += BATCH_SIZE) {
+        const batch = pendingDomains.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(async (domain) => {
+            try {
+                const status = await this.getVercelDomainStatus(domain.domain);
+                if (status.verified && !status.misconfigured) {
+                    await this.domainRepo.update(domain.id, { isActive: true });
+                    this.logger.log(`تم تفعيل: ${domain.domain}`);
+                }
+            } catch (error) {
+                this.logger.error(`خطأ في فحص ${domain.domain}: ${error.message}`);
+            }
+        }));
     }
-
-  }
+}
 
 
   // 3. تحديث يدوي للحالة (يستدعيه الـ Controller)
@@ -206,12 +211,16 @@ export class DomainService {
   }
 
   // 7. حذف الدومين - تحديث الرابط
-  async remove(id: string) {
+  async remove(id: string, storeId:string) {
+    const getCountDomain = await this.domainRepo.count({where : {storeId , isSub:true}})
+    if (getCountDomain === 1) {
+      throw new NotFoundException('يجب الابقاء على دومين واحد فرعي للمتجر');
+    }
     const domainRecord = await this.domainRepo.findOne({ where: { id } });
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
 
     const projectId = this.configService.get('TARGET_STORE_ID');
-    const token = this.configService.get('MY_SECRET_TOKEN');
+    const token = this.configService.get('MY_SECRET_TOKEN')
 
     try {
       await axios.delete(

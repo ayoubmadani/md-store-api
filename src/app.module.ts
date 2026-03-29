@@ -49,7 +49,8 @@ import { DomainModule } from './domain/domain.module';
       useFactory: (config: ConfigService) => ({
         type: "postgres",
         url: config.get<string>('DATABASE_URL'),
-        synchronize: config.get<string>('NODE_ENV') === 'development',
+        synchronize: false, //config.get<string>('NODE_ENV') === 'development',
+        logging:true,
         autoLoadEntities: true,
       }),
     }),

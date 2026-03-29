@@ -1,26 +1,23 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { CreateLandingPageDto } from './dto/create-landing-page.dto';
-import { UpdateLandingPageDto } from './dto/update-landing-page.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LandingPage } from './entities/landing-page.entity';
 import { Repository } from 'typeorm';
 import { AiService } from '../ai/ai.service';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { CreateLandingPageDto } from './dto/create-landing-page.dto';
+import { UpdateLandingPageDto } from './dto/update-landing-page.dto';
 
 @Injectable()
 export class LandingPageService {
-
   constructor(
     @InjectRepository(LandingPage)
     private readonly landingPageRope: Repository<LandingPage>,
-
     private readonly aiService: AiService,
     private readonly subscriptionService: SubscriptionService,
   ) { }
 
   private async getLPLimit(userId: string): Promise<number> {
     const sub = await this.subscriptionService.findSub(userId);
-    // features.storeNumber هو المصدر الحقيقي للحد — لا اسم الخطة
     return sub?.plan?.features?.landingPageNumber ?? 0;
   }
 
@@ -29,20 +26,13 @@ export class LandingPageService {
       this.getLPLimit(userId),
       this.landingPageRope.count({ where: { isActive: true, product: { store: { user: { id: userId } } } } }),
     ]);
-
     if (count >= limit) {
-      throw new BadRequestException(
-        extraMessage ?? `لقد وصلت إلى الحد الأقصى للمتاجر النشطة في خطتك (${limit} صفحات الهبوط).`
-      );
+      throw new BadRequestException(extraMessage ?? `لقد وصلت إلى الحد الأقصى لصفحات الهبوط في خطتك (${limit}).`);
     }
   }
 
-  // ─────────────────────────────────────────
-  // CRUD
-  // ─────────────────────────────────────────
-
   async create(dto: CreateLandingPageDto, userId: string) {
-    await this.assertLPLimitNotReached(userId)
+    await this.assertLPLimitNotReached(userId);
     const landingPage = this.landingPageRope.create({
       productId: dto.productId,
       domain: dto.domain,
@@ -57,98 +47,72 @@ export class LandingPageService {
     const landingpage = await this.landingPageRope.findOne({
       where: { domain },
       relations: [
-        'product',
-        'product.store',
-        'product.store.user',
-        'product.category',
-        'product.attributes',
-        'product.attributes.variants',
-        'product.variantDetails',
-        'product.offers',
+        'product', 'product.store', 'product.store.user',
+        'product.category', 'product.attributes', 'product.attributes.variants',
+        'product.variantDetails', 'product.offers',
       ],
     });
-
-    if (!landingpage) {
-      throw new NotFoundException('Landing page not found');
-    }
+    if (!landingpage) throw new NotFoundException('Landing page not found');
 
     return {
       ...landingpage,
-      product: landingpage.product
-        ? {
-          ...landingpage.product,
-          store: landingpage.product.store
-            ? {
-              id: landingpage.product.store.id,
-              name: landingpage.product.store.name,
-              subdomain: landingpage.product.store.subdomain,
-              userId: landingpage.product.store.user?.id || null,
-            }
-            : null,
-          category: landingpage.product.category
-            ? {
-              id: landingpage.product.category.id,
-              name: landingpage.product.category.name,
-            }
-            : null,
-        }
-        : null,
+      product: landingpage.product ? {
+        ...landingpage.product,
+        store: landingpage.product.store ? {
+          id: landingpage.product.store.id,
+          name: landingpage.product.store.name,
+          subdomain: landingpage.product.store.subdomain,
+          userId: landingpage.product.store.user?.id || null,
+        } : null,
+        category: landingpage.product.category ? {
+          id: landingpage.product.category.id,
+          name: landingpage.product.category.name,
+        } : null,
+      } : null,
     };
   }
 
+  // ✅ حذف shows و orders من الـ relations — كانوا يجلبون arrays كاملة
+  // استخدم loadRelationCountAndMap بدلاً منها
   async getByStoreId(storeId: string) {
-    const landingpage = await this.landingPageRope.find({
-      where: { product: { store: { id: storeId } } },
-      relations: [
-        'product.store',
-        'product.store.user',
-        'product.category',
-        'product.attributes',
-        'product.attributes.variants',
-        'product.variantDetails',
-        'product.offers',
-        'shows',
-        'orders'
-      ],
-    });
+    return this.landingPageRope
+      .createQueryBuilder('lp')
+      .leftJoin('lp.product', 'product') // المستوى الأول
+      .leftJoin('product.store', 'store')  // المستوى الثاني (عبر الاسم المستعار product)
+      // ✅ إذا كنت لا تحتاج لبيانات المستخدم فعلياً، احذف السطر التالي تماماً لتوفير البيانات
+      .leftJoin('store.user', 'user')
 
-    if (!landingpage) {
-      throw new NotFoundException('not exist landing page');
-    }
+      .leftJoinAndSelect('lp.product', 'p')
+      .leftJoinAndSelect('p.category', 'category')
+      .leftJoinAndSelect('p.attributes', 'attributes')
+      .leftJoinAndSelect('attributes.variants', 'variants')
+      .leftJoinAndSelect('p.variantDetails', 'variantDetails')
+      .leftJoinAndSelect('p.offers', 'offers')
 
-    return landingpage;
-  }
+      // استخدام COUNT بدلاً من جلب المصفوفات كاملة (ممتاز!)
+      .loadRelationCountAndMap('lp.showsCount', 'lp.shows')
+      .loadRelationCountAndMap('lp.ordersCount', 'lp.orders')
 
-  findAll() {
-    return `This action returns all landingPage`;
+      .where('store.id = :storeId', { storeId })
+      .getMany();
   }
 
   async findOne(id: string) {
     const landingpage = await this.landingPageRope.findOne({
       where: { id },
       relations: [
-        'product.store',
-        'product.store.user',
-        'product.category',
-        'product.attributes',
-        'product.attributes.variants',
-        'product.variantDetails',
-        'product.offers',
+        'product.store', 'product.store.user', 'product.category',
+        'product.attributes', 'product.attributes.variants',
+        'product.variantDetails', 'product.offers',
       ],
     });
-
-    if (!landingpage) {
-      throw new NotFoundException('not exist landing page');
-    }
-
+    if (!landingpage) throw new NotFoundException('not exist landing page');
     return landingpage;
   }
 
   async update(id: string, dto: UpdateLandingPageDto) {
-    const landingpage = await this.landingPageRope.findOne({ where: { id } })
-    if (!landingpage) {
-      throw new NotFoundException('landing page note found')
-    }
+    const landingpage = await this.landingPageRope.findOne({ where: { id } });
+    if (!landingpage) throw new NotFoundException('landing page not found');
 
     await this.landingPageRope.update(id, {
       productId: dto.productId || landingpage.productId,
@@ -156,72 +120,47 @@ export class LandingPageService {
       platform: dto.paltform || landingpage.platform,
       urlImage: dto.urlImage || landingpage.urlImage,
     });
-
-    return { message: 'edit successfully' }
+    return { message: 'edit successfully' };
   }
 
-  async toggleStatus(id: string,userId:string) {
-    
+  async toggleStatus(id: string, userId: string) {
+    const landingpage = await this.landingPageRope.findOne({ where: { id } });
+    if (!landingpage) throw new NotFoundException('landing page not found');
 
-    const landingpage = await this.landingPageRope.findOne({ where: { id } })
-    if (!landingpage) {
-      throw new NotFoundException('landing page note found')
-    }
+    if (!landingpage.isActive) await this.assertLPLimitNotReached(userId);
 
-    if (!landingpage.isActive) {
-      await this.assertLPLimitNotReached(userId)
-    }
-
-    await this.landingPageRope.update(id, {
-      isActive: !landingpage.isActive
-    });
-
-    return !landingpage.isActive
-
+    await this.landingPageRope.update(id, { isActive: !landingpage.isActive });
+    return !landingpage.isActive;
   }
-
-  
 
   async duplicate(id: string) {
-    const getlandingpage = await this.landingPageRope.findOne({ where: { id } })
-    if (!getlandingpage) {
-      throw new NotFoundException('landing page note found')
-    }
-    const randomNumber = Math.floor(Math.random() * 1000) + 1;
-    const landingPage = this.landingPageRope.create({
-      productId: getlandingpage.productId,
-      domain: `${getlandingpage.domain}-${randomNumber}`,
-      platform: getlandingpage.platform,
-      urlImage: getlandingpage.urlImage,
-    });
+    const lp = await this.landingPageRope.findOne({ where: { id } });
+    if (!lp) throw new NotFoundException('landing page not found');
 
-    return this.landingPageRope.save(landingPage)
+    const randomNumber = Math.floor(Math.random() * 1000) + 1;
+    return this.landingPageRope.save(
+      this.landingPageRope.create({
+        productId: lp.productId,
+        domain: `${lp.domain}-${randomNumber}`,
+        platform: lp.platform,
+        urlImage: lp.urlImage,
+      })
+    );
   }
 
   async updatePlatfor(id: string, platform: string) {
-    const getlandingpage = await this.landingPageRope.findOne({ where: { id } })
-    if (!getlandingpage) {
-      throw new NotFoundException('landing page note found')
-    }
-
-    await this.landingPageRope.update(id, {
-      platform: platform
-    });
-
-    return { message: 'edit successfully' }
+    const lp = await this.landingPageRope.findOne({ where: { id } });
+    if (!lp) throw new NotFoundException('landing page not found');
+    await this.landingPageRope.update(id, { platform });
+    return { message: 'edit successfully' };
   }
 
   remove(id: string) {
-    return this.landingPageRope.delete(id)
+    return this.landingPageRope.delete(id);
   }
-
-  // ─────────────────────────────────────────
-  // توليد صورة Landing Page
-  // ─────────────────────────────────────────
 
   async generateProductImage(productId: string) {
     const result = await this.aiService.generatePromptProduct(productId);
-
     return this.aiService.generateProductImage({
       images: result.images,
       prompt: result.prompt,
@@ -230,4 +169,7 @@ export class LandingPageService {
     });
   }
 
+  findAll() {
+    return `This action returns all landingPage`;
+  }
 }

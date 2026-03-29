@@ -41,7 +41,7 @@ export class DomainController {
 
   // 6. حذف الدومين نهائياً (من قاعدة بياناتك ومن مشروع Vercel)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.domainService.remove(id);
+  remove(@Param('id') id: string , @Body('storeId') storeId:string) {
+    return this.domainService.remove(id,storeId);
   }
 }

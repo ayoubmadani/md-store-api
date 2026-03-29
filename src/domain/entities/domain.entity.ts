@@ -22,6 +22,9 @@ export class Domain {
     @Column({default : false})
     isActive:boolean
 
+    @Column({default : false})
+    isSub:boolean
+
     @Column({nullable:true})
     cloudflareId:string
 }
