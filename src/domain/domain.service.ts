@@ -216,7 +216,9 @@ async handleCron() {
     if (getCountDomain === 1) {
       throw new NotFoundException('يجب الابقاء على دومين واحد فرعي للمتجر');
     }
+
     const domainRecord = await this.domainRepo.findOne({ where: { id } });
+    
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
 
     const projectId = this.configService.get('TARGET_STORE_ID');
