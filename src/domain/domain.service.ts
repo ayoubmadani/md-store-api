@@ -84,33 +84,33 @@ export class DomainService {
   // 2. الفحص الدوري (تفعيل آلي)
 
   @Cron(CronExpression.EVERY_HOUR)
-async handleCron() {
+  async handleCron() {
     this.logger.log('بدء فحص حالة الدومينات على Vercel...');
- 
+
     // ✅ فقط الدومينات الخارجية (ليست mdstore.top) هي التي تحتاج فحص Vercel
     const pendingDomains = await this.domainRepo.find({
-        where: { isActive: false, isSub: false }, // isSub: false = دومين خارجي
+      where: { isActive: false, isSub: false }, // isSub: false = دومين خارجي
     });
- 
+
     if (pendingDomains.length === 0) return;
- 
+
     // ✅ batch بدل sequential — 5 في وقت واحد بدل واحد واحد
     const BATCH_SIZE = 5;
     for (let i = 0; i < pendingDomains.length; i += BATCH_SIZE) {
-        const batch = pendingDomains.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map(async (domain) => {
-            try {
-                const status = await this.getVercelDomainStatus(domain.domain);
-                if (status.verified && !status.misconfigured) {
-                    await this.domainRepo.update(domain.id, { isActive: true });
-                    this.logger.log(`تم تفعيل: ${domain.domain}`);
-                }
-            } catch (error) {
-                this.logger.error(`خطأ في فحص ${domain.domain}: ${error.message}`);
-            }
-        }));
+      const batch = pendingDomains.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (domain) => {
+        try {
+          const status = await this.getVercelDomainStatus(domain.domain);
+          if (status.verified && !status.misconfigured) {
+            await this.domainRepo.update(domain.id, { isActive: true });
+            this.logger.log(`تم تفعيل: ${domain.domain}`);
+          }
+        } catch (error) {
+          this.logger.error(`خطأ في فحص ${domain.domain}: ${error.message}`);
+        }
+      }));
     }
-}
+  }
 
 
   // 3. تحديث يدوي للحالة (يستدعيه الـ Controller)
@@ -211,28 +211,45 @@ async handleCron() {
   }
 
   // 7. حذف الدومين - تحديث الرابط
-  async remove(id: string, storeId:string) {
-    const getCountDomain = await this.domainRepo.count({where : {storeId , isSub:true}})
-    if (getCountDomain === 1) {
-      throw new NotFoundException('يجب الابقاء على دومين واحد فرعي للمتجر');
+  async remove(id: string, storeId: string) {
+    // 1. التأكد من وجود الدومين أولاً قبل أي عملية أخرى
+    const domainRecord = await this.domainRepo.findOne({ where: { id, storeId } });
+    if (!domainRecord) {
+      throw new NotFoundException('الدومين غير موجود أو لا ينتمي لهذا المتجر');
     }
 
-    const domainRecord = await this.domainRepo.findOne({ where: { id } });
-    
-    if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
+    // 2. التحقق من شرط الإبقاء على دومين فرعي واحد على الأقل
+    if (domainRecord.isSub) {
+      const subDomainCount = await this.domainRepo.count({
+        where: { storeId, isSub: true }
+      });
 
-    const projectId = this.configService.get('TARGET_STORE_ID');
-    const token = this.configService.get('MY_SECRET_TOKEN')
+      if (subDomainCount <= 1) {
+        throw new BadRequestException('يجب الإبقاء على دومين فرعي واحد على الأقل للمتجر');
+      }
+    }
 
+    const projectId = this.configService.get<string>('TARGET_STORE_ID');
+    const token = this.configService.get<string>('MY_SECRET_TOKEN');
+
+    // 3. محاولة الحذف من Vercel
     try {
       await axios.delete(
-        `${this.VERCEL_BASE_URL}/v9/projects/${projectId}/domains/${domainRecord.domain}?projectId=${projectId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${this.VERCEL_BASE_URL}/v9/projects/${projectId}/domains/${domainRecord.domain}`,
+        {
+          params: { projectId },
+          headers: { Authorization: `Bearer ${token}` }
+        }
       );
     } catch (e) {
-      this.logger.warn(`فشل حذف الدومين من Vercel: ${e.message}`);
+      // تسجيل الخطأ مع الاحتفاظ بمعلومات كافية للتصحيح
+      this.logger.error(`فشل حذف الدومين ${domainRecord.domain} من Vercel: ${e.response?.data?.message || e.message}`);
+
+      // ملاحظة: إذا كنت تريد منع الحذف من قاعدة البيانات عند فشل Vercel، ارفع خطأ هنا
+      // throw new InternalServerErrorException('تعذر حذف الدومين من المزود الخارجي');
     }
 
+    // 4. الحذف النهائي من قاعدة البيانات
     return await this.domainRepo.remove(domainRecord);
   }
 
