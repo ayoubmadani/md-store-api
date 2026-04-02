@@ -15,16 +15,18 @@ export class Domain {
     @CreateDateColumn()
     createAt: Date;
 
-    @ManyToOne(() => Store, (store) => store.domains)
-    @JoinColumn({name : "storeId"})
+    // domain.entity.ts
+
+    @ManyToOne(() => Store, (store) => store.domains, { onDelete: 'CASCADE' }) // أضفنا هذا الجزء
+    @JoinColumn({ name: "storeId" })
     store: Store;
 
-    @Column({default : false})
-    isActive:boolean
+    @Column({ default: false })
+    isActive: boolean
 
-    @Column({default : false})
-    isSub:boolean
+    @Column({ default: false })
+    isSub: boolean
 
-    @Column({nullable:true})
-    cloudflareId:string
+    @Column({ nullable: true })
+    cloudflareId: string
 }

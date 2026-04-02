@@ -42,6 +42,12 @@ export class ImageController {
     return this.imageService.findAllByUser(userId, page, safeLimit, folder);
   }
 
+  @Get('get-size')
+  findSumSize(@GetUser() user: any,){
+    const userId = user.id || user.sub || user.userId;
+    return this.imageService.findSumSize(userId)
+  }
+
   @Get('stats')
   getStats(@GetUser() user: any) {
     const userId = user.id || user.sub || user.userId;

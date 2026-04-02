@@ -97,6 +97,7 @@ export class Store {
   @OneToMany(() => Show, show => show.store)
   shows: Show[]
 
-  @OneToMany(() => Domain, domains => domains.store)
-  domains:Domain[]
+  // store.entity.ts
+  @OneToMany(() => Domain, (domain) => domain.store, { cascade: true })
+  domains: Domain[];
 }

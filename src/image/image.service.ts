@@ -1,5 +1,5 @@
-import { 
-  Injectable, 
+import {
+  Injectable,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Image } from './entities/image.entity';
 import { S3Service } from './s3.service';
+import { count } from 'console';
 
 @Injectable()
 export class ImageService {
@@ -14,7 +15,7 @@ export class ImageService {
     @InjectRepository(Image)
     private imageRepository: Repository<Image>,
     private s3Service: S3Service,
-  ) {}
+  ) { }
 
   /**
    * رفع صورة واحدة
@@ -53,7 +54,7 @@ export class ImageService {
     const uploadResults = await this.s3Service.uploadMultipleFiles(files, folder);
 
     // حفظ معلومات جميع الصور في قاعدة البيانات
-    const images = uploadResults.map(result => 
+    const images = uploadResults.map(result =>
       this.imageRepository.create({
         url: result.url,
         key: result.key,
@@ -66,6 +67,20 @@ export class ImageService {
     );
 
     return this.imageRepository.save(images);
+  }
+
+  async findSumSize(userId: string) {
+    const result = await this.imageRepository
+      .createQueryBuilder("image")
+      .select("COUNT(image.id)", "count")
+      .addSelect("SUM(image.size)", "totalSize") // افترضنا وجود حقل باسم size
+      .where("image.userId = :userId", { userId })
+      .getRawOne();
+
+      return {
+        count: result.count,
+        totalSize: parseInt(result.totalSize || 0)
+    };
   }
 
   /**
@@ -183,8 +198,8 @@ export class ImageService {
       .createQueryBuilder('image')
       .leftJoinAndSelect('image.user', 'user')
       .where('user.id = :userId', { userId })
-      .andWhere('image.originalName ILIKE :searchTerm', { 
-        searchTerm: `%${searchTerm}%` 
+      .andWhere('image.originalName ILIKE :searchTerm', {
+        searchTerm: `%${searchTerm}%`
       });
 
     if (folder) {
