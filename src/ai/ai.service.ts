@@ -3,109 +3,103 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import axios from 'axios';
-import { fal } from '@fal-ai/client';
+import Replicate from 'replicate';
 import { Product } from '../product/entities/product.entity';
 
 @Injectable()
 export class AiService {
+  private replicate: Replicate;
 
-    constructor(
-        private configService: ConfigService,
-        @InjectRepository(Product)
-        private readonly productRepo: Repository<Product>,
-    ) {
-        fal.config({
-            credentials: this.configService.get<string>('FAL_KEY') as string,
-        });
+  constructor(
+    private configService: ConfigService,
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
+  ) {
+    this.replicate = new Replicate({
+      auth: this.configService.get<string>('REPLICATE_API_KEY'),
+    });
+  }
+
+  // 1. جلب بيانات المنتج (اسم، وصف، سعر)
+  async generatePromptProduct(productId: string): Promise<{
+    images: string[];
+    prompt: string;
+    product: { name: string; price: number };
+  }> {
+    const product = await this.productRepo.findOne({
+      where: { id: productId },
+      relations: ['category', 'imagesProduct'],
+    });
+
+    if (!product) {
+      throw new HttpException('المنتج غير موجود', HttpStatus.NOT_FOUND);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    async generatePromptProduct(productId: string): Promise<{
-        images: string[];
-        prompt: string;
-        product: { name: string; price: number };
-    }> {
-        const product = await this.productRepo.findOne({
-            where: { id: productId },
-            relations: ['category', 'imagesProduct'],
-        });
+    const basePrompt = initPrompt({
+      name: product.name,
+      desc: product.desc,
+      price: product.price,
+    });
 
-        if (!product) {
-            throw new HttpException('المنتج غير موجود', HttpStatus.NOT_FOUND);
-        }
+    const productImages = product.imagesProduct.length > 0
+      ? product.imagesProduct.map(item => item.imageUrl)
+      : [];
 
-        const basePrompt = initPrompt({
-            name: product.name,
-            desc: product.desc,
-            price: product.price,
-        });
+    return {
+      images: productImages,
+      prompt: basePrompt,
+      product: { name: product.name, price: product.price },
+    };
+  }
 
-        const productImages = product.imagesProduct.length > 0
-            ? product.imagesProduct.map(item => item.imageUrl)
-            : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=1000'];
+  // 2. التوليد باستخدام Nano Banana Pro
+  async generateProductImage(data: {
+    images: string[];
+    prompt: string;
+  }) {
+    try {
+      if (!data.images?.[0]) throw new Error('الصورة الأصلية مفقودة');
 
-        return {
-            images: productImages,
-            prompt: basePrompt,
-            product: { name: product.name, price: product.price },
-        };
+      // نستخدم الموديل الأكثر استقراراً وقوة حالياً (Flux Pro / Nano Banana Pro)
+      const output: any = await this.replicate.run(
+        "lucataco/nano-banana-pro:8601633d", // تأكد من الـ Version ID من Replicate
+        {
+          input: {
+            prompt: prompt,
+
+            image: data.images[0], // لإعطاء الموديل شكل المنتج الحقيقي
+            prompt_strength: 0.8,  // توازن مثالي للحفاظ على المنتج وتغيير المحيط
+            aspect_ratio: "9:16",
+            output_format: "webp",
+            output_quality: 75,
+            guidance_scale: 3.5,    // لضمان الالتزام بالوصف
+          },
+        },
+      );
+
+      const generatedUrl = Array.isArray(output) ? output[0] : output;
+      if (!generatedUrl) throw new Error('AI لم يقم بتوليد الرابط');
+
+      // جلب الصورة (رفعنا الـ timeout لـ 60 ثانية لأن الموديل ثقيل)
+      const response = await axios.get(generatedUrl, {
+        responseType: 'arraybuffer',
+        timeout: 60000
+      });
+
+      return {
+        success: true,
+        imageUrl: `data:image/webp;base64,${Buffer.from(response.data).toString('base64')}`,
+      };
+
+    } catch (error) {
+      console.error('❌ Nano Banana Pro Error:', error.message);
+      throw new HttpException(`فشل التوليد: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
-
-    // ─────────────────────────────────────────────────────────────────
-    async generateProductImage(data: {
-        images: string[];
-        prompt: string;
-        productName: string;
-        price: string;
-    }) {
-        try {
-            if (!data.images?.[0]) throw new Error('الصورة مفقودة');
-
-            let imageUrl = data.images[0];
-
-            // ── إذا صورة محلية: ارفعها على fal storage ───────────────
-            if (imageUrl.includes('localhost') || imageUrl.includes('127.0.0.1')) {
-                const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-                const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-                const imageBlob = new Blob([imageBuffer], { type: 'image/jpeg' });
-                imageUrl = await fal.storage.upload(imageBlob as any);
-            }
-
-            // ── Image-to-Image عبر FLUX.1 [dev] ──────────────────────
-            const result = await fal.subscribe('fal-ai/flux/dev/image-to-image', {
-                input: {
-                    image_url: imageUrl,
-                    prompt: data.prompt,
-                    strength: 0.80,
-                    num_inference_steps: 35,
-                    guidance_scale: 7.5,
-                },
-            }) as any;
-
-            // ── جلب الصورة الناتجة ────────────────────────────────────
-            const aiImageResponse = await axios.get(result.data.images[0].url, {
-                responseType: 'arraybuffer',
-            });
-            const aiImageBuffer = Buffer.from(aiImageResponse.data);
-
-            return {
-                success: true,
-                imageUrl: `data:image/png;base64,${aiImageBuffer.toString('base64')}`,
-            };
-
-        } catch (error) {
-            console.error('🔴 AI Error:', error.message);
-            throw new HttpException(
-                `خطأ: ${error.message}`,
-                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
-            );
-        }
-    }
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────
 function initPrompt({ name, desc, price }: { name: string; desc?: string; price: number }) {
-    return `
+  return `
     Create a vertical mobile product landing page banner,  [Arabic RTL layout.]
 
 PRODUCT: ${name}

@@ -50,7 +50,6 @@ import { DomainModule } from './domain/domain.module';
         type: "postgres",
         url: config.get<string>('DATABASE_URL'),
         synchronize: false, //config.get<string>('NODE_ENV') === 'development',
-        logging:true,
         autoLoadEntities: true,
       }),
     }),

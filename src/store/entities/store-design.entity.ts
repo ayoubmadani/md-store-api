@@ -16,13 +16,16 @@ export class StoreDesign {
   @Column({ nullable: true })
   logoUrl: string;
 
+  @Column({ nullable: true })
+  faviconUrl: string;
+
   // Removed duplicate hero fields (heroImage, heroTitle, heroSubtitle)
   // These are now handled by StoreHeroSection entity
 
   @Column()
-  storeId:string
+  storeId: string
 
   @OneToOne(() => Store, (store) => store.design, { onDelete: 'CASCADE' })
-  @JoinColumn({name : "storeId"})
+  @JoinColumn({ name: "storeId" })
   store: Store;
 }

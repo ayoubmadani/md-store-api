@@ -161,12 +161,18 @@ export class LandingPageService {
 
   async generateProductImage(productId: string) {
     const result = await this.aiService.generatePromptProduct(productId);
-    return this.aiService.generateProductImage({
+    console.log({
       images: result.images,
       prompt: result.prompt,
-      productName: (result.product as any).name,
-      price: String((result.product as any).price),
     });
+    return
+    const req = this.aiService.generateProductImage({
+      images: result.images,
+      prompt: result.prompt,
+    });
+
+    
+    
   }
 
   findAll() {
