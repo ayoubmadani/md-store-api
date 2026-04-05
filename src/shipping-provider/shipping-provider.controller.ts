@@ -1,131 +1,128 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { SetShippingProviderDto, CreateShippingOrderDto } from './dto/shipping.dto';
 import { ShippingProviderService } from './shipping-provider.service';
-// import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';      // adjust to your guard
-// import { StoreOwnerGuard } from '../auth/guards/store-owner.guard'; // adjust to your guard
+import { AuthGuard } from '../auth/guard/auth.guard';
+import { GetUser } from '../user/decorator/get-user.decorator';
+// قم بتفعيل الحراس (Guards) الخاصة بنظامك هنا
+// import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('stores/:storeId/shipping')
-// @UseGuards(JwtAuthGuard, StoreOwnerGuard)
+@UseGuards(AuthGuard)
 export class ShippingProviderController {
   constructor(private readonly shippingService: ShippingProviderService) {}
 
-  // ─── Provider Catalog (Dashboard) ────────────────────────────────────────
-
-  /**
-   * GET /stores/:storeId/shipping/providers
-   * Returns all 26 available providers for the dashboard selector.
-   */
+  // ─── مزودي الخدمة (العامة) ───
   @Get('providers')
   getAllProviders() {
     return this.shippingService.getAllProviders();
   }
 
-  // ─── Store Settings ───────────────────────────────────────────────────────
+  // ─── إدارة حسابات المستخدم ───
 
-  /**
-   * GET /stores/:storeId/shipping/settings
-   * Returns the currently configured provider and its verification status.
-   */
-  @Get('settings')
-  async getSettings(@Param('storeId') storeId: string) {
-    const settings = await this.shippingService.getStoreSettings(storeId);
-    if (!settings) return { configured: false };
-
-    const metadata = await this.shippingService.getProviderMetadata(storeId);
-    return {
-      configured: true,
-      providerName: settings.providerName,
-      isVerified: settings.isVerified,
-      metadata,
-    };
+  @Get('accounts')
+  getAccounts(@Param('storeId') storeId: string, @GetUser() user: any) {
+    const userId = user.id || user.sub;
+    return this.shippingService.getStoreAccounts(userId);
   }
 
-  /**
-   * POST /stores/:storeId/shipping/settings
-   * Set or update the shipping provider. Verifies credentials automatically.
-   */
-  @Post('settings')
-  setProvider(
+  @Post('accounts')
+  createAccount(
     @Param('storeId') storeId: string,
     @Body() dto: SetShippingProviderDto,
+    @GetUser() user: any,
   ) {
-    return this.shippingService.setStoreProvider(storeId, dto);
+    const userId = user.id || user.sub;
+    return this.shippingService.createAccount(userId, dto);
   }
 
-  /**
-   * GET /stores/:storeId/shipping/test-credentials
-   * Re-test the currently saved credentials.
-   */
+  @Patch('accounts/:accountId/default')
+  setDefaultAccount(
+    @Param('storeId') storeId: string,
+    @Param('accountId') accountId: string,
+    @GetUser() user: any,
+  ) {
+    const userId = user.id || user.sub;
+    return this.shippingService.setDefaultAccount( userId, accountId);
+  }
+
+  @Delete('accounts/:accountId')
+  deleteAccount(
+    @Param('storeId') storeId: string,
+    @Param('accountId') accountId: string,
+    @GetUser() user: any,
+  ) {
+    const userId = user.id || user.sub;
+    return this.shippingService.deleteAccount( userId, accountId);
+  }
+
+  // ─── عمليات الشحن ───
+
   @Get('test-credentials')
-  testCredentials(@Param('storeId') storeId: string) {
-    return this.shippingService.testCredentials(storeId);
+  testCredentials(@Param('storeId') storeId: string, @GetUser() user: any) {
+    const userId = user.id || user.sub;
+    return this.shippingService.testCredentials(storeId, userId);
   }
 
-  // ─── Shipping Operations ──────────────────────────────────────────────────
-
-  /**
-   * GET /stores/:storeId/shipping/rates?fromWilayaId=16&toWilayaId=31
-   */
   @Get('rates')
   getRates(
     @Param('storeId') storeId: string,
+    @GetUser() user: any,
     @Query('fromWilayaId') fromWilayaId?: string,
     @Query('toWilayaId') toWilayaId?: string,
   ) {
+    const userId = user.id || user.sub;
     return this.shippingService.getRates(
       storeId,
+      userId,
       fromWilayaId ? +fromWilayaId : undefined,
       toWilayaId ? +toWilayaId : undefined,
     );
   }
 
-  /**
-   * GET /stores/:storeId/shipping/validation-rules
-   * Returns the required fields for createOrder for the active provider.
-   */
   @Get('validation-rules')
-  getValidationRules(@Param('storeId') storeId: string) {
-    return this.shippingService.getValidationRules(storeId);
+  getValidationRules(@Param('storeId') storeId: string, @GetUser() user: any) {
+    const userId = user.id || user.sub;
+    return this.shippingService.getValidationRules(storeId, userId);
   }
 
-  /**
-   * POST /stores/:storeId/shipping/orders
-   */
   @Post('orders')
   createOrder(
     @Param('storeId') storeId: string,
     @Body() dto: CreateShippingOrderDto,
+    @GetUser() user: any,
   ) {
-    return this.shippingService.createOrder(storeId, dto.orderData);
+    const userId = user.id || user.sub;
+    return this.shippingService.createOrder(storeId, userId, dto.orderData);
   }
 
-  /**
-   * GET /stores/:storeId/shipping/orders/:trackingId
-   */
   @Get('orders/:trackingId')
   getOrder(
     @Param('storeId') storeId: string,
     @Param('trackingId') trackingId: string,
+    @GetUser() user: any,
   ) {
-    return this.shippingService.getOrder(storeId, trackingId);
+    const userId = user.id || user.sub;
+    return this.shippingService.getOrder(storeId, userId, trackingId);
   }
 
-  /**
-   * GET /stores/:storeId/shipping/orders/:orderId/label
-   */
   @Get('orders/:orderId/label')
   getLabel(
     @Param('storeId') storeId: string,
     @Param('orderId') orderId: string,
+    @GetUser() user: any,
   ) {
-    return this.shippingService.getOrderLabel(storeId, orderId);
+    const userId = user.id || user.sub;
+    return this.shippingService.getOrderLabel(storeId, userId, orderId);
   }
 }

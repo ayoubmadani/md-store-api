@@ -1,107 +1,141 @@
-import { BadGatewayException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { StoreShippingSettings } from './entities/store-shipping-settings.entity';
+import { Order } from '../order/entities/order.entity';
 import { createProvider, getAllProvidersMetadata } from './providers/provider.registry';
 import { ShippingProviderContract } from './interfaces/shipping-provider.interface';
 import { SetShippingProviderDto } from './dto/shipping.dto';
-import { Order } from '../order/entities/order.entity';
 
 @Injectable()
 export class ShippingProviderService {
   constructor(
     @InjectRepository(StoreShippingSettings)
     private readonly settingsRepo: Repository<StoreShippingSettings>,
-
-    @InjectRepository(Order) private readonly orderRepo: Repository<Order>
+    @InjectRepository(Order)
+    private readonly orderRepo: Repository<Order>,
   ) {}
 
-  // ─── Provider Registry ────────────────────────────────────────────────────
-
+  // ─── مزودي الخدمة المتاحين ───
   getAllProviders() {
     return getAllProvidersMetadata();
   }
 
-  // ─── Store Settings ───────────────────────────────────────────────────────
+  // ─── إدارة الحسابات (مرتبطة بالمستخدم) ───
 
-  async getStoreSettings(storeId: string): Promise<StoreShippingSettings | null> {
-    return this.settingsRepo.findOne({ where: { storeId } });
+  async getStoreAccounts(userId: string): Promise<StoreShippingSettings[]> {
+    return this.settingsRepo.find({
+      where: { userId },
+      order: { isDefault: 'DESC', createdAt: 'ASC' },
+    });
   }
 
-  async setStoreProvider(storeId: string, dto: SetShippingProviderDto): Promise<{ isVerified: boolean }> {
+  async createAccount(
+    userId: string,
+    dto: SetShippingProviderDto,
+  ): Promise<{ isVerified: boolean; id: string }> {
     const provider = createProvider(dto.providerName, dto.credentials);
     const isVerified = await provider.testCredentials();
 
-    let settings = await this.settingsRepo.findOne({ where: { storeId } });
-    if (!settings) settings = this.settingsRepo.create({ storeId });
+    const account = this.settingsRepo.create({
+      userId,
+      accountName: dto.accountName || dto.providerName,
+      providerName: dto.providerName,
+      isVerified,
+    });
+    account.setCredentials(dto.credentials);
 
-    settings.providerName = dto.providerName;
-    settings.setCredentials(dto.credentials);
-    settings.isVerified = isVerified;
+    const existingCount = await this.settingsRepo.count({ where: { userId } });
+    account.isDefault = existingCount === 0;
 
-    await this.settingsRepo.save(settings);
-    return { isVerified };
+    await this.settingsRepo.save(account);
+    return { isVerified, id: account.id };
   }
 
-  // ─── Provider Factory ─────────────────────────────────────────────────────
+  async setDefaultAccount(userId: string, accountId: string): Promise<void> {
+    const account = await this.settingsRepo.findOne({
+      where: { id: accountId,  userId },
+    });
+    if (!account) throw new NotFoundException('الحساب غير موجود أو لا تملك صلاحية الوصول إليه');
 
-  private async getProviderForStore(storeId: string): Promise<ShippingProviderContract> {
-    const settings = await this.getStoreSettings(storeId);
+    await this.settingsRepo.update({  userId }, { isDefault: false });
+    await this.settingsRepo.update({ id: accountId }, { isDefault: true });
+  }
 
-    if (!settings) {
-      throw new NotFoundException(
-        `No shipping provider configured for store ${storeId}. Please set one from the dashboard.`,
-      );
+  async deleteAccount( userId: string, accountId: string): Promise<void> {
+    const account = await this.settingsRepo.findOne({
+      where: { id: accountId, userId },
+    });
+    if (!account) throw new NotFoundException('الحساب غير موجود');
+
+    const wasDefault = account.isDefault;
+    await this.settingsRepo.remove(account);
+
+    if (wasDefault) {
+      const next = await this.settingsRepo.findOne({
+        where: {  userId },
+        order: { createdAt: 'ASC' },
+      });
+      if (next) await this.settingsRepo.update(next.id, { isDefault: true });
+    }
+  }
+
+  // ─── جلب المزود للعمليات ───
+
+  private async getProviderForUser(storeId: string, userId: string): Promise<ShippingProviderContract> {
+    const account =
+      (await this.settingsRepo.findOne({ where: { storeId, userId, isDefault: true } })) ??
+      (await this.settingsRepo.findOne({ where: { storeId, userId } }));
+
+    if (!account) {
+      throw new NotFoundException('لم يتم إعداد مزود شحن لهذا المستخدم في هذا المتجر.');
     }
 
-    return createProvider(settings.providerName, settings.getParsedCredentials());
+    return createProvider(account.providerName, account.getParsedCredentials());
   }
 
-  // ─── Shipping Operations ──────────────────────────────────────────────────
+  // ─── عمليات الشحن ───
 
-  async testCredentials(storeId: string): Promise<boolean> {
-    const provider = await this.getProviderForStore(storeId);
+  async testCredentials(storeId: string, userId: string): Promise<boolean> {
+    const provider = await this.getProviderForUser(storeId, userId);
     return provider.testCredentials();
   }
 
-  async getRates(storeId: string, fromWilayaId?: number, toWilayaId?: number) {
-    const provider = await this.getProviderForStore(storeId);
+  async getRates(storeId: string, userId: string, fromWilayaId?: number, toWilayaId?: number) {
+    const provider = await this.getProviderForUser(storeId, userId);
     return provider.getRates(fromWilayaId, toWilayaId);
   }
 
-  async getValidationRules(storeId: string) {
-    const provider = await this.getProviderForStore(storeId);
+  async getValidationRules(storeId: string, userId: string) {
+    const provider = await this.getProviderForUser(storeId, userId);
     return provider.getCreateOrderValidationRules();
   }
 
-  async createOrder(storeId: string, orderData: Record<string, unknown>) {
-    const provider = await this.getProviderForStore(storeId);
+  async createOrder(storeId: string, userId: string, orderData: Record<string, unknown>) {
+    const provider = await this.getProviderForUser(storeId, userId);
 
     const order = await this.orderRepo.findOne({
       where: { id: orderData.id as string },
       relations: ['customerWilaya', 'customerCommune'],
     });
 
-    if (!order) throw new BadGatewayException('Order not found');
+    if (!order) throw new BadGatewayException('الطلب غير موجود');
 
     return provider.createOrderFromOrder(order);
   }
 
-  async getOrder(storeId: string, trackingId: string) {
-    const provider = await this.getProviderForStore(storeId);
+  async getOrder(storeId: string, userId: string, trackingId: string) {
+    const provider = await this.getProviderForUser(storeId, userId);
     return provider.getOrder(trackingId);
   }
 
-  async getOrderLabel(storeId: string, orderId: string) {
-    const provider = await this.getProviderForStore(storeId);
+  async getOrderLabel(storeId: string, userId: string, orderId: string) {
+    const provider = await this.getProviderForUser(storeId, userId);
     return provider.orderLabel(orderId);
-  }
-
-  async getProviderMetadata(storeId: string) {
-    const settings = await this.getStoreSettings(storeId);
-    if (!settings) return null;
-    const provider = createProvider(settings.providerName, settings.getParsedCredentials());
-    return provider.metadata();
   }
 }

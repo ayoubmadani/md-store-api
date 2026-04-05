@@ -1,10 +1,11 @@
 import { Store } from '../../store/entities/store.entity';
+import { User } from '../../user/entities/user.entity'; // تأكد من مسار كيان المستخدم لديك
 import {
   Column,
   CreateDateColumn,
   Entity,
   JoinColumn,
-  OneToOne,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -14,35 +15,37 @@ export class StoreShippingSettings {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @OneToOne(() => Store, { onDelete: 'CASCADE' })
+  // ─── الربط مع المستخدم (المالك) ───
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @Column({ name: 'user_id' })
+  userId: string;
+
+  // ─── الربط مع المتجر (السياق) ───
+  @ManyToOne(() => Store, { onDelete: 'CASCADE',nullable:true },)
   @JoinColumn({ name: 'store_id' })
-  store: Store;
+  store?: Store;
 
-  @Column({ name: 'store_id' })
-  storeId: string;
+  @Column({ name: 'store_id' ,nullable:true})
+  storeId?: string;
 
-  /**
-   * Provider name key — must match a key in PROVIDER_REGISTRY
-   * e.g. "Yalidine", "Dhd", "ZRExpress"
-   */
+  // ─── بيانات الحساب ───
+  @Column({ name: 'account_name', length: 128 })
+  accountName: string;
+
   @Column({ name: 'provider_name', length: 64 })
   providerName: string;
 
-  /**
-   * Credentials stored as encrypted JSON string
-   * e.g. { "token": "...", "id": "..." }
-   * 
-   * Encrypt before save, decrypt after load using a NestJS lifecycle hook
-   * or a custom transformer.
-   */
   @Column({ name: 'credentials', type: 'text' })
   credentials: string;
 
-  /**
-   * Whether credentials have been verified
-   */
   @Column({ name: 'is_verified', default: false })
   isVerified: boolean;
+
+  @Column({ name: 'is_default', default: false })
+  isDefault: boolean;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
@@ -50,8 +53,7 @@ export class StoreShippingSettings {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  // ─── Helper ───────────────────────────────────────────────────────────────
-
+  // ─── دوال مساعدة ───
   getParsedCredentials(): Record<string, string> {
     return JSON.parse(this.credentials);
   }

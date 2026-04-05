@@ -5,6 +5,7 @@ import { Store } from '../../store/entities/store.entity';
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, OneToOne } from 'typeorm';
 import { Transaction } from '../../payment/entities/transaction.entity';
 import { Subscription } from '../../subscription/entities/subscription.entity';
+import { StoreShippingSettings } from 'src/shipping-provider/entities/store-shipping-settings.entity';
 
 export enum AuthProvider {
     CREDENTIALS = 'CREDENTIALS',
@@ -86,6 +87,9 @@ export class User {
 
     @OneToOne(() => Wallet, (wallet) => wallet.user)
     wallet: Wallet;
+
+    @OneToMany(() => StoreShippingSettings, (settings) => settings.user)
+    shippingAccounts: StoreShippingSettings[];
 
     @OneToMany(() => Transaction, (transaction) => transaction.user)
     transactions: Transaction[];
