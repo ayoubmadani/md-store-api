@@ -59,7 +59,7 @@ export class OrdersService {
             totalPrice: dto.totalPrice,
             quantity: dto.quantity || 1,
             variantDetailId: dto.variantDetailId,
-            offerId: dto.offerId,
+            offerId: dto.offerId || dto.selectedOffer,
             platform: dto.platform || "mdstore",
             lpId: dto.lpId
         } as any);

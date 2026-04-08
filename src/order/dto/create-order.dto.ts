@@ -27,6 +27,11 @@ export class CreateOrderDto {
   @IsUUID()
   offerId?: string;
 
+  @ApiPropertyOptional({ description: 'معرف العرض' })
+  @IsOptional()
+  @IsUUID()
+  selectedOffer?: string;
+
   @ApiProperty({ description: 'الكمية', minimum: 1, maximum: 100 })
   @IsNumber()
   @Min(1)
