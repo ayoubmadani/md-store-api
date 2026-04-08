@@ -30,11 +30,11 @@ export class OrdersService {
         private readonly ntfyService: NtfyService
     ) { }
 
-     formatName = (name: string, limit: number = 15) => {
+    formatName = (name: string, limit: number = 15) => {
         return name.length > limit ? name.substring(0, limit) + '...' : name;
     };
 
-    
+
 
     async create(dto: CreateOrderDto) {
         const store = await this.storesrepo.findOne({ where: { subdomain: dto.domain } });
@@ -42,7 +42,7 @@ export class OrdersService {
             throw new BadRequestException('Store not exist');
         }
 
-            console.log(dto);
+        console.log(dto);
 
 
         const order = this.ordersrepo.create({
@@ -61,7 +61,7 @@ export class OrdersService {
             variantDetailId: dto.variantDetailId,
             offerId: dto.offerId,
             platform: dto.platform || "mdstore",
-            lpId:dto.lpId
+            lpId: dto.lpId
         } as any);
 
         const savedOrder = await this.ordersrepo.save(order);
@@ -72,14 +72,14 @@ export class OrdersService {
         });
 
         const shipping = await this.shippingrepo.findOne({
-            where :{wilaya : {id : dto.customerWilayaId}},
-            relations:['wilaya']
+            where: { wilaya: { id: dto.customerWilayaId || dto.customerWelaya } },
+            relations: ['wilaya']
         })
 
         const communes = await this.communerepo.findOne({
-            where :{id : dto.customerCommuneId},
-        })        
-        
+            where: { id: dto.customerCommuneId || dto.customerCommune },
+        })
+
 
         const productName = product?.name || "منتج غير محدد"; // تأكد من إزالة أي مرجع هنا
         const topic = product?.store?.user?.topic;
@@ -88,27 +88,29 @@ export class OrdersService {
         const commune = communes?.name
 
         if (isNtfy && topic) {
-    const message = `new order: ${dto.platform || "mdstore"}
+            const message = `new order: ${dto.platform || "mdstore"}
 -------------------------
 👤 customer: ${dto.customerName}
 📍 wilaya: ${wilaya}
 🏙️ commune: ${commune}
 📞 phone: ${dto.customerPhone}
 🛍️ product: ${this.formatName(productName)}
-🚚 type ship: ${dto.typeShip === 'home' ? 'توصيل للمنزل' : 'توصيل للمكتب'}
-💰 price: ${dto.totalPrice} + ${dto.priceShip}`.trim();
+🚚 type ship: ${dto.typeShip || dto.typeLivraison || TypeShipEnum.HOME}
+💰 price: ${dto.totalPrice} + ${dto.priceShip || dto.priceLivraison || 0}`.trim();
 
-    // إرسال الرسالة المنسقة
-    this.ntfyService.publish(topic, message);
-}
+            // إرسال الرسالة المنسقة
+            this.ntfyService.publish(topic, message);
+        }
 
         return savedOrder;
     }
 
 
-    async getAllOrdersByStoreId(storeId: string, status?: StatusEnum, query?: string) {
+    async getAllOrdersByStoreId(storeId: string, status?: StatusEnum, query?: string, page: number = 1) {
         // 1. بناء الشرط الأساسي الذي يجب أن يتوفر في كل الحالات
         const baseWhere: any = { storeId: storeId };
+        const limit = 50;
+        const skip = (page - 1) * limit;
 
         // 2. إضافة الحالة (status) إذا وجدت
         if (status) {
@@ -140,8 +142,36 @@ export class OrdersService {
             ],
             order: {
                 createdAt: 'DESC'
-            }
+            },
+            take: limit,
+            skip: skip
         });
+    }
+
+    async getCountPageByStoreId(storeId, status?: StatusEnum, query?: string,) {
+        // 1. بناء الشرط الأساسي الذي يجب أن يتوفر في كل الحالات
+        const baseWhere: any = { storeId: storeId };
+
+        // 2. إضافة الحالة (status) إذا وجدت
+        if (status) {
+            baseWhere.status = status;
+        }
+
+        // 3. التعامل مع البحث (query)
+        let whereCondition: any | any[];
+
+        if (query) {
+            const search = `%${query}%`; // للبحث الجزئي
+            whereCondition = [
+                { ...baseWhere, customerName: ILike(search) },  // ILike تتجاهل حالة الأحرف
+                { ...baseWhere, customerPhone: Like(search) }
+            ];
+        } else {
+            whereCondition = baseWhere;
+        }
+        return this.ordersrepo.count({
+            where: whereCondition,
+        })
     }
 
     async getOne(orderId: string) {

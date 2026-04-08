@@ -39,9 +39,18 @@ export class OrdersController {
         @Param('storeId') storeId: string,
         @Query('status') status?: StatusEnum,
         @Query('query') query?: string,
-
+        @Query('page') page?: number,
     ) {
-        return this.ordersService.getAllOrdersByStoreId(storeId, status, query)
+        return this.ordersService.getAllOrdersByStoreId(storeId, status, query,page)
+    }
+
+    @Get('count/:storeId')
+    getCountPageByStoreId(
+        @Param('storeId') storeId: string,
+        @Query('status') status?: StatusEnum,
+        @Query('query') query?: string,
+    ) {
+        return this.ordersService.getCountPageByStoreId(storeId, status, query)
     }
 
     @Get('get-one/:orderId')

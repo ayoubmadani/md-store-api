@@ -48,12 +48,12 @@ export class ThemeService {
     if (searchQuery) {
       const ilikeQuery = ILike(`%${searchQuery}%`);
       whereCondition = [
-        { name_ar: ilikeQuery, ...(filterType && { themeTypeId: filterType }), ...activeFilter },
-        { name_en: ilikeQuery, ...(filterType && { themeTypeId: filterType }), ...activeFilter },
-        { desc_ar: ilikeQuery, ...(filterType && { themeTypeId: filterType }), ...activeFilter },
+        { name_ar: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter },
+        { name_en: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter },
+        { desc_ar: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter },
       ];
     } else if (filterType) {
-      whereCondition = { themeTypeId: filterType, ...activeFilter };
+      whereCondition = { typeId: filterType, ...activeFilter };
     } else {
       whereCondition = { ...activeFilter };
     }
