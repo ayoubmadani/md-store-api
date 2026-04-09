@@ -20,6 +20,8 @@ import { LandingPage } from '../landing-page/entities/landing-page.entity';
 import { Image } from '../image/entities/image.entity';
 import type { CreateThemeDto, UpdateThemeDto } from './admin.controller';
 import { Wilaya } from '../shipping/entity/wilaya.entity';
+import { MessageAdmine } from './entity/message-admin.entity';
+import { CreateMessageAdminDto } from './dto/message-admine.dto';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local shape types — used only as plain type annotations inside the service,
@@ -109,6 +111,9 @@ export class AdminService {
 
         @InjectRepository(Wilaya)
         private readonly wilayaRepo: Repository<Wilaya>,
+
+        @InjectRepository(MessageAdmine)
+        private readonly messageAdmineRepo: Repository<MessageAdmine>,
     ) { }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -801,4 +806,126 @@ export class AdminService {
             revenue: +(+r.revenue).toFixed(2),
         }));
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 11. contact
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    async createMessage(dto: CreateMessageAdminDto) {
+        const createMessage = await this.messageAdmineRepo.create(dto)
+        await this.messageAdmineRepo.save(createMessage)
+
+        return { success: true }
+    }
+
+    // 1. دالة جلب الإحصائيات (Count)
+    async getCountMessage(search?: string, tab: string = 'all') {
+        // 1. الإحصائيات العامة (ثابتة لا تتأثر بالفلترة عادةً لتظهر في المربعات العلوية)
+        const totalCount = await this.messageAdmineRepo.count();
+        const unreadCount = await this.messageAdmineRepo.count({ where: { isReplied: false, isArchived: false } });
+        const archivedCount = await this.messageAdmineRepo.count({ where: { isArchived: true } });
+
+        // 2. حساب عدد النتائج "المفلترة" (التي تظهر للمستخدم حالياً بناءً على البحث والتبويب)
+        const query = this.messageAdmineRepo.createQueryBuilder('message');
+
+        // تطبيق فلترة التبويب (Tab)
+        if (tab === 'archive') {
+            query.andWhere('message.isArchived = :isArchived', { isArchived: true });
+        } else if (tab === 'reading') {
+            query.andWhere('message.isReplied = :isReplied', { isReplied: true })
+                .andWhere('message.isArchived = :isArchived', { isArchived: false });
+        } else {
+            query.andWhere('message.isArchived = :isArchived', { isArchived: false });
+        }
+
+        // تطبيق فلترة البحث (Search)
+        if (search) {
+            query.andWhere(
+                '(message.username LIKE :search OR message.subject LIKE :search OR message.email LIKE :search)',
+                { search: `%${search}%` }
+            );
+        }
+
+        const filteredCount = await query.getCount();
+
+        return {
+            stats: {
+                total: totalCount,
+                unread: unreadCount,
+                archived: archivedCount
+            },
+            filteredCount // هذا الرقم الذي ستستخدمه في جملة "You have X messages"
+        };
+    }
+
+    async getAllMessage(page: number = 1, search?: string, tab: string = 'new') {
+    // التأكد من أن رقم الصفحة دائماً رقم صحيح أكبر من 0
+    const currentPage = Math.max(1, Number(page) || 1);
+    const limit = 10;
+    const skip = (currentPage - 1) * limit;
+
+    const query = this.messageAdmineRepo.createQueryBuilder('message');
+
+    // 1. منطق التبويبات (Tabs Logic)
+    if (tab === 'archive') {
+        query.andWhere('message.isArchived = :isArchived', { isArchived: true });
+    } else if (tab === 'reading') {
+        query.andWhere('message.isReplied = :isReplied', { isReplied: true })
+             .andWhere('message.isArchived = :isArchived', { isArchived: false });
+    } else {
+        // إذا كان التبويب 'new' أو أي شيء آخر، اعرض الرسائل غير المؤرشفة وغير المقروءة (أو حسب رغبتك)
+        // الخيار الأفضل لـ 'new':
+        query.andWhere('message.isArchived = :isArchived', { isArchived: false })
+             .andWhere('message.isReplied = :isReplied', { isReplied: false });
+    }
+
+    // 2. منطق البحث (Search Logic)
+    if (search && search.trim() !== "") {
+        query.andWhere(
+            '(message.username ILIKE :search OR message.subject ILIKE :search OR message.email ILIKE :search)',
+            { search: `%${search}%` }
+        );
+    }
+
+    // 3. الترتيب والتقسيم
+    query.orderBy('message.createdAt', 'DESC')
+         .take(limit)
+         .skip(skip);
+
+    try {
+        const [messages, total] = await query.getManyAndCount();
+
+        return {
+            data: messages,
+            meta: {
+                totalItems: total,
+                totalPages: Math.ceil(total / limit),
+                currentPage: currentPage,
+                itemsPerPage: limit,
+            },
+        };
+    } catch (error) {
+        console.error("Database Error:", error);
+        throw new Error("Failed to fetch messages from database");
+    }
+}
+
+    async updateStatus(id: string, status: 'replied' | 'archived') {
+        const updateData: Partial<MessageAdmine> = {};
+
+        if (status === 'replied') {
+            updateData.isReplied = true;
+        } else if (status === 'archived') {
+            updateData.isArchived = true;
+        }
+
+        const result = await this.messageAdmineRepo.update(id, updateData);
+
+        if (result.affected === 0) {
+            throw new Error("Message not found");
+        }
+
+        return { message: `Status updated to ${status} successfully` };
+    }
+
 }

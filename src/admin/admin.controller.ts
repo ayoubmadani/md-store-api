@@ -15,6 +15,7 @@ import {
 import { UserRole } from '../user/entities/user.entity';
 import { StatusEnum } from '../order/entities/order.entity';
 import { AdminService } from './admine.service';
+import { CreateMessageAdminDto } from './dto/message-admine.dto';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Query classes
@@ -109,7 +110,7 @@ export class UpdateThemeDto {
 // @UseGuards(JwtAuthGuard, RolesGuard)   ← uncomment when auth is wired
 // @Roles(UserRole.ADMIN)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 1. DASHBOARD
@@ -509,5 +510,47 @@ export class AdminController {
   @Get('analytics/top-stores')
   getTopStores(@Query('limit') limit?: number) {
     return this.adminService.getTopStores(limit ? +limit : 10);
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 11. contact
+  // GET /admin/contact
+  // post /admin/contact
+  // Patch /admin/contact
+  // ═══════════════════════════════════════════════════════════════════════════
+
+
+  @Post('contact')
+  createMessage(@Body() dto: CreateMessageAdminDto) {
+    return this.adminService.createMessage(dto)
+  }
+
+  @Get('contact')
+  getAllMessage(
+    @Query('page') page: string = '1', 
+    @Query('search') search?: string,  // 👈 غيرنا 'query' إلى 'search' لتطابق الفرونت إند
+    @Query('tab') tab: string = 'all', // 👈 أضفنا الـ tab لكي لا يضيع الفلتر
+  ) {
+    const pageNumber = parseInt(page, 10) || 1;
+    
+    // 👈 تأكد من تمرير الثلاثة متغيرات للـ Service
+    return this.adminService.getAllMessage(pageNumber, search, tab);
+  }
+
+  @Get('count')
+  async getCounts(
+    @Query('search') search?: string,
+    @Query('tab') tab: string = 'all',
+  ) {
+    return await this.adminService.getCountMessage(search, tab);
+  }
+
+  @Patch('contact/:id/status')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: 'replied' | 'archived'
+  ) {
+    return await this.adminService.updateStatus(id, status);
   }
 }

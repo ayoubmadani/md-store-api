@@ -26,6 +26,7 @@ import { Theme } from '../theme/entities/theme.entity';
 import { User } from '../user/entities/user.entity';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admine.service';
+import { MessageAdmine } from './entity/message-admin.entity';
 
 
 @Module({
@@ -55,7 +56,7 @@ import { AdminService } from './admine.service';
             ImageProduct,
             LandingPage,
             Niche,
-            
+            MessageAdmine,
         ]),
     ],
     controllers: [AdminController],
