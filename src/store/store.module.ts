@@ -15,6 +15,9 @@ import { User } from '../user/entities/user.entity';
 import { Niche } from '../niche/entities/niche.entity';
 import { Category } from '../category/entities/category.entity';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { PublicStoreController } from './public-store.controller';
+import { PublicStoreService } from './public-store.service';
+import { Product } from '../product/entities/product.entity';
 
 @Module({
   imports: [
@@ -28,11 +31,12 @@ import { SubscriptionModule } from '../subscription/subscription.module';
       User,
       Niche,
       Category,
+      Product
     ]),
     SubscriptionModule,
   ],
-  controllers: [StoreController],
-  providers: [StoreService],
+  controllers: [StoreController , PublicStoreController],
+  providers: [StoreService , PublicStoreService],
   exports: [StoreService, TypeOrmModule],
 })
 export class StoreModule {}

@@ -19,6 +19,7 @@ import { ImageProduct } from '../../image-product/entities/image-product.entity'
 import { Category } from '../../category/entities/category.entity';
 import { Order } from '../../order/entities/order.entity';
 import { Show } from '../../show/entity/show.entity';
+import { OrderItem } from '../../order/entities/order-item.entity';
 
 @Entity({ name: 'products' })
 @Index(['store', 'category'])
@@ -111,8 +112,8 @@ export class Product {
   offers: Offer[];
 
   @Exclude()
-  @OneToMany(() => Order, (order) => order.product)
-  orders: Order[];
+  @OneToMany(() => OrderItem, (orderItem) => orderItem.product)
+  orderItems: OrderItem[];
 
   /**
    * ✅ ONE product → MANY show.
@@ -120,6 +121,6 @@ export class Product {
    * Removed: @ManyToOne, @JoinColumn, and the stray `offerId` column.
    */
 
-  @OneToMany(()=> Show , show=> show.product)
-  shows:Show[]
+  @OneToMany(() => Show, show => show.product)
+  shows: Show[]
 }

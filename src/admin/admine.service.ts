@@ -124,50 +124,66 @@ export class AdminService {
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        // ── Users ──
-        const totalUsers = await this.userRepo.count();
-        const verifiedUsers = await this.userRepo.count({ where: { isVerified: true } });
-        const adminUsers = await this.userRepo.count({ where: { role: UserRole.ADMIN } });
-        const newUsersThisMonth = await this.userRepo.count({
-            where: { createdAt: Between(startOfMonth, now) },
+        // 1. إحصائيات المستخدمين (Users)
+        const [totalUsers, verifiedUsers, admins, newUsers] = await Promise.all([
+            this.userRepo.count(),
+            this.userRepo.count({ where: { isVerified: true } }), // تأكد من وجود حقل isVerified
+            this.userRepo.count({ where: { role: UserRole.ADMIN } }),
+            this.userRepo.count({ where: { createdAt: Between(startOfMonth, now) } })
+        ]);
+
+        // 2. إحصائيات المتاجر (Stores)
+        const [totalStores, activeStores] = await Promise.all([
+            this.storeRepo.count(),
+            this.storeRepo.count({ where: { isActive: true } })
+        ]);
+
+        // 3. إحصائيات الطلبات (Orders)
+        // نستخدم totalCartPrice للحسابات المالية
+        const allOrders = await this.orderRepo.find({
+            select: ['status', 'totalPrice', 'createdAt']
         });
-
-        // ── Stores ──
-        const totalStores = await this.storeRepo.count();
-        const activeStores = await this.storeRepo.count({ where: { isActive: true } });
-
-        // ── Orders ──
-        const allOrders = await this.orderRepo.find({ select: ['status', 'totalPrice', 'createdAt'] });
-        const totalRevenue = allOrders.reduce((sum, o) => sum + Number(o.totalPrice), 0);
-        const revenueThisMonth = allOrders
-            .filter((o) => o.createdAt >= startOfMonth)
-            .reduce((sum, o) => sum + Number(o.totalPrice), 0);
 
         const byStatus = Object.values(StatusEnum).reduce(
             (acc, s) => ({ ...acc, [s]: 0 }),
             {} as Record<StatusEnum, number>,
         );
-        allOrders.forEach((o) => byStatus[o.status]++);
 
-        // ── Products ──
-        const totalProducts = await this.productRepo.count();
-        const activeProducts = await this.productRepo.count({ where: { isActive: true } });
-        const outOfStockProducts = await this.productRepo
-            .createQueryBuilder('p')
-            .where('p.stock = 0')
-            .getCount();
+        let totalRevenue = 0;
+        let revenueThisMonth = 0;
 
-        // ── Themes ──
-        const totalThemes = await this.themeRepo.count();
-        const activeThemes = await this.themeRepo.count({ where: { isActive: true } });
-        const totalThemePurchases = await this.themeUserRepo.count();
+        allOrders.forEach((o) => {
+            // حساب الحالات
+            byStatus[o.status]++;
+
+            // حساب الأرباح
+            const price = Number(o.totalPrice) || 0;
+            totalRevenue += price;
+            if (o.createdAt >= startOfMonth) {
+                revenueThisMonth += price;
+            }
+        });
+
+        // 4. إحصائيات المنتجات (Products)
+        const [totalProducts, activeProducts, outOfStock] = await Promise.all([
+            this.productRepo.count(),
+            this.productRepo.count({ where: { isActive: true } }),
+            this.productRepo.count({ where: { stock: 0 } }) // تأكد من وجود حقل stock
+        ]);
+
+        // 5. إحصائيات القوالب (Themes)
+        const [totalThemes, activeThemes, totalPurchases] = await Promise.all([
+            this.themeRepo.count(),
+            this.themeRepo.count({ where: { isActive: true } }),
+            this.themeUserRepo.count() // جدول المشتريات ThemeUser
+        ]);
 
         return {
             users: {
                 total: totalUsers,
                 verified: verifiedUsers,
-                admins: adminUsers,
-                newThisMonth: newUsersThisMonth,
+                admins: admins,
+                newThisMonth: newUsers,
             },
             stores: {
                 total: totalStores,
@@ -176,19 +192,19 @@ export class AdminService {
             },
             orders: {
                 total: allOrders.length,
-                byStatus,
-                totalRevenue: +totalRevenue.toFixed(2),
-                revenueThisMonth: +revenueThisMonth.toFixed(2),
+                byStatus: byStatus,
+                totalRevenue: Number(totalRevenue.toFixed(2)),
+                revenueThisMonth: Number(revenueThisMonth.toFixed(2)),
             },
             products: {
                 total: totalProducts,
                 active: activeProducts,
-                outOfStock: outOfStockProducts,
+                outOfStock: outOfStock,
             },
             themes: {
                 total: totalThemes,
                 active: activeThemes,
-                totalPurchases: totalThemePurchases,
+                totalPurchases: totalPurchases,
             },
         };
     }
@@ -200,7 +216,7 @@ export class AdminService {
 
         const orders = await this.orderRepo.find({
             where: { createdAt: Between(from, to) },
-            select: ['totalPrice', 'createdAt'],
+            select: ['totalPrice', 'createdAt'], // تعديل الحقل هنا
         });
 
         const grouped: Record<string, number> = {};
@@ -730,18 +746,18 @@ export class AdminService {
     async getTopProducts(limit = 10) {
         const result = await this.orderRepo
             .createQueryBuilder('order')
+            .innerJoin('order.items', 'item') // الربط مع العناصر أولاً
+            .innerJoin('item.product', 'product')
             .select('product.id', 'productId')
             .addSelect('product.name', 'name')
             .addSelect('product.productImage', 'image')
-            .addSelect('COUNT(order.id)', 'totalOrders')
-            .addSelect('SUM(order.quantity)', 'totalQty')
-            .addSelect('SUM(order.totalPrice)', 'revenue')
-            .innerJoin('order.product', 'product')
+            .addSelect('COUNT(DISTINCT order.id)', 'totalOrders')
+            .addSelect('SUM(item.quantity)', 'totalQty') // الكمية من Item
+            .addSelect('SUM(item.totalPrice)', 'revenue') // السعر من Item
             .groupBy('product.id')
             .addGroupBy('product.name')
             .addGroupBy('product.productImage')
-            // التعديل: استبدال totalOrders بـ COUNT(order.id)
-            .orderBy('COUNT(order.id)', 'DESC')
+            .orderBy('SUM(item.quantity)', 'DESC')
             .limit(limit)
             .getRawMany();
 
@@ -859,56 +875,56 @@ export class AdminService {
     }
 
     async getAllMessage(page: number = 1, search?: string, tab: string = 'new') {
-    // التأكد من أن رقم الصفحة دائماً رقم صحيح أكبر من 0
-    const currentPage = Math.max(1, Number(page) || 1);
-    const limit = 10;
-    const skip = (currentPage - 1) * limit;
+        // التأكد من أن رقم الصفحة دائماً رقم صحيح أكبر من 0
+        const currentPage = Math.max(1, Number(page) || 1);
+        const limit = 10;
+        const skip = (currentPage - 1) * limit;
 
-    const query = this.messageAdmineRepo.createQueryBuilder('message');
+        const query = this.messageAdmineRepo.createQueryBuilder('message');
 
-    // 1. منطق التبويبات (Tabs Logic)
-    if (tab === 'archive') {
-        query.andWhere('message.isArchived = :isArchived', { isArchived: true });
-    } else if (tab === 'reading') {
-        query.andWhere('message.isReplied = :isReplied', { isReplied: true })
-             .andWhere('message.isArchived = :isArchived', { isArchived: false });
-    } else {
-        // إذا كان التبويب 'new' أو أي شيء آخر، اعرض الرسائل غير المؤرشفة وغير المقروءة (أو حسب رغبتك)
-        // الخيار الأفضل لـ 'new':
-        query.andWhere('message.isArchived = :isArchived', { isArchived: false })
-             .andWhere('message.isReplied = :isReplied', { isReplied: false });
+        // 1. منطق التبويبات (Tabs Logic)
+        if (tab === 'archive') {
+            query.andWhere('message.isArchived = :isArchived', { isArchived: true });
+        } else if (tab === 'reading') {
+            query.andWhere('message.isReplied = :isReplied', { isReplied: true })
+                .andWhere('message.isArchived = :isArchived', { isArchived: false });
+        } else {
+            // إذا كان التبويب 'new' أو أي شيء آخر، اعرض الرسائل غير المؤرشفة وغير المقروءة (أو حسب رغبتك)
+            // الخيار الأفضل لـ 'new':
+            query.andWhere('message.isArchived = :isArchived', { isArchived: false })
+                .andWhere('message.isReplied = :isReplied', { isReplied: false });
+        }
+
+        // 2. منطق البحث (Search Logic)
+        if (search && search.trim() !== "") {
+            query.andWhere(
+                '(message.username ILIKE :search OR message.subject ILIKE :search OR message.email ILIKE :search)',
+                { search: `%${search}%` }
+            );
+        }
+
+        // 3. الترتيب والتقسيم
+        query.orderBy('message.createdAt', 'DESC')
+            .take(limit)
+            .skip(skip);
+
+        try {
+            const [messages, total] = await query.getManyAndCount();
+
+            return {
+                data: messages,
+                meta: {
+                    totalItems: total,
+                    totalPages: Math.ceil(total / limit),
+                    currentPage: currentPage,
+                    itemsPerPage: limit,
+                },
+            };
+        } catch (error) {
+            console.error("Database Error:", error);
+            throw new Error("Failed to fetch messages from database");
+        }
     }
-
-    // 2. منطق البحث (Search Logic)
-    if (search && search.trim() !== "") {
-        query.andWhere(
-            '(message.username ILIKE :search OR message.subject ILIKE :search OR message.email ILIKE :search)',
-            { search: `%${search}%` }
-        );
-    }
-
-    // 3. الترتيب والتقسيم
-    query.orderBy('message.createdAt', 'DESC')
-         .take(limit)
-         .skip(skip);
-
-    try {
-        const [messages, total] = await query.getManyAndCount();
-
-        return {
-            data: messages,
-            meta: {
-                totalItems: total,
-                totalPages: Math.ceil(total / limit),
-                currentPage: currentPage,
-                itemsPerPage: limit,
-            },
-        };
-    } catch (error) {
-        console.error("Database Error:", error);
-        throw new Error("Failed to fetch messages from database");
-    }
-}
 
     async updateStatus(id: string, status: 'replied' | 'archived') {
         const updateData: Partial<MessageAdmine> = {};

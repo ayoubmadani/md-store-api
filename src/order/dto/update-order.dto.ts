@@ -77,4 +77,8 @@ export class UpdateOrderDto {
   @IsOptional()
   @IsUUID()
   offerId?: string | null;
+
+  @IsOptional()
+  @IsNumber()
+  finalPrice?: number
 }

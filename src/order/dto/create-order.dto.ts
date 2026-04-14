@@ -77,6 +77,10 @@ export class CreateOrderDto {
   @IsOptional()
   unityPrice?: number
 
+  @IsUUID()
+  @IsOptional()
+  cartId?:string
+
   @IsOptional()
   @IsUUID()
   variantId?: String
@@ -138,4 +142,9 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   storeId?: string
+
+  @IsOptional()
+  @IsNumber()
+  finalPrice?: number
+
 }

@@ -39,7 +39,7 @@ export class StoreService {
         @InjectRepository(StorePixel) private readonly pixelRepository: Repository<StorePixel>,
         @InjectRepository(Category) private categoryRepository: TreeRepository<Category>,
         private readonly subscriptionService: SubscriptionService,
-    ) {}
+    ) { }
 
     // ─── helpers ─────────────────────────────────────────────────────────────
     private async getStoreLimit(userId: string): Promise<number> {
@@ -278,15 +278,31 @@ export class StoreService {
         return store;
     }
 
-    async getStoreByDomain(subdomain: string, categoryId?: string) {
+    async getStoreByDomain(subdomain: string, categoryId?: string, search?: string) {
         let categoryIds: string[] = [];
 
+        // 1. جلب التصنيفات الفرعية إذا وجد تصنيف رئيسي
         if (categoryId) {
             const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
             if (category) {
                 const descendants = await this.categoryRepository.findDescendants(category);
                 categoryIds = descendants.map(c => c.id);
             }
+        }
+
+        // 2. بناء شرط المنتجات ديناميكياً لضمان عمل الـ Search والـ Category معاً
+        let productCondition = 'products.isActive = true';
+        const productParams: any = {};
+
+        if (categoryIds.length > 0) {
+            productCondition += ' AND products.categoryId IN (:...categoryIds)';
+            productParams.categoryIds = categoryIds;
+        }
+
+        if (search) {
+            // إضافة البحث بالاسم أو الوصف
+            productCondition += ' AND (products.name ILIKE :search OR products.desc ILIKE :search)';
+            productParams.search = `%${search}%`;
         }
 
         const qb = this.storeRepository
@@ -300,19 +316,20 @@ export class StoreService {
             .leftJoinAndSelect('store.pixels', 'pixels')
             .leftJoinAndSelect('store.themeUser', 'themeUser')
             .leftJoinAndSelect('themeUser.theme', 'theme')
+            .leftJoinAndSelect('store.user', 'user')
             .leftJoinAndSelect(
-                'store.products', 'products',
-                categoryId && categoryIds.length > 0
-                    ? 'products.isActive = true AND products.categoryId IN (:...categoryIds)'
-                    : 'products.isActive = true',
-                categoryIds.length > 0 ? { categoryIds } : {},
+                'store.products',
+                'products',
+                productCondition, // استخدام الشرط الديناميكي هنا
+                productParams,    // تمرير المعاملات هنا
             )
             .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
             .leftJoinAndSelect('products.category', 'productCategory')
             .where('(store.subdomain = :identifier OR domains.domain = :identifier)', { identifier: subdomain })
             .addOrderBy('categories.sortOrder', 'ASC');
 
-        return qb.getOne() ?? null;
+        const result = await qb.getOne();
+        return result ?? null;
     }
 
     async deactivateAllStores(userId: string) {

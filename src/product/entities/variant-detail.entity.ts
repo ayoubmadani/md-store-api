@@ -1,6 +1,7 @@
 import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { Product } from './product.entity';
 import { Order } from '../../order/entities/order.entity';
+import { OrderItem } from '../../order/entities/order-item.entity';
 
 /**
  * One attribute slot inside a variant combination.
@@ -44,6 +45,6 @@ export class VariantDetail {
   @ManyToOne(() => Product, (product) => product.variantDetails, { onDelete: 'CASCADE' })
   product: Product;
 
-  @OneToMany(() => Order, (order) => order.variantDetail)
-  orders?: Order[];
+  @OneToMany(() => OrderItem, (orderItem) => orderItem.variantDetail)
+  orderItems: OrderItem[];
 }

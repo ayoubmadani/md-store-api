@@ -111,6 +111,12 @@ export abstract class EcotrackProviderIntegration implements ShippingProviderCon
   async createOrderFromOrder(order: Order): Promise<Record<string, unknown>> {
     const isStopdesk = order.typeShip !== 'home';
 
+    // حساب إجمالي الكمية من العناصر
+    const totalQuantity = order.items?.reduce((sum, item) => sum + item.quantity, 0) || 1;
+    
+    // جلب أسماء المنتجات (اختياري، لكنه أفضل من 'Article1')
+    const productsNames = order.items?.map(item => item.product?.name).join(' + ') || 'Produit';
+
     return this.createOrder({
       reference: order.id,
       nom_client: order.customerName,
@@ -121,8 +127,8 @@ export abstract class EcotrackProviderIntegration implements ShippingProviderCon
       montant: Number(order.totalPrice),
       type: isStopdesk ? 2 : 1,   // 1=domicile, 2=stopdesk
       stop_desk: isStopdesk ? '1' : '0',
-      produit: 'Article1',
-      quantite: order.quantity,
+      produit: productsNames.substring(0, 255), // لضمان عدم تجاوز الحد المسموح
+      quantite: totalQuantity,
     });
   }
 

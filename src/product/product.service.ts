@@ -313,12 +313,13 @@ export class ProductService {
       }
 
       if (dto.variantDetails !== undefined) {
+        // التعديل هنا: تغيير اسم الجدول من orders إلى order_items
         await queryRunner.query(
-          `UPDATE orders SET "variantDetailId" = NULL WHERE "variantDetailId" IN (SELECT id FROM variant_details WHERE "productId" = $1)`,
+          `UPDATE "order_items" SET "variantDetailId" = NULL WHERE "variantDetailId" IN (SELECT id FROM variant_details WHERE "productId" = $1)`,
           [id],
         );
-        await queryRunner.manager.delete(VariantDetail, { product: { id } });
 
+        await queryRunner.manager.delete(VariantDetail, { product: { id } });
         let vdList: any[] = dto.variantDetails;
         if (vdList.length === 0 && dto.attributes?.length) {
           vdList = generateCombinationsFromDto(dto.attributes, dto.price ?? product.price);
@@ -339,7 +340,7 @@ export class ProductService {
 
       if (dto.offers) {
         await queryRunner.query(
-          `UPDATE orders SET "offerId" = NULL WHERE "offerId" IN (SELECT id FROM product_offers WHERE "productId" = $1)`,
+          `UPDATE "order_items" SET "offerId" = NULL WHERE "offerId" IN (SELECT id FROM product_offers WHERE "productId" = $1)`,
           [id],
         );
         await queryRunner.manager.delete(Offer, { product: { id } });
@@ -498,6 +499,7 @@ export class ProductService {
 
     return { products, total, page, totalPages: Math.ceil(total / limit) };
   }
+  
 
   async findOneByDomain(domainName: string, productId: string): Promise<any> {
     // 1. تنظيف الدومين من www.
@@ -529,6 +531,7 @@ export class ProductService {
       store: product.store ? {
         id: product.store.id,
         name: product.store.name,
+        cart: product.store.cart,
         subdomain: product.store.subdomain,
         userId: product.store.user.id,
         theme: product.store.themeUser?.theme ? {
@@ -549,5 +552,89 @@ export class ProductService {
 
   async getOffers(productId: string) {
     return this.offerRepository.find({ where: { product: { id: productId } } });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // saas (Domain-based)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  async findAllProduct(
+    page = 1,
+    limit = 20,
+    categoryId?: string,
+    search?: string,
+  ) {
+    // تنظيف الدومين من www. لضمان المطابقة
+
+    const qb = this.productRepository
+      .createQueryBuilder('product')
+      .innerJoin('product.store', 'store')
+      // إضافة Join لجدول الدومينات لنتحقق من الدومين الخارجي أيضاً
+      .leftJoin('store.domains', 'storeDomain')
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.imagesProduct', 'images')
+      .leftJoinAndSelect('product.attributes', 'attributes')
+      .leftJoinAndSelect('attributes.variants', 'variants')
+      // هنا التعديل الجوهري: ابحث في السبدومين "أو" في الدومين الخارجي
+      .andWhere('product.isActive = :isActive', { isActive: true })
+      .andWhere('product.deletedAt IS NULL');
+
+    // ... بقية الكود (categoryId, search, pagination) كما هي
+
+    if (categoryId) qb.andWhere('product.categoryId = :categoryId', { categoryId });
+    if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
+
+    qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
+    const [products, total] = await qb.getManyAndCount();
+
+    return { products, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
+  async findOneById(productId: string): Promise<any> {
+
+    const product = await this.productRepository.findOne({
+      where: [
+        // البحث بالـ ID والتحقق من السبدومين "أو" الدومين الخارجي
+        { id: productId },
+        { id: productId },
+
+        // البحث بالـ Slug والتحقق من السبدومين "أو" الدومين الخارجي
+        { slug: productId },
+        { slug: productId },
+      ],
+      relations: [
+        'store', 'store.themeUser', 'store.themeUser.theme', 'store.user',
+        'store.domains', // مهم جداً إضافة هذه العلاقة ليتمكن TypeORM من البحث فيها
+        'category', 'imagesProduct', 'attributes', 'attributes.variants',
+        'variantDetails', 'offers',
+      ],
+      order: { attributes: { id: 'ASC' } },
+    });
+
+    if (!product) throw new NotFoundException('المنتج غير موجود في هذا المتجر');
+
+    const payload = {
+      ...product,
+      store: product.store ? {
+        id: product.store.id,
+        cart:product.store.cart,
+        name: product.store.name,
+        subdomain: product.store.subdomain,
+        userId: product.store.user.id,
+        theme: product.store.themeUser?.theme ? {
+          id: product.store.themeUser.theme.id,
+          slug: product.store.themeUser.theme.slug,
+          name: product.store.themeUser.theme.name_en,
+        } : null,
+      } : null,
+      category: product.category
+        ? { id: product.category.id, name: product.category.name }
+        : null,
+    };
+
+    console.log(payload);
+    
+
+    return payload
   }
 }

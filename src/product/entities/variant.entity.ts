@@ -15,7 +15,4 @@ export class Variant {
 
   @ManyToOne(() => Attribute, (attr) => attr.variants, { onDelete: 'CASCADE' })
   attribute: Attribute;
-
-  @ManyToOne(()=> Order , orders=> orders.product)
-  orders:Order[]
 }

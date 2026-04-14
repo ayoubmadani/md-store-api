@@ -1,233 +1,310 @@
-import { BadRequestException, Injectable, NotAcceptableException, NotFoundException } from "@nestjs/common";
-import { CreateOrderDto } from "./dto/create-order.dto";
-import { ILike, Like, Repository } from "typeorm";
-import { Order, StatusEnum, TypeShipEnum } from "./entities/order.entity";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { ILike, Like, Repository } from "typeorm";
+import { v4 as uuidv4 } from 'uuid';
+
+import { CreateOrderDto } from "./dto/create-order.dto";
+import { UpdateOrderDto } from "./dto/update-order.dto";
+import { Order, StatusEnum, TypeShipEnum } from "./entities/order.entity";
+import { OrderItem } from "./entities/order-item.entity";
 import { Product } from "../product/entities/product.entity";
 import { Store } from "../store/entities/store.entity";
-import { Offer } from "../product/entities/offer.entity";
-import { VariantDetail } from "../product/entities/variant-detail.entity";
-import { v4 as uuidv4 } from 'uuid';
-import { UpdateOrderDto } from "./dto/update-order.dto";
 import { NtfyService } from "../ntfy/ntfy.service";
-import { Wilaya } from "../shipping/entity/wilaya.entity";
 import { Shipping } from "../shipping/entity/shipping.entity";
-import { Commune } from "../shipping/entity/commune.entity";
-
-
 
 @Injectable()
 export class OrdersService {
     constructor(
-        @InjectRepository(Order) private readonly ordersrepo: Repository<Order>,
-        @InjectRepository(Product) private readonly productsrepo: Repository<Product>,
-        @InjectRepository(Store) private readonly storesrepo: Repository<Store>,
-        @InjectRepository(Offer) private readonly offersrepo: Repository<Offer>,
-        @InjectRepository(VariantDetail) private readonly variantDetailsrepo: Repository<VariantDetail>,
-        @InjectRepository(Shipping) private readonly shippingrepo: Repository<Shipping>,
-        @InjectRepository(Commune) private readonly communerepo: Repository<Commune>,
+        @InjectRepository(Order) private readonly ordersRepo: Repository<Order>,
+        @InjectRepository(OrderItem) private readonly itemsRepo: Repository<OrderItem>,
+        @InjectRepository(Product) private readonly productsRepo: Repository<Product>,
+        @InjectRepository(Store) private readonly storesRepo: Repository<Store>,
+        @InjectRepository(Shipping) private readonly shippingRepo: Repository<Shipping>,
 
-        private readonly ntfyService: NtfyService
+        private readonly ntfyService: NtfyService,
     ) { }
 
-    formatName = (name: string, limit: number = 15) => {
-        return name.length > limit ? name.substring(0, limit) + '...' : name;
-    };
+    // ─── helpers ──────────────────────────────────────────────────────────────
 
+    private fmt = (name: string, limit = 15) =>
+        name.length > limit ? name.slice(0, limit) + '...' : name;
 
+    // ─── CREATE ───────────────────────────────────────────────────────────────
 
-    async create(dto: CreateOrderDto) {
-        const store = await this.storesrepo.findOne({ where: { subdomain: dto.domain } });
-        if (!store) {
-            throw new BadRequestException('Store not exist');
-        }
+    /**
+     * يقبل طلباً مفرداً أو مصفوفة طلبات (سلة كاملة).
+     * ينشئ سجل Order واحد + N سجلات OrderItem.
+     */
+    async create(dtos: CreateOrderDto | CreateOrderDto[]) {
+        const data: CreateOrderDto[] = Array.isArray(dtos) ? dtos : [dtos];
+        if (!data.length) throw new BadRequestException('No data provided');
 
-        console.log(dto);
+        const first = data[0];
 
+        const store = first.domain
+            ? await this.storesRepo.findOne({ where: { subdomain: first.domain } })
+            : await this.storesRepo.findOne({ where: { id: first.storeId } });
 
-        const order = this.ordersrepo.create({
-            customerId: dto.customerId || uuidv4(),
-            customerName: dto.customerName,
-            customerPhone: dto.customerPhone,
-            customerWilayaId: dto.customerWilayaId || dto.customerWelaya,
-            customerCommuneId: dto.customerCommuneId || dto.customerCommune,
-            productId: dto.productId,
-            storeId: dto.storeId,
-            priceShip: dto.priceShip || dto.priceLivraison || 0,
-            priceLoss: dto.priceLoss || 0,
-            typeShip: dto.typeShip || dto.typeLivraison || TypeShipEnum.HOME,
-            totalPrice: dto.totalPrice,
-            quantity: dto.quantity || 1,
-            variantDetailId: dto.variantDetailId,
-            offerId: dto.offerId || dto.selectedOffer,
-            platform: dto.platform || "mdstore",
-            lpId: dto.lpId
-        } as any);
+        if (!store) throw new BadRequestException('Store not found');
 
-        const savedOrder = await this.ordersrepo.save(order);
+        const storeId = store.id;
+        const shipPrice = Number(first.priceShip ?? first.priceLivraison ?? 0);
+        
+        // حساب إجمالي السعر من الـ dtos
+        const totalItemsPrice = data.reduce((sum, d) => {
+            const price = Number(d.finalPrice ?? d.totalPrice ?? 0);
+            const qty = d.quantity ?? 1;
+            return sum + (price * qty);
+        }, 0);
 
-        const product = await this.productsrepo.findOne({
-            where: { id: dto.productId },
-            relations: ['store.user']
+        const order = this.ordersRepo.create({
+            cartId: uuidv4(),
+            storeId,
+            customerId: first.customerId || uuidv4(),
+            customerName: first.customerName,
+            customerPhone: first.customerPhone,
+            customerWilayaId: first.customerWilayaId ?? first.customerWelaya,
+            customerCommuneId: first.customerCommuneId ?? first.customerCommune,
+            priceShip: shipPrice,
+            priceLoss: Number(first.priceLoss ?? 0),
+            typeShip: first.typeShip ?? first.typeLivraison ?? TypeShipEnum.HOME,
+            totalPrice: totalItemsPrice, // استخدام المجموع المحسوب
+            status: StatusEnum.PENDING,
+            platform: first.platform ?? 'mdstore',
+            lpId: first.lpId,
         });
 
-        const shipping = await this.shippingrepo.findOne({
-            where: { wilaya: { id: dto.customerWilayaId || dto.customerWelaya } },
-            relations: ['wilaya']
-        })
+        const savedOrder = await this.ordersRepo.save(order);
 
-        const communes = await this.communerepo.findOne({
-            where: { id: dto.customerCommuneId || dto.customerCommune },
-        })
+        const items = data.map(dto => {
+            const fp = Number(dto.finalPrice ?? dto.totalPrice ?? 0);
+            const qty = dto.quantity ?? 1;
 
+            return this.itemsRepo.create({
+                order: savedOrder,
+                productId: dto.productId,
+                quantity: qty,
+                finalPrice: fp,
+                totalPrice: fp * qty,
+                variantDetailId: dto.variantDetailId,
+                offerId: dto.offerId ?? dto.selectedOffer,
+                unityPrice: dto.unityPrice
+            });
+        });
 
-        const productName = product?.name || "منتج غير محدد"; // تأكد من إزالة أي مرجع هنا
-        const topic = product?.store?.user?.topic;
-        const isNtfy = product?.store?.user?.isNtfy;
-        const wilaya = shipping?.wilaya.name
-        const commune = communes?.name
+        await this.itemsRepo.save(items);
 
-        if (isNtfy && topic) {
-            const message = `new order: ${dto.platform || "mdstore"}
--------------------------
-👤 customer: ${dto.customerName}
-📍 wilaya: ${wilaya}
-🏙️ commune: ${commune}
-📞 phone: ${dto.customerPhone}
-🛍️ product: ${this.formatName(productName)}
-🚚 type ship: ${dto.typeShip || dto.typeLivraison || TypeShipEnum.HOME}
-💰 price: ${dto.totalPrice} + ${dto.priceShip || dto.priceLivraison || 0}`.trim();
+        // إرسال الإشعارات
+        this.sendNotification(savedOrder, data).catch(console.error);
 
-            // إرسال الرسالة المنسقة
-            this.ntfyService.publish(topic, message);
-        }
-
-        return savedOrder;
+        // مهم: إرجاع الطلب مع الـ relations لضمان ظهور الـ items في الفرونت إند
+        return this.getOne(savedOrder.id);
     }
 
+    // ─── GET ALL ──────────────────────────────────────────────────────────────
 
-    async getAllOrdersByStoreId(storeId: string, status?: StatusEnum, query?: string, page: number = 1) {
-        // 1. بناء الشرط الأساسي الذي يجب أن يتوفر في كل الحالات
-        const baseWhere: any = { storeId: storeId };
+    async getAllOrdersByStoreId(
+        storeId: string,
+        status?: StatusEnum,
+        query?: string,
+        page: number = 1,
+    ) {
         const limit = 50;
         const skip = (page - 1) * limit;
 
-        // 2. إضافة الحالة (status) إذا وجدت
-        if (status) {
-            baseWhere.status = status;
-        }
+        const qb = this.ordersRepo
+            .createQueryBuilder('o')
+            .leftJoinAndSelect('o.items', 'item')
+            .leftJoinAndSelect('item.product', 'product')
+            .leftJoinAndSelect('product.imagesProduct', 'img')
+            .leftJoinAndSelect('item.variantDetail', 'vd')
+            .leftJoinAndSelect('item.offer', 'offer')
+            .leftJoinAndSelect('o.customerWilaya', 'wilaya')
+            .leftJoinAndSelect('o.customerCommune', 'commune')
+            .where('o.storeId = :storeId', { storeId })
+            .orderBy('o.createdAt', 'DESC')
+            .take(limit)
+            .skip(skip);
 
-        // 3. التعامل مع البحث (query)
-        let whereCondition: any | any[];
-
-        if (query) {
-            const search = `%${query}%`; // للبحث الجزئي
-            whereCondition = [
-                { ...baseWhere, customerName: ILike(search) },  // ILike تتجاهل حالة الأحرف
-                { ...baseWhere, customerPhone: Like(search) }
-            ];
-        } else {
-            whereCondition = baseWhere;
-        }
-
-        return this.ordersrepo.find({
-            where: whereCondition,
-            relations: [
-                'product',
-                'product.imagesProduct',
-                'customerWilaya',
-                'customerCommune',
-                'variantDetail',
-                'offer'
-            ],
-            order: {
-                createdAt: 'DESC'
-            },
-            take: limit,
-            skip: skip
-        });
-    }
-
-    async getCountPageByStoreId(storeId, status?: StatusEnum, query?: string,) {
-        // 1. بناء الشرط الأساسي الذي يجب أن يتوفر في كل الحالات
-        const baseWhere: any = { storeId: storeId };
-
-        // 2. إضافة الحالة (status) إذا وجدت
-        if (status) {
-            baseWhere.status = status;
-        }
-
-        // 3. التعامل مع البحث (query)
-        let whereCondition: any | any[];
+        if (status) qb.andWhere('o.status = :status', { status });
 
         if (query) {
-            const search = `%${query}%`; // للبحث الجزئي
-            whereCondition = [
-                { ...baseWhere, customerName: ILike(search) },  // ILike تتجاهل حالة الأحرف
-                { ...baseWhere, customerPhone: Like(search) }
-            ];
-        } else {
-            whereCondition = baseWhere;
+            const s = `%${query}%`;
+            qb.andWhere(
+                '(o.customerName ILIKE :s OR o.customerPhone LIKE :s)',
+                { s },
+            );
         }
-        return this.ordersrepo.count({
-            where: whereCondition,
-        })
+
+        return qb.getMany();
     }
+
+    async getCountPageByStoreId(storeId: string, status?: StatusEnum, query?: string) {
+        const qb = this.ordersRepo
+            .createQueryBuilder('o')
+            .select('COUNT(o.id)', 'count')
+            .where('o.storeId = :storeId', { storeId });
+
+        if (status) qb.andWhere('o.status = :status', { status });
+
+        if (query) {
+            const s = `%${query}%`;
+            qb.andWhere(
+                '(o.customerName ILIKE :s OR o.customerPhone LIKE :s)',
+                { s },
+            );
+        }
+
+        const result = await qb.getRawOne();
+        return Number(result?.count ?? 0);
+    }
+
+    // ─── GET ONE ──────────────────────────────────────────────────────────────
 
     async getOne(orderId: string) {
-        return this.ordersrepo.findOne({ where: { id: orderId }, relations: ['product', 'store.user'] },)
-    }
-
-    async updateInfoUser(orderId: string, dto: UpdateOrderDto) {
-        const order = await this.ordersrepo.findOne({ where: { id: orderId } });
-
-        if (!order) {
-            throw new NotFoundException('order not exist');
-        }
-
-        await this.ordersrepo.update(orderId, {
-            customerCommuneId: dto.customerCommuneId ?? order.customerCommuneId,
-            customerName: dto.customerName ?? order.customerName,
-            customerPhone: dto.customerPhone ?? order.customerPhone,
-            customerWilayaId: dto.customerWilayaId ?? order.customerWilayaId,
-            offerId: dto.offerId ?? order.offerId,
-            priceShip: dto.priceShip ?? order.priceShip,
-            quantity: dto.quantity ?? order.quantity,
-            // معالجة الـ Enum للحالة بشكل صحيح
-            status: (dto.status ?? order.status) as StatusEnum,
-            totalPrice: dto.totalPrice ?? order.totalPrice,
-            typeShip: dto.typeShip ?? order.typeShip,
-            unityPrice: dto.unityPrice ?? order.unityPrice,
-            variantDetailId: dto.variantDetailId ?? order.variantDetailId,
-        });
-
-        return this.ordersrepo.findOne({
+        const order = await this.ordersRepo.findOne({
             where: { id: orderId },
             relations: [
-                'product',
-                'product.imagesProduct',
-                'variantDetail',
-                'offer',
-                'customerWilaya',
-                'customerCommune',
+                'items', 'items.product', 'items.product.imagesProduct',
+                'items.variantDetail', 'items.offer',
+                'customerWilaya', 'customerCommune', 'store.user',
             ],
         });
+
+        console.log(order);
+        
+
+        return order
     }
+
+    // ─── UPDATE ───────────────────────────────────────────────────────────────
+
+    /**
+     * يقبل DTO مفرداً أو مصفوفة (per-item).
+     * البيانات المشتركة (customer/ship/status) تُؤخذ من أول عنصر.
+     * البيانات الخاصة بكل item (qty/offer/variant/price) تُؤخذ حسب الـ index.
+     */
+    async updateInfoUser(orderId: string, dto: CreateOrderDto | CreateOrderDto[]) {
+    // التأكد من التعامل مع مصفوفة حتى لو أرسل المستخدم كائناً واحداً
+    const dtos = Array.isArray(dto) ? dto : [dto];
+    const first = dtos[0];
+
+    // جلب الطلب الأصلي مع عناصره
+    const order = await this.ordersRepo.findOne({
+        where: { id: orderId },
+        relations: ['items'],
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    // 1. تحديث بيانات الطلب الأساسية (من الحقول الموجودة في أول عنصر في المصفوفة)
+    await this.ordersRepo.update(order.id, {
+        customerName: first.customerName ?? order.customerName,
+        customerPhone: first.customerPhone ?? order.customerPhone,
+        customerWilayaId: first.customerWilayaId ?? first.customerWelaya ?? order.customerWilayaId,
+        customerCommuneId: first.customerCommuneId ?? first.customerCommune ?? order.customerCommuneId,
+        typeShip: first.typeShip ?? first.typeLivraison ?? order.typeShip,
+        priceShip: Number(first.priceShip ?? first.priceLivraison ?? order.priceShip ?? 0),
+        status: (first['status'] ?? order.status) as any, // تحديث الحالة إذا تم إرسالها
+    });
+
+    // 2. حذف العناصر القديمة لمزامنة السلة بالكامل (Add/Delete support)
+    await this.itemsRepo.delete({ order: { id: order.id } });
+
+    let totalCartPrice = 0;
+
+    // 3. إنشاء العناصر الجديدة (OrderItem) وتصفية حقول الـ DTO الزائدة
+    const newItems = dtos.map(d => {
+        const fp = Number(d.finalPrice ?? 0);
+        const qty = Number(d.quantity ?? 1);
+        totalCartPrice += fp * qty;
+
+        // اختيار حقول OrderItem فقط لتجنب خطأ "property does not exist"
+        return this.itemsRepo.create({
+            productId: d.productId,
+            quantity: qty,
+            finalPrice: fp,
+            totalPrice: fp * qty,
+            // معالجة الحقول الاختيارية والأسماء البديلة الموجودة في الـ DTO الخاص بك
+            offerId: d.offerId || d.selectedOffer || undefined,
+            variantDetailId: d.variantDetailId || (d.variantId as string) || undefined,
+            unityPrice: d.unityPrice ?? undefined,
+            order: { id: order.id } 
+        });
+    });
+
+    // حفظ جميع العناصر الجديدة في قاعدة البيانات
+    await this.itemsRepo.save(newItems);
+
+    // 4. تحديث الإجمالي النهائي للطلب (سعر المنتجات + سعر الشحن)
+    const currentPriceShip = Number(first.priceShip ?? first.priceLivraison ?? order.priceShip ?? 0);
+    await this.ordersRepo.update(order.id, { 
+        totalPrice: totalCartPrice + currentPriceShip 
+    });
+
+    // إرجاع الطلب المحدث بالكامل
+    return this.getOne(order.id);
+}
+
+    // ─── STATUS COUNTS ────────────────────────────────────────────────────────
 
     async getCountStatus(storeId: string) {
-        const counts = await this.ordersrepo
-            .createQueryBuilder('order')
-            .select('order.status', 'status') // نختار عمود الحالة
-            .addSelect('COUNT(order.id)', 'count') // نحسب عدد الطلبات
-            .where('order.storeId = :storeId', { storeId }) // نفلتر حسب المتجر
-            .groupBy('order.status') // نجمع النتائج بناءً على الحالة
-            .getRawMany(); // نستخدم RawMany لأننا نستخدم دالة COUNT (ليست Entity كاملة)
-
-        return counts;
+        return this.ordersRepo
+            .createQueryBuilder('o')
+            .select('o.status', 'status')
+            .addSelect('COUNT(o.id)', 'count')
+            .where('o.storeId = :storeId', { storeId })
+            .groupBy('o.status')
+            .getRawMany();
     }
 
-    async delete(id: string) {
-        const order: any = await this.ordersrepo.findOne({ where: { id } })
-        return this.ordersrepo.remove(order)
+    // ─── DELETE ───────────────────────────────────────────────────────────────
+
+    async delete(orderId: string) {
+        const order = await this.ordersRepo.findOne({ where: { id: orderId } });
+        if (!order) throw new NotFoundException('Order not found');
+        // الـ items تُحذف تلقائياً بسبب onDelete: CASCADE على الـ entity
+        return this.ordersRepo.remove(order);
+    }
+
+    // ─── NOTIFICATION ─────────────────────────────────────────────────────────
+
+    private async sendNotification(order: Order, dtos: CreateOrderDto[]) {
+        const first = dtos[0];
+        try {
+            const product = await this.productsRepo.findOne({
+                where: { id: first.productId },
+                relations: ['store.user'],
+            });
+
+            const topic = product?.store?.user?.topic;
+            const isNtfy = product?.store?.user?.isNtfy;
+            if (!isNtfy || !topic) return;
+
+            const shipping = await this.shippingRepo.findOne({
+                where: { wilaya: { id: order.customerWilayaId } },
+                relations: ['wilaya'],
+            });
+
+            const names = await Promise.all(
+                dtos.map(async d => {
+                    const p = await this.productsRepo.findOne({ where: { id: d.productId } });
+                    return `- ${this.fmt(p?.name || 'منتج')} (x${d.quantity ?? 1})`;
+                }),
+            );
+
+            const msg = `🛒 طلبية جديدة: ${order.platform ?? 'mdstore'}
+-------------------------
+👤 العميل: ${order.customerName}
+📍 الولاية: ${shipping?.wilaya?.name || 'غير محددة'}
+📞 الهاتف: ${order.customerPhone}
+🛍️ المنتجات:
+${names.join('\n')}
+🚚 التوصيل: ${order.typeShip}
+💰 الإجمالي: ${Number(order.totalPrice) + Number(order.priceShip)} دج`.trim();
+
+            this.ntfyService.publish(topic, msg);
+        } catch (e) {
+            console.error('Notification error:', e);
+        }
     }
 }

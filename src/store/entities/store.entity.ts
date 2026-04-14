@@ -44,6 +44,9 @@ export class Store {
   @Column({ default: true })
   isActive: boolean;
 
+  @Column({ default: true })
+  cart: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

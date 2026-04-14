@@ -105,6 +105,12 @@ export class MaystroDeliveryProvider implements ShippingProviderContract {
   }
 
   async createOrderFromOrder(order: Order): Promise<Record<string, unknown>> {
+    // تحويل عناصر الطلب إلى الهيكل الذي تفهمه مايسترو
+    const productsList = order.items?.map(item => ({
+      description: item.product?.name || 'Produit',
+      quantity: item.quantity
+    })) || [{ description: 'Article', quantity: 1 }]; // قيمة احتياطية
+
     return this.createOrder({
       wilaya: String(order.customerWilayaId),
       commune: String(order.customerCommuneId),
@@ -114,7 +120,7 @@ export class MaystroDeliveryProvider implements ShippingProviderContract {
       product_price: String(Math.round(Number(order.totalPrice))),
       delivery_type: order.typeShip === 'home' ? '0' : '1',
       note_to_driver: '',
-      products: JSON.stringify([{ description: 'Article1', quantity: order.quantity }]),
+      products: JSON.stringify(productsList), // تمرير المصفوفة هنا
       source: '4',
       external_order_id: order.id,
     });

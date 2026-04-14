@@ -121,7 +121,8 @@ export class ShippingProviderService {
 
     const order = await this.orderRepo.findOne({
       where: { id: orderData.id as string },
-      relations: ['customerWilaya', 'customerCommune'],
+      // يجب إضافة items و items.product لكي تستخدمها شركات الشحن
+      relations: ['customerWilaya', 'customerCommune', 'items', 'items.product'], 
     });
 
     if (!order) throw new BadGatewayException('الطلب غير موجود');
