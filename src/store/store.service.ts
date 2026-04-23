@@ -16,6 +16,8 @@ import { SubscriptionService } from '../subscription/subscription.service';
 import { Show } from '../show/entity/show.entity';
 import { Product } from '../product/entities/product.entity';
 import { Domain } from '../domain/entities/domain.entity';
+import { CategoryNiche } from '../niche/entities/category-niche.entity';
+import { ImageProduct } from '../image-product/entities/image-product.entity';
 
 @Injectable()
 export class StoreService {
@@ -38,6 +40,11 @@ export class StoreService {
         @InjectRepository(Store) private readonly storeRepository: Repository<Store>,
         @InjectRepository(StorePixel) private readonly pixelRepository: Repository<StorePixel>,
         @InjectRepository(Category) private categoryRepository: TreeRepository<Category>,
+        @InjectRepository(CategoryNiche) private cateNicheRepo: Repository<CategoryNiche>,
+        @InjectRepository(Product) private productRepo: Repository<Product>,
+        @InjectRepository(ImageProduct) private imageProductRepository: Repository<ImageProduct>,
+
+
         private readonly subscriptionService: SubscriptionService,
     ) { }
 
@@ -147,6 +154,7 @@ export class StoreService {
         try {
             const { store: storeDto, design, topBar, contact, hero } = dto;
 
+            // إنشاء المتجر
             const store = queryRunner.manager.create(Store, {
                 name: storeDto.name,
                 subdomain: storeDto.subdomain,
@@ -157,19 +165,36 @@ export class StoreService {
             } as any);
             const savedStore = await queryRunner.manager.save(Store, store);
 
-            const storeDesign = queryRunner.manager.create(StoreDesign, { ...design, store: savedStore });
-            const savedDesign = await queryRunner.manager.save(StoreDesign, storeDesign);
-
+            // إنشاء المكونات الإضافية
+            await queryRunner.manager.save(StoreDesign, queryRunner.manager.create(StoreDesign, { ...design, store: savedStore }));
             await queryRunner.manager.save(StoreTopBar, queryRunner.manager.create(StoreTopBar, { ...topBar, store: savedStore }));
             await queryRunner.manager.save(StoreContact, queryRunner.manager.create(StoreContact, { ...contact, store: savedStore }));
             await queryRunner.manager.save(StoreHeroSection, queryRunner.manager.create(StoreHeroSection, { ...hero, store: savedStore }));
             await queryRunner.manager.save(Domain, queryRunner.manager.create(Domain, { domain: `${storeDto.subdomain}.mdstore.top`, isSub: true, isActive: true, store: savedStore }));
 
+            // ─── استدعاء البيانات الوهمية داخل نفس الـ Transaction ───
+
+            // 1. إنشاء الأصناف بناءً على النيش (لاحظ أن savedStore.id أصبح المعامل الأول)
+            if (storeDto.nicheId) {
+                await this.createFakeCategories(
+                    savedStore.id,      // storeId (Required)
+                    storeDto.nicheId,   // nicheId (Optional)
+                    storeDto.language,
+                    queryRunner.manager
+                );
+            } else {
+                // اختياري: إذا أردت إنشاء أصناف افتراضية حتى لو لم يختر المستخدم نيش معين
+                await this.createFakeCategories(savedStore.id, undefined, storeDto.language, queryRunner.manager);
+            }
+
+            // 2. إنشاء المنتجات التجريبية
+            await this.createFakeProduct(savedStore.id, storeDto.language, queryRunner.manager);
+            // ────────────────────────────────────────────────────────
+
             await queryRunner.commitTransaction();
 
             this.invalidateStoresCache(userId);
 
-            const { store: _, ...designWithoutStore } = savedDesign;
             return {
                 id: savedStore.id,
                 name: savedStore.name,
@@ -179,8 +204,6 @@ export class StoreService {
                 isActive: savedStore.isActive,
                 createdAt: savedStore.createdAt,
                 updatedAt: savedStore.updatedAt,
-                design: designWithoutStore,
-                topBar, contact, hero,
             };
         } catch (error) {
             await queryRunner.rollbackTransaction();
@@ -278,34 +301,13 @@ export class StoreService {
         return store;
     }
 
-    async getStoreByDomain(subdomain: string, categoryId?: string, search?: string) {
-        let categoryIds: string[] = [];
+    async getStoreByDomain(subdomain: string, categoryId?: string, search?: string, page: string = '1') {
+        const limit = 48;
+        const currentPage = Math.max(1, parseInt(page) || 1);
+        const skip = (currentPage - 1) * limit;
 
-        // 1. جلب التصنيفات الفرعية إذا وجد تصنيف رئيسي
-        if (categoryId) {
-            const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
-            if (category) {
-                const descendants = await this.categoryRepository.findDescendants(category);
-                categoryIds = descendants.map(c => c.id);
-            }
-        }
-
-        // 2. بناء شرط المنتجات ديناميكياً لضمان عمل الـ Search والـ Category معاً
-        let productCondition = 'products.isActive = true';
-        const productParams: any = {};
-
-        if (categoryIds.length > 0) {
-            productCondition += ' AND products.categoryId IN (:...categoryIds)';
-            productParams.categoryIds = categoryIds;
-        }
-
-        if (search) {
-            // إضافة البحث بالاسم أو الوصف
-            productCondition += ' AND (products.name ILIKE :search OR products.desc ILIKE :search)';
-            productParams.search = `%${search}%`;
-        }
-
-        const qb = this.storeRepository
+        // 1. جلب بيانات المتجر مع الـ Theme الجديد
+        const store = await this.storeRepository
             .createQueryBuilder('store')
             .leftJoinAndSelect('store.domains', 'domains')
             .leftJoinAndSelect('store.design', 'design')
@@ -314,24 +316,65 @@ export class StoreService {
             .leftJoinAndSelect('store.hero', 'hero')
             .leftJoinAndSelect('store.categories', 'categories')
             .leftJoinAndSelect('store.pixels', 'pixels')
-            .leftJoinAndSelect('store.themeUser', 'themeUser')
-            .leftJoinAndSelect('themeUser.theme', 'theme')
+            .leftJoinAndSelect('store.theme', 'theme') // تم التصحيح هنا لربط جدول الثيمات
             .leftJoinAndSelect('store.user', 'user')
-            .leftJoinAndSelect(
-                'store.products',
-                'products',
-                productCondition, // استخدام الشرط الديناميكي هنا
-                productParams,    // تمرير المعاملات هنا
-            )
+            .where('(store.subdomain = :identifier OR domains.domain = :identifier)', { identifier: subdomain })
+            .addOrderBy('categories.sortOrder', 'ASC')
+            .getOne();
+
+        if (!store) return null;
+
+        // 2. منطق جلب التصنيفات (كما هو)
+        let categoryIds: string[] = [];
+        if (categoryId) {
+            const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
+            if (category) {
+                // ملاحظة: تأكد أن TreeRepository يعمل مع categoryRepository
+                const descendants = await this.categoryRepository.findDescendants(category);
+                categoryIds = descendants.map(c => c.id);
+            }
+        }
+
+        // 3. استعلام المنتجات
+        const productQuery = this.dataSource.getRepository(Product)
+            .createQueryBuilder('products')
             .leftJoinAndSelect('products.imagesProduct', 'imagesProduct')
             .leftJoinAndSelect('products.category', 'productCategory')
-            .where('(store.subdomain = :identifier OR domains.domain = :identifier)', { identifier: subdomain })
-            .addOrderBy('categories.sortOrder', 'ASC');
+            .where('products.storeId = :storeId AND products.isActive = true', { storeId: store.id });
 
-        const result = await qb.getOne();
-        return result ?? null;
+        if (categoryIds.length > 0) {
+            productQuery.andWhere('products.categoryId IN (:...categoryIds)', { categoryIds });
+        }
+
+        if (search) {
+            productQuery.andWhere('(products.name ILIKE :search OR products.desc ILIKE :search)', { search: `%${search}%` });
+        }
+
+        const [products, totalItems] = await productQuery
+            .orderBy('products.createdAt', 'DESC')
+            .skip(skip)
+            .take(limit)
+            .getManyAndCount();
+
+        // 4. إجمالي المنتجات العام
+        const totalCount = await this.dataSource.getRepository(Product).count({
+            where: { store: { id: store.id }, isActive: true }
+        });
+
+        // 5. دمج النتائج النهائية وإرسالها
+        return {
+            ...store,
+            products,
+            count: totalCount,
+            meta: {
+                totalItems,
+                itemCount: products.length,
+                itemsPerPage: limit,
+                totalPages: Math.ceil(totalItems / limit),
+                currentPage: currentPage
+            }
+        };
     }
-
     async deactivateAllStores(userId: string) {
         await this.storeRepository.update({ user: { id: userId } }, { isActive: false });
         this.invalidateStoresCache(userId);
@@ -430,4 +473,116 @@ export class StoreService {
         if (store.user.id !== userId) throw new ForbiddenException('ليس لديك صلاحية الوصول لهذا المتجر');
         return store;
     }
+
+
+    async createFakeCategories(storeId: string, nicheId?: string, language: string = "ar", manager?: any) {
+        let categoryNiche: any = [];
+
+        // 1. تصحيح النطاق: جلب بيانات النيش إذا وجد المعرف
+        if (nicheId) {
+            // إذا كان هناك manager (Transaction)، نستخدمه لجلب البيانات أيضاً لضمان الاتساق
+            const repo = manager ? manager.getRepository(CategoryNiche) : this.cateNicheRepo;
+            categoryNiche = await repo.find({ where: { nicheId } });
+        }
+
+        let listCategories: any = [];
+
+        // 2. التحقق من وجود بيانات في النيش
+        if (categoryNiche && categoryNiche.length > 0) {
+            listCategories = categoryNiche.map(cat => ({
+                name: language === "ar" ? cat.name_ar : language === "fr" ? cat.name_fr : cat.name_en,
+                imageUrl: cat.imageUrl,
+                slug: (cat.name_en || 'cat').toLowerCase().trim().replace(/\s+/g, '-'),
+                store: { id: storeId }
+            }));
+        } else {
+            // 3. بيانات افتراضية في حال عدم وجود نيش أو عدم العثور على تصنيفات له
+            const defaultNames = {
+                ar: ["الصنف الأول", "الصنف الثاني", "الصنف الثالث"],
+                fr: ["Catégorie 1", "Catégorie 2", "Catégorie 3"],
+                en: ["Category 1", "Category 2", "Category 3"]
+            };
+
+            // التأكد من اختيار مفتاح لغة صالح
+            const langKey = (["ar", "fr", "en"].includes(language)) ? language : "en";
+
+            listCategories = defaultNames[langKey].map((name, i) => ({
+                name,
+                imageUrl: "https://via.placeholder.com/150",
+                slug: `category-${i + 1}-${Date.now()}`, // إضافة timestamp بسيط لضمان فرادة الـ slug
+                store: { id: storeId }
+            }));
+        }
+
+        // 4. التنفيذ باستخدام الـ manager الممرر أو الـ repository الافتراضي
+        const targetRepo = manager ? manager : this.categoryRepository;
+
+        const categories = targetRepo.create(Category, listCategories);
+        return await targetRepo.save(Category, categories);
+    }
+
+    async createFakeProduct(storeId: string, language: string = "ar", manager?: any) {
+        const productsData = [
+            {
+                "name_ar": "عطر الورد الكلاسيكي", "name_fr": "Parfum de Rose Classique", "name_en": "Classic Rose Perfume",
+                "price": 1200, "images": ["https://pub-4e93f8cd6d974b8c946ea7201337df2f.r2.dev/admin/626abb0f-2821-4e57-95c3-750e2381f2fb.jpg"],
+                "desc_en": "Classic Rose Perfume description", "desc_ar": "وصف عطر الورد الكلاسيكي", "desc_fr": "Description parfum rose"
+            },
+            {
+                "name_ar": "شمعة عطرية مهدئة", "name_fr": "Bougie Parfumée Apaisante", "name_en": "Soothing Scented Candle",
+                "price": 450, "images": ["https://pub-4e93f8cd6d974b8c946ea7201337df2f.r2.dev/admin/4e2e1966-f3eb-43a1-aff2-cda34ddb4f54.jpg"],
+                "desc_en": "Soothing Scented Candle description", "desc_ar": "وصف شمعة عطرية مهدئة", "desc_fr": "Description bougie"
+            },
+            {
+                "name_ar": "نظارة شمسية عصرية", "name_fr": "Lunettes de Soleil Modernes", "name_en": "Modern Sunglasses",
+                "price": 850, "images": ["https://pub-4e93f8cd6d974b8c946ea7201337df2f.r2.dev/admin/ba8013bb-dca8-4805-8fe9-1a7cca3c0ecf.jpg"],
+                "desc_ar": "<p>نظارة بتصميم كلاسيكي توفر حماية كاملة من الأشعة فوق البنفسجية.</p>", "desc_fr": "<p>Lunettes au design classique offrant une protection totale contre les rayons UV.</p>", "desc_en": "<p>Classic design sunglasses providing full UV protection.</p>",
+            },
+            {
+                "name_ar": "حقيبة يد جلدية", "name_fr": "Sac à Main en Cuir", "name_en": "Leather Handbag",
+                "price": 2300, "images": ["https://pub-4e93f8cd6d974b8c946ea7201337df2f.r2.dev/admin/5ac3d207-7b83-4017-8bd8-76a7f33aa422.jpg"],
+                "desc_ar": "<p>حقيبة يد فاخرة مصنوعة من الجلد الطبيعي بتصميم أنيق وعملي.</p>", "desc_fr": "<p>Sac à main de luxe en cuir véritable au design élégant et pratique.</p>", "desc_en": "<p>Luxury handbag made of genuine leather with an elegant and practical design.</p>",
+            }
+        ];
+
+        const targetManager = manager || this.dataSource.manager;
+        const finalSavedProducts: Product[] = [];
+
+        for (const item of productsData) {
+            // تأكد من ملء جميع الحقول هنا وعدم تركها فارغة
+            const product = targetManager.create(Product, {
+                name: language === "ar" ? item.name_ar : language === "fr" ? item.name_fr : item.name_en,
+                desc: language === "ar" ? item.desc_ar : language === "fr" ? item.desc_fr : item.desc_en,
+                price: item.price,
+                store: { id: storeId },
+                productImage: item.images[0], // الصورة الأساسية
+                isActive: true,
+                stock: 100,
+                attributes: [],
+                variantDetails: [],
+                offers: []
+            });
+
+            // حفظ المنتج (هنا كان يحدث الخطأ بسبب نقص الحقول)
+            const saved = await targetManager.save(Product, product);
+            finalSavedProducts.push(saved);
+
+            // حفظ الصور في جدول الصور المنفصل
+            if (item.images?.length) {
+                const imageEntities = item.images.map(url =>
+                    targetManager.create(ImageProduct, { imageUrl: url, product: saved })
+                );
+                await targetManager.save(ImageProduct, imageEntities);
+            }
+        }
+
+        return finalSavedProducts;
+    }
 }
+
+/* 
+
+
+
+*/
+

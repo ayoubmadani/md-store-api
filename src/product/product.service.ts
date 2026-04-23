@@ -108,6 +108,9 @@ export class ProductService {
   async create(storeId: string, userId: string, dto: CreateProductDto): Promise<Product> {
     await this.storeService.verifyOwnership(storeId, userId);
 
+    console.log(dto);
+    
+
     // ← فحص الحد قبل فتح transaction
     await this.assertProductLimitNotReached(userId);
 
@@ -182,6 +185,100 @@ export class ProductService {
       await queryRunner.release();
     }
   }
+
+  async createMulti(storeId: string, userId: string, dtos: CreateProductDto[]): Promise<Product[]> {
+  // 1. التحقق من ملكية المتجر وفحص الحد (مرة واحدة قبل البدء)
+  await this.storeService.verifyOwnership(storeId, userId);
+  
+  // يفضل هنا فحص ما إذا كان عدد المنتجات الجديدة سيتجاوز الحد المسموح به
+  // مثلاً: await this.assertProductLimitNotReached(userId, dtos.length);
+
+  const queryRunner = this.dataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+
+  const createdProducts: Product[] = [];
+
+  try {
+    for (const dto of dtos) {
+      // --- إنشاء المنتج الأساسي ---
+      const product = this.productRepository.create({
+        name: dto.name, desc: dto.desc, price: dto.price,
+        priceOriginal: dto.priceOriginal, productImage: dto.productImage,
+        sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
+        isActive: dto.isActive ?? true,
+        store: { id: storeId },
+        category: dto.categoryId ? { id: dto.categoryId } : undefined,
+      });
+      const savedProduct = await queryRunner.manager.save(product);
+
+      // --- معالجة الخصائص (Attributes) ---
+      if (dto.attributes?.length) {
+        for (const attrDto of dto.attributes) {
+          const attribute = this.attributeRepository.create({
+            name: attrDto.name, type: attrDto.type, displayMode: attrDto.displayMode,
+            product: savedProduct,
+          });
+          const savedAttribute = await queryRunner.manager.save(attribute);
+          
+          for (const varDto of attrDto.variants ?? []) {
+            await queryRunner.manager.save(
+              this.variantRepository.create({ name: varDto.name, value: varDto.value, attribute: savedAttribute }),
+            );
+          }
+        }
+      }
+
+      // --- معالجة تفاصيل المتغيرات (Variant Details) ---
+      let vdList: any[] = dto.variantDetails ?? [];
+      if (vdList.length === 0 && dto.attributes?.length) {
+        vdList = generateCombinationsFromDto(dto.attributes, dto.price);
+      }
+
+      for (const vdDto of vdList) {
+        await queryRunner.manager.save(
+          this.variantDetailRepository.create({
+            name: normaliseVDName(vdDto.attributes ?? vdDto.name ?? null),
+            price: Number(vdDto.price) || dto.price,
+            stock: Number(vdDto.stock) || 0,
+            autoGenerate: vdDto.autoGenerate ?? false,
+            product: savedProduct,
+          } as any),
+        );
+      }
+
+      // --- معالجة العروض (Offers) ---
+      for (const offerDto of dto.offers ?? []) {
+        await queryRunner.manager.save(
+          this.offerRepository.create({
+            name: offerDto.name, quantity: Number(offerDto.quantity),
+            price: Number(offerDto.price), product: savedProduct,
+          }),
+        );
+      }
+
+      // --- معالجة الصور الإضافية ---
+      for (const imageUrl of dto.images ?? []) {
+        await queryRunner.manager.save(
+          this.imageProductRepository.create({ imageUrl, product: savedProduct }),
+        );
+      }
+
+      createdProducts.push(savedProduct);
+    }
+
+    await queryRunner.commitTransaction();
+    
+    // إعادة جلب المنتجات مع علاقاتها (اختياري، حسب حاجتك للـ response)
+    return Promise.all(createdProducts.map(p => this.findOne(p.id, storeId, userId)));
+
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    throw error;
+  } finally {
+    await queryRunner.release();
+  }
+}
 
   // ══════════════════════════════════════════════════════════════════════════
   // FIND ALL
@@ -516,7 +613,7 @@ export class ProductService {
         { slug: productId, isActive: true, store: { domains: { domain: cleanDomain } } },
       ],
       relations: [
-        'store', 'store.themeUser', 'store.themeUser.theme', 'store.user',
+        'store', 'store.themeUser', 'store.theme', 'store.user',
         'store.domains', // مهم جداً إضافة هذه العلاقة ليتمكن TypeORM من البحث فيها
         'category', 'imagesProduct', 'attributes', 'attributes.variants',
         'variantDetails', 'offers',
@@ -526,6 +623,26 @@ export class ProductService {
 
     if (!product) throw new NotFoundException('المنتج غير موجود في هذا المتجر');
 
+    console.log({
+      ...product,
+      store: product.store ? {
+        id: product.store.id,
+        name: product.store.name,
+        cart: product.store.cart,
+        subdomain: product.store.subdomain,
+        userId: product.store.user.id,
+        theme: product.store.theme ? {
+          id: product.store.theme.id,
+          slug: product.store.theme.slug,
+          name: product.store.theme.name_en,
+        } : null,
+      } : null,
+      category: product.category
+        ? { id: product.category.id, name: product.category.name }
+        : null,
+    });
+    
+
     return {
       ...product,
       store: product.store ? {
@@ -534,10 +651,10 @@ export class ProductService {
         cart: product.store.cart,
         subdomain: product.store.subdomain,
         userId: product.store.user.id,
-        theme: product.store.themeUser?.theme ? {
-          id: product.store.themeUser.theme.id,
-          slug: product.store.themeUser.theme.slug,
-          name: product.store.themeUser.theme.name_en,
+        theme: product.store.theme ? {
+          id: product.store.theme.id,
+          slug: product.store.theme.slug,
+          name: product.store.theme.name_en,
         } : null,
       } : null,
       category: product.category

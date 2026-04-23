@@ -9,6 +9,6 @@ export class ThemeType {
     @Column({unique:true})
     name: string;
 
-    @OneToMany(() => Theme, (theme) => theme.types)
+    @OneToMany(() => Theme, (theme) => theme.type)
     theme: Theme[];
 }

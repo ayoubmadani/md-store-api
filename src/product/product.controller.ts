@@ -50,6 +50,17 @@ export class ProductController {
     return this.productService.create(storeId, userId, dto);
   }
 
+  @Post('multi')
+  @HttpCode(HttpStatus.CREATED)
+  createMulti(
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @Body() dtos: CreateProductDto[], // سنعيدها CreateProductDto بعد إصلاح الـ Frontend
+    @GetUser() user: any
+  ){
+    const userId = this.getUserId(user);
+    return this.productService.createMulti(storeId, userId, dtos);
+  }
+
   @Get()
   findAll(
     @GetUser() user: any,

@@ -8,12 +8,18 @@ import { Repository } from 'typeorm';
 import { Image } from './entities/image.entity';
 import { S3Service } from './s3.service';
 import { count } from 'console';
+import { ImageAdmin } from './entities/image-admin.entity';
 
 @Injectable()
 export class ImageService {
   constructor(
     @InjectRepository(Image)
     private imageRepository: Repository<Image>,
+
+    @InjectRepository(ImageAdmin)
+    private imageAdminRepository: Repository<ImageAdmin>,
+
+
     private s3Service: S3Service,
   ) { }
 
@@ -77,9 +83,9 @@ export class ImageService {
       .where("image.userId = :userId", { userId })
       .getRawOne();
 
-      return {
-        count: result.count,
-        totalSize: parseInt(result.totalSize || 0)
+    return {
+      count: result.count,
+      totalSize: parseInt(result.totalSize || 0)
     };
   }
 
@@ -246,4 +252,52 @@ export class ImageService {
       folderStats,
     };
   }
+
+  //------------------------------------------
+  // admine
+  //------------------------------------------
+
+
+  async uploadImageAdmin(files: Express.Multer.File[]) {
+    // 1. رفع الملفات إلى S3
+    const uploadedFiles = await this.s3Service.uploadMultipleFiles(files, "admin");
+
+    // 2. تحويل البيانات لتناسب هيكل جدول ImageAdmin
+    const imageData = uploadedFiles.map(file => ({
+      url: file.url,
+      size: file.size,
+      key: file.key,
+    }));
+
+    // 3. إنشاء السجلات وحفظها
+    const imagesAdmin = this.imageAdminRepository.create(imageData);
+    return await this.imageAdminRepository.save(imagesAdmin);
+  }
+
+  getAllImagesAdmin(page: string = "1") {
+    const limit = 100; // عدد الصور في كل صفحة
+    const pageNumber = Math.max(1, parseInt(page)); // التأكد من أن رقم الصفحة 1 أو أكثر
+
+    return this.imageAdminRepository.find({
+      // تخطي العناصر بناءً على الصفحة (مثلاً الصفحة 2 تتخطى أول 100 عنصر)
+      skip: (pageNumber - 1) * limit,
+
+      // جلب 100 عنصر فقط في كل مرة
+      take: limit,
+
+      // ترتيب الصور من الأحدث إلى الأقدم
+      order: {
+        id: 'DESC'
+      }
+    });
+  }
+
+  async deleteImageAdmin(id: string) {
+    const image = await this.imageAdminRepository.findOne({ where: { id } })
+    if (!image) throw new NotFoundException('image note found')
+    await this.s3Service.deleteFile(image.key);
+    await this.imageAdminRepository.remove(image)
+    return { success: true }
+  }
+
 }

@@ -21,7 +21,9 @@ import { StorePixel } from "./store-pixel.entity";
 import { Order } from "../../order/entities/order.entity";
 import { ThemeUser } from "../../theme/entities/theme-user.entity";
 import { Show } from "../../show/entity/show.entity";
-import { Domain } from "src/domain/entities/domain.entity";
+import { Domain } from "../../domain/entities/domain.entity";
+import { MessageUser } from "../../user/entities/message-user.entity";
+import { Theme } from "../../theme/entities/theme.entity";
 
 @Entity({ name: 'stores' })
 export class Store {
@@ -97,10 +99,26 @@ export class Store {
   @JoinColumn({ name: "themeUserId" })
   themeUser: ThemeUser;
 
+  @Column({ nullable: true })
+  themeId: string;
+
+  // تغيير من OneToOne إلى ManyToOne
+  @ManyToOne(() => Theme, (theme) => theme.stores, { // لاحظ تغيير theme.store إلى theme.stores
+    onDelete: 'SET NULL',
+    nullable: true
+  })
+  @JoinColumn({ name: 'themeId' })
+  theme: Theme;
+
   @OneToMany(() => Show, show => show.store)
   shows: Show[]
 
   // store.entity.ts
   @OneToMany(() => Domain, (domain) => domain.store, { cascade: true })
   domains: Domain[];
+
+
+  @OneToMany(() => MessageUser, (messageUser) => messageUser.store)
+  messages: MessageUser[];
+
 }

@@ -45,9 +45,11 @@ export class StoreController {
       @Param('subdomain') subdomain: string,
       @Query('categoryId') categoryId?:string,
       @Query('search') search?:string,
+      @Query('page') page?:string,
   ) {
+    console.log("dfddddddddddddddddddddd");
     
-    const store = await this.storeService.getStoreByDomain(subdomain,categoryId,search);
+    const store = await this.storeService.getStoreByDomain(subdomain,categoryId,search,page);
     return { success: true, data: store };
   }
 

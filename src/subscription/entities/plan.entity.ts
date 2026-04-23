@@ -1,5 +1,6 @@
-import { Column, Entity, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToOne, JoinColumn } from "typeorm";
+import { Column, Entity, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToOne, JoinColumn, OneToMany } from "typeorm";
 import { FeaturesEntity } from "./features.entity";
+import { ThemePlan } from "../../theme/entities/theme-plan.entity";
 
 @Entity('plans')
 export class Plan {
@@ -33,4 +34,9 @@ export class Plan {
 
     @UpdateDateColumn()
     updatedAt: Date;
+
+    // ✅ التصحيح: بما أنها OneToMany، يجب أن تكون مصفوفة []ThemePlan
+    // ✅ وأيضاً نربطها بالحقل 'plan' الموجود في ملف ThemePlan
+    @OneToMany(() => ThemePlan, (themePlan) => themePlan.plan)
+    themePlans: ThemePlan[];
 }

@@ -6,6 +6,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { Transaction } from '../../payment/entities/transaction.entity';
 import { Subscription } from '../../subscription/entities/subscription.entity';
 import { StoreShippingSettings } from 'src/shipping-provider/entities/store-shipping-settings.entity';
+import { MessageUser } from './message-user.entity';
 
 export enum AuthProvider {
     CREDENTIALS = 'CREDENTIALS',
@@ -96,4 +97,7 @@ export class User {
 
     @OneToMany(() => Subscription, (subscription) => subscription.user)
     subscriptions: Subscription[];
+
+    @OneToMany(()=> MessageUser , (messageUser)=> messageUser.user)
+    messages:MessageUser[];
 }

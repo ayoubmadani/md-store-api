@@ -1,3 +1,4 @@
+import { CategoryNiche } from "../../niche/entities/category-niche.entity";
 import { Product } from "../../product/entities/product.entity";
 import { Store } from "../../store/entities/store.entity";
 import {
@@ -13,6 +14,7 @@ import {
     UpdateDateColumn,
     DeleteDateColumn,
     Index,
+    JoinColumn,
 } from "typeorm";
 
 @Entity({ name: 'categories' })
@@ -65,4 +67,14 @@ export class Category {
 
     @Column({ nullable: true })
     slug: string; // للـ SEO
+
+    @Column({ nullable: true })
+    categoryNicheId?:string
+
+    @ManyToOne(() => CategoryNiche, (categoryNiche) => categoryNiche.categorys, {
+        onDelete: 'SET NULL', // عند حذف الـ Niche، يتم تحويل القيمة في Category إلى Null ولا تُحذف الفئة
+        nullable: true        // يجب أن يكون الحقل يقبل القيمة Null ليعمل SET NULL
+    })
+    @JoinColumn({name: "categoryNicheId"})
+    categoryNiche: CategoryNiche;
 }

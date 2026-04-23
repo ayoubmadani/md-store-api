@@ -4,7 +4,7 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In } from 'typeorm';
+import { Repository, Between, In, TreeRepository, DataSource } from 'typeorm';
 
 import { User, UserRole } from '../user/entities/user.entity';
 import { Store } from '../store/entities/store.entity';
@@ -22,6 +22,10 @@ import type { CreateThemeDto, UpdateThemeDto } from './admin.controller';
 import { Wilaya } from '../shipping/entity/wilaya.entity';
 import { MessageAdmine } from './entity/message-admin.entity';
 import { CreateMessageAdminDto } from './dto/message-admine.dto';
+import { CategoryNiche } from '../niche/entities/category-niche.entity';
+import { CreateCategoryNicheDto } from '../niche/dto/create-cat-niche.dto';
+import { ThemePlan } from '../theme/entities/theme-plan.entity';
+import { Plan } from '../subscription/entities/plan.entity';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local shape types — used only as plain type annotations inside the service,
@@ -100,6 +104,10 @@ export class AdminService {
         @InjectRepository(Niche)
         private readonly nicheRepo: Repository<Niche>,
 
+        // 1. غيّر هذا السطر ليكون Repository عادي مؤقتاً أو اتركه للحقن فقط
+        @InjectRepository(CategoryNiche)
+        private categoryNicheRepo: TreeRepository<CategoryNiche>,
+
         @InjectRepository(Category)
         private readonly categoryRepo: Repository<Category>,
 
@@ -114,7 +122,19 @@ export class AdminService {
 
         @InjectRepository(MessageAdmine)
         private readonly messageAdmineRepo: Repository<MessageAdmine>,
-    ) { }
+
+        @InjectRepository(ThemePlan)
+        private readonly themePlanRepo:Repository<ThemePlan>,
+
+        @InjectRepository(Plan)
+        private readonly planRepo : Repository<Plan>,
+
+        // 2. احقن الـ DataSource هنا
+        private readonly dataSource: DataSource,
+    ) {
+        // 3. أجبر المتغير على أن يكون TreeRepository حقيقي يدعم findTrees
+        this.categoryNicheRepo = this.dataSource.getTreeRepository(CategoryNiche);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // 1. DASHBOARD
@@ -473,7 +493,7 @@ export class AdminService {
 
     async getAllThemes({ page = 1, limit = 20 }: PaginationQuery) {
         const [themes, total] = await this.themeRepo.findAndCount({
-            relations: ['types'],
+            relations: ['type'],
             order: { price: 'ASC' },
             skip: (page - 1) * limit,
             take: limit,
@@ -485,7 +505,7 @@ export class AdminService {
     async getThemeById(id: string) {
         const theme = await this.themeRepo.findOne({
             where: { id },
-            relations: ['types', 'themeUsers'],
+            relations: ['type', 'themeUsers'],
         });
         if (!theme) throw new NotFoundException(`Theme #${id} not found`);
         return theme;
@@ -529,6 +549,46 @@ export class AdminService {
         });
 
         return { data: purchases, total, page, limit, totalPages: Math.ceil(total / limit) };
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // THEME PLAN ASSIGNMENT
+    // ───────────────────────────────────────────────────────────────
+
+    async getThemePlanStatus(themeId: string) {
+        await this.getThemeById(themeId); // 404 guard
+
+        const [allPlans, assigned] = await Promise.all([
+            this.planRepo.find({ order: { monthlyPrice: 'ASC' } }),
+            this.themePlanRepo.find({ where: { themeId } }),
+        ]);
+
+        const assignedPlanIds = new Set(assigned.map(tp => tp.planId));
+
+        return allPlans.map(plan => ({
+            ...plan,
+            isAssigned: assignedPlanIds.has(plan.id),
+        }));
+    }
+
+    async assignThemeToPlan(themeId: string, planId: string) {
+        await this.getThemeById(themeId); // 404 guard
+
+        const plan = await this.planRepo.findOne({ where: { id: planId } });
+        if (!plan) throw new NotFoundException(`Plan #${planId} not found`);
+
+        const exists = await this.themePlanRepo.findOne({ where: { themeId, planId } });
+        if (exists) return exists; // idempotent
+
+        const tp = this.themePlanRepo.create({ themeId, planId });
+        return this.themePlanRepo.save(tp);
+    }
+
+    async removeThemeFromPlan(themeId: string, planId: string) {
+        const tp = await this.themePlanRepo.findOne({ where: { themeId, planId } });
+        if (!tp) throw new NotFoundException(`Assignment not found`);
+        await this.themePlanRepo.remove(tp);
+        return { message: 'Removed successfully' };
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -590,6 +650,83 @@ export class AdminService {
         await this.nicheRepo.remove(niche);
         return { message: `Niche #${id} deleted successfully` };
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 8.1. NICHE CATEGORIES MANAGEMENT CreateCategoryNicheDto
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    async createcatNiche(createDto: CreateCategoryNicheDto) {
+        const catNiche = new CategoryNiche();
+        catNiche.name_ar = createDto.name_ar;
+        catNiche.name_en = createDto.name_en;
+        catNiche.name_fr = createDto.name_fr;
+        catNiche.nicheId = createDto.nicheId;
+
+        // إذا كان هناك أب (تصنيف فرعي)
+        if (createDto.parentId) {
+            const parent = await this.categoryNicheRepo.findOne({
+                where: { id: createDto.parentId }
+            });
+            if (!parent) throw new NotFoundException('التصنيف الأب غير موجود');
+            catNiche.parent = parent;
+        }
+
+        return await this.categoryNicheRepo.save(catNiche);
+    }
+
+    async createcatNichemulti(createDtos: CreateCategoryNicheDto[]) {
+        return await this.dataSource.transaction(async (manager) => {
+            const results: CategoryNiche[] = [];
+
+            for (const dto of createDtos) {
+                const catNiche = new CategoryNiche();
+                catNiche.name_ar = dto.name_ar;
+                catNiche.name_en = dto.name_en;
+                catNiche.name_fr = dto.name_fr;
+                catNiche.nicheId = dto.nicheId;
+                catNiche.imageUrl = dto.imageUrl;
+
+                if (dto.parentId) {
+                    // البحث عن الأب داخل الترانزاكشن لضمان الدقة
+                    const parent = await manager.findOne(CategoryNiche, {
+                        where: { id: dto.parentId }
+                    });
+                    if (parent) {
+                        catNiche.parent = parent;
+                    }
+                }
+
+                // الحفظ باستخدام المانجر ليكون جزءاً من الترانزاكشن
+                const saved = await manager.save(catNiche);
+                results.push(saved);
+            }
+
+            return results;
+        });
+    }
+
+    // 2. جلب جميع التصنيفات على شكل شجرة (Tree structure)
+    async findAllcatNicheTrees() {
+        return await this.categoryNicheRepo.findTrees();
+    }
+
+    // 3. جلب تصنيف معين مع أبنائه فقط
+    async findcatNicheOneWithChildren(id: string) {
+        const category = await this.categoryNicheRepo.findOne({ where: { id } });
+        if (!category) throw new NotFoundException('التصنيف غير موجود');
+        return await this.categoryNicheRepo.findDescendantsTree(category);
+    }
+
+    // 4. الحذف
+    async removecatNiche(id: string) {
+        const category = await this.categoryNicheRepo.findOne({ where: { id } });
+        if (!category) throw new NotFoundException('التصنيف غير موجود');
+
+        // ملاحظة: بسبب ضبط onDelete: 'SET NULL' في كيان Category
+        // سيتم حذف هذا السجل هنا، وتلقائياً ستتحول قيمته في جدول الـ Category إلى Null
+        return await this.categoryNicheRepo.remove(category);
+    }
+
 
     // ═══════════════════════════════════════════════════════════════════════════
     // 9. LANDING PAGE MANAGEMENT

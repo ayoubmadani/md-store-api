@@ -65,6 +65,9 @@ export class PaymentController {
     @Body('amount') amount: any
   ) {
     const userId = user.sub || user.id;
-    return this.paymentService.createTopUpSession(userId, amount);
+    const numericAmount = Number(amount);
+    console.log(numericAmount);
+    
+    return this.paymentService.createTopUpSession(userId, numericAmount);
   }
 }

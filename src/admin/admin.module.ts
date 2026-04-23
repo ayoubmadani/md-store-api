@@ -27,6 +27,9 @@ import { User } from '../user/entities/user.entity';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admine.service';
 import { MessageAdmine } from './entity/message-admin.entity';
+import { CategoryNiche } from '../niche/entities/category-niche.entity';
+import { ThemePlan } from '../theme/entities/theme-plan.entity';
+import { Plan } from '../subscription/entities/plan.entity';
 
 
 @Module({
@@ -57,6 +60,9 @@ import { MessageAdmine } from './entity/message-admin.entity';
             LandingPage,
             Niche,
             MessageAdmine,
+            CategoryNiche,
+            ThemePlan,
+            Plan,
         ]),
     ],
     controllers: [AdminController],

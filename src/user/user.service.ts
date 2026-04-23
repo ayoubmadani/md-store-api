@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { User, AuthProvider } from './entities/user.entity';
@@ -9,12 +9,14 @@ import { ConfigService } from '@nestjs/config';
 import { MailService } from '../mail/mail.service';
 import { ResetNewPassword } from './dto/reset-new-password.dto';
 import { SubscriptionService } from '../subscription/subscription.service';
-import { Store } from 'src/store/entities/store.entity';
-import { Product } from 'src/product/entities/product.entity';
-import { Subscription } from 'src/subscription/entities/subscription.entity';
-import { StorePixel } from 'src/store/entities/store-pixel.entity';
-import { LandingPage } from 'src/landing-page/entities/landing-page.entity';
-import { log } from 'console';
+import { Store } from '../store/entities/store.entity';
+import { Product } from '../product/entities/product.entity';
+import { Subscription } from '../subscription/entities/subscription.entity';
+import { StorePixel } from '../store/entities/store-pixel.entity';
+import { LandingPage } from '../landing-page/entities/landing-page.entity';
+import { MessageUser } from './entities/message-user.entity';
+import { Theme } from '../theme/entities/theme.entity';
+import { ThemeUser } from '../theme/entities/theme-user.entity';
 
 @Injectable()
 export class UserService {
@@ -25,6 +27,9 @@ export class UserService {
     @InjectRepository(Subscription) private readonly subRepo: Repository<Subscription>,
     @InjectRepository(StorePixel) private readonly pixelRepo: Repository<StorePixel>,
     @InjectRepository(LandingPage) private readonly lpRepo: Repository<LandingPage>,
+    @InjectRepository(MessageUser) private readonly msgRepo: Repository<MessageUser>,
+    @InjectRepository(Theme) private readonly themeRepo: Repository<Theme>,
+    @InjectRepository(ThemeUser) private readonly themeUserRepo: Repository<ThemeUser>,
 
     private readonly config: ConfigService,
     private readonly mailService: MailService,
@@ -191,8 +196,6 @@ export class UserService {
       dto.password = await bcrypt.hash(dto.password, 10);
     }
 
-    console.log(dto.isNtfy);
-
 
     if (dto.isNtfy === true) {
       await this.getIsNotfy(id);
@@ -206,29 +209,29 @@ export class UserService {
   }
 
   async initSub(userId: string) {
-
-   const sub = await this.subRepo.findOne({
-        where: { userId, status: 'active' },
-        relations: ['plan', 'plan.features'],
-        order: { startDate: 'DESC' },
+    // 1. جلب بيانات الاشتراك الفعال مع كافة علاقات الثيمات المرتبطة بالخطة
+    const sub = await this.subRepo.findOne({
+      where: { userId, status: 'active' },
+      relations: ['plan', 'plan.features', 'plan.themePlans', 'plan.themePlans.theme'],
+      order: { startDate: 'DESC' },
     });
- 
+
+    // إذا لم يوجد اشتراك فعال، يفضل تصفير الميزات أو الخروج (حسب منطق عملك)
     if (!sub || !sub.plan.features) return;
     const f = sub.plan.features;
 
+    // 2. حساب الأعداد الحالية للموارد (المتاجر، المنتجات، البيكسل، صفحات الهبوط)
     const [storeCount, productCount, pixelfbCount, pixeltikCount, lpCount] = await Promise.all([
-        this.storeRepo.count({ where: { isActive: true, user: { id: userId } } }),
-        this.productRepo.count({ where: { isActive: true, store: { user: { id: userId } } } }),
-        this.pixelRepo.count({ where: { isActive: true, type: 'facebook', store: { user: { id: userId } } } }),
-        this.pixelRepo.count({ where: { isActive: true, type: 'tiktok', store: { user: { id: userId } } } }),
-        this.lpRepo.count({ where: { isActive: true, product: { store: { user: { id: userId } } } } }),
+      this.storeRepo.count({ where: { isActive: true, user: { id: userId } } }),
+      this.productRepo.count({ where: { isActive: true, store: { user: { id: userId } } } }),
+      this.pixelRepo.count({ where: { isActive: true, type: 'facebook', store: { user: { id: userId } } } }),
+      this.pixelRepo.count({ where: { isActive: true, type: 'tiktok', store: { user: { id: userId } } } }),
+      this.lpRepo.count({ where: { isActive: true, product: { store: { user: { id: userId } } } } }),
     ]);
-    console.log({
-      storeCount,productCount,pixelfbCount,pixeltikCount,lpCount
-    });
-    
 
-    // المتاجر
+    // 3. تعطيل الموارد الزائدة عن حدود الخطة (Enforcement Logic)
+
+    // المتاجر الزائدة
     if (storeCount > f.storeNumber) {
       await this.storeRepo.createQueryBuilder()
         .update()
@@ -237,7 +240,7 @@ export class UserService {
         .execute();
     }
 
-    // المنتجات
+    // المنتجات الزائدة
     if (productCount > f.productNumber) {
       await this.productRepo.createQueryBuilder()
         .update()
@@ -246,7 +249,7 @@ export class UserService {
         .execute();
     }
 
-    // بيكسل فيسبوك
+    // بيكسل فيسبوك الزائد
     if (pixelfbCount > f.pixelFacebookNumber) {
       await this.pixelRepo.createQueryBuilder()
         .update()
@@ -256,7 +259,7 @@ export class UserService {
         .execute();
     }
 
-    // بيكسل تيك توك
+    // بيكسل تيك توك الزائد
     if (pixeltikCount > f.pixelTiktokNumber) {
       await this.pixelRepo.createQueryBuilder()
         .update()
@@ -266,7 +269,7 @@ export class UserService {
         .execute();
     }
 
-    // صفحات الهبوط
+    // صفحات الهبوط الزائدة
     if (lpCount > f.landingPageNumber) {
       await this.lpRepo.createQueryBuilder()
         .update()
@@ -274,6 +277,111 @@ export class UserService {
         .where('"productId" IN (SELECT p.id FROM products p INNER JOIN stores s ON p."storeId" = s.id WHERE s."userId" = :userId)', { userId })
         .execute();
     }
+
+    // 4. التحقق من صلاحية الثيمات (Theme Access Enforcement)
+    const themePlanIds = sub.plan.themePlans.map(item => item.themeId);
+    const themeUser = await this.themeUserRepo.find({ where: { userId } });
+    const themeUserIds = themeUser.map(item => item.themeId);
+
+    const stores = await this.storeRepo.find({ where: { user: { id: userId } } });
+
+    console.log({themePlanIds ,themeUserIds , stores });
+    
+
+    const updatePromises:any = [];
+
+    for (const store of stores) {
+      // إذا كان للمتجر ثيم، وهذا الثيم غير موجود في الخطة ولا في الثيمات المشتراة من المستخدم
+      if (store.themeId && !themePlanIds.includes(store.themeId) && !themeUserIds.includes(store.themeId)) {
+        console.log(`🚫 Removing unauthorized theme ${store.themeId} from store ${store.name}`);
+
+        updatePromises.push(
+          this.storeRepo.update(store.id, { themeId: null as any })
+        );
+      }
+    }
+
+    // تنفيذ جميع عمليات تصفير الثيمات غير المصرح بها
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
+    }
+
+    console.log(`✅ Subscription initialization completed for user: ${userId}`);
+  }
+
+  async createMessage(dto: any) {
+    const user = await this.userRepo.findOne({ where: { stores: { id: dto.storeId } } })
+
+    if (!user) {
+      throw new NotFoundException('user not found')
+    }
+
+    const msg = this.msgRepo.create({
+      userId: user.id,
+      storeId: dto.storeId,
+      name: dto.name,
+      email: dto.email,
+      phone: dto.phone,
+      message: dto.message
+    })
+
+    await this.msgRepo.save(msg)
+
+    return { success: true }
+  }
+
+  async getMessages(
+    userId: string,
+    nb: string = "1",
+    dto: { filter?: string, archive?: string, viewed?: string }
+  ) {
+    const isArchived = dto.archive === 'true';
+    const search = dto.filter;
+
+    // 1. بناء المعايير الأساسية (Base Criteria)
+    const baseCriteria: any = {
+      userId,
+      isArchived,
+    };
+
+    // 2. معالجة حالة المقروء/غير المقروء
+    // إذا أرسلنا viewed=true نجلب المقروء فقط
+    // إذا أرسلنا viewed=false نجلب غير المقروء فقط
+    // إذا لم نرسل البارامتر (undefined) نجلب الكل (وهذا يفيد تبويب "الكل")
+    if (dto.viewed !== undefined) {
+      baseCriteria.isViewed = dto.viewed === 'true';
+    }
+
+    // 3. بناء الاستعلام مع دعم البحث
+    return this.msgRepo.find({
+      where: search
+        ? [
+          { ...baseCriteria, email: ILike(`%${search}%`) },
+          { ...baseCriteria, phone: ILike(`%${search}%`) },
+          { ...baseCriteria, name: ILike(`%${search}%`) }
+        ]
+        : baseCriteria,
+      relations: ['store', 'store.design'],
+      order: { createdAt: 'DESC' },
+      skip: (+nb - 1) * 50,
+      take: 50
+    });
+  }
+
+  // تحديث حالة المشاهدة (Vue)
+  async markAsViewed(id: string) {
+    return this.msgRepo.update(id, { isViewed: true });
+  }
+
+  // تحديث حالة الأرشفة (Archive)
+  async toggleArchive(id: string, state: boolean = true) {
+    // جعلتها toggle لتمكين المستخدم من إلغاء الأرشفة أيضاً
+    return this.msgRepo.update(id, { isArchived: state });
+  }
+
+  // حذف الرسالة نهائياً
+  async deleteMessage(id: string) {
+    return this.msgRepo.delete(id);
   }
 
 }

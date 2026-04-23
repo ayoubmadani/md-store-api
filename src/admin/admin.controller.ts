@@ -16,6 +16,7 @@ import { UserRole } from '../user/entities/user.entity';
 import { StatusEnum } from '../order/entities/order.entity';
 import { AdminService } from './admine.service';
 import { CreateMessageAdminDto } from './dto/message-admine.dto';
+import { CreateCategoryNicheDto } from '../niche/dto/create-cat-niche.dto';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Query classes
@@ -347,6 +348,27 @@ export class AdminController {
     return this.adminService.deleteTheme(id);
   }
 
+  @Get('theme/:id/plans')
+  getThemePlanStatus(@Param('id') id: string) {
+    return this.adminService.getThemePlanStatus(id);
+  }
+
+  @Post('theme/:id/plans')
+  assignThemeToPlan(
+    @Param('id') themeId: string,
+    @Body('planId') planId: string,
+  ) {
+    return this.adminService.assignThemeToPlan(themeId, planId);
+  }
+
+  @Delete('theme/:id/plans/:planId')
+  removeThemeFromPlan(
+    @Param('id') themeId: string,
+    @Param('planId') planId: string,
+  ) {
+    return this.adminService.removeThemeFromPlan(themeId, planId);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // 7. THEME TYPES
   // GET    /admin/theme-types
@@ -417,6 +439,39 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   deleteNiche(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.deleteNiche(id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 8.1 NICHE MANAGEMENT
+  // GET    /admin/category-niche/tree
+  // GET    /admin/category-niche/:id
+  // POST   /admin/category-niche
+  // DELETE /admin/category-niche/:id
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  @Get('category-niche/tree')
+  getTree() {
+    return this.adminService.findAllcatNicheTrees();
+  }
+
+  @Get('category-niche/:id')
+  getOne(@Param('id') id: string) {
+    return this.adminService.findcatNicheOneWithChildren(id);
+  }
+
+  @Post('category-niche')
+  create(@Body() createDto: CreateCategoryNicheDto) {
+    return this.adminService.createcatNiche(createDto);
+  }
+
+  @Post('category-niche-multi')
+  createMulti(@Body() createDto: CreateCategoryNicheDto[]) {
+    return this.adminService.createcatNichemulti(createDto);
+  }
+
+  @Delete('category-niche/:id')
+  delete(@Param('id') id: string) {
+    return this.adminService.removecatNiche(id);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -528,12 +583,12 @@ export class AdminController {
 
   @Get('contact')
   getAllMessage(
-    @Query('page') page: string = '1', 
+    @Query('page') page: string = '1',
     @Query('search') search?: string,  // 👈 غيرنا 'query' إلى 'search' لتطابق الفرونت إند
     @Query('tab') tab: string = 'all', // 👈 أضفنا الـ tab لكي لا يضيع الفلتر
   ) {
     const pageNumber = parseInt(page, 10) || 1;
-    
+
     // 👈 تأكد من تمرير الثلاثة متغيرات للـ Service
     return this.adminService.getAllMessage(pageNumber, search, tab);
   }

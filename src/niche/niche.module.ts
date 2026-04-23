@@ -3,12 +3,13 @@ import { NicheService } from './niche.service';
 import { NicheController } from './niche.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Niche } from './entities/niche.entity';
+import { CategoryNiche } from './entities/category-niche.entity';
 
 @Module({
   controllers: [NicheController],
   providers: [NicheService],
   imports: [
-    TypeOrmModule.forFeature([Niche])
+    TypeOrmModule.forFeature([Niche,CategoryNiche])
   ],
 })
 export class NicheModule {}

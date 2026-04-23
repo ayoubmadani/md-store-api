@@ -22,39 +22,66 @@ export class ThemeController {
   findAll(
     @Query('query') query?: string,
     @Query('isAdmin') isAdmin?: string,
-    @Query('type') type?: any, // استخدم النوع المناسب للـ Enum الخاص بك
+    @Query('type') type?: any,
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 100,
   ) {
-    // تمرير القيم للسيرفس مع التأكد من تحويل الأرقام
-    return this.themeService.findAll(query, type, Number(page), Number(limit) , Boolean(isAdmin));
+    return this.themeService.findAll(query, type, Number(page), Number(limit), Boolean(isAdmin));
   }
 
   @Get('my')
   @UseGuards(AuthGuard)
-  findUserTheme(@GetUser() user: any,){
+  findUserTheme(@GetUser() user: any) {
     const userId = user.id || user.sub;
-    return this.themeService.findUserTheme(userId)
+    return this.themeService.findUserTheme(userId);
+  }
+
+  // ✅ endpoint جديد: معلومات خطة المستخدم مقابل الثيمات
+  @Get('plan-info')
+  @UseGuards(AuthGuard)
+  getPlanInfo(@GetUser() user: any) {
+    const userId = user.id || user.sub;
+    return this.themeService.getPlanInfo(userId);
+  }
+
+  @Get('plan-sub')
+  @UseGuards(AuthGuard)
+  getThemePlan(
+    @Param('planId') planId: string,
+    @GetUser() user: any
+  ) {
+    const userId = user.id || user.sub;
+    return this.themeService.getThemePlan(userId)
+  }
+
+  @Post('active-theme-plan')
+  @UseGuards(AuthGuard)
+  async activeThemePlan( // أضف async هنا
+    @GetUser() user: any,
+    @Body() data: { storeId: string; themeId: string } // تغيير String لـ string (يفضل)
+  ) {
+    const userId = user.id || user.sub;
+    return await this.themeService.activeThemePlan(userId, data);
   }
 
   @Get('install-theme/:themeId')
   @UseGuards(AuthGuard)
   installTheme(
     @GetUser() user: any,
-    @Param('themeId') themeId:string,
-  ){
+    @Param('themeId') themeId: string,
+  ) {
     const userId = user.id || user.sub;
-    return this.themeService.installTheme(themeId ,userId)
+    return this.themeService.installTheme(themeId, userId);
   }
 
   @Post('active-theme')
   @UseGuards(AuthGuard)
   activeTheme(
     @GetUser() user: any,
-    @Body() data:any,
-  ){
+    @Body() data: any,
+  ) {
     const userId = user.id || user.sub;
-    return this.themeService.activeTheme(userId,data)
+    return this.themeService.activeTheme(userId, data);
   }
 
   @Get('get-one/:id')
@@ -63,8 +90,8 @@ export class ThemeController {
   }
 
   @Get('getallth')
-  findAllth(){
-    return this.themeService.findAllth()
+  findAllth() {
+    return this.themeService.findAllth();
   }
 
   @Patch(':id')
@@ -78,19 +105,18 @@ export class ThemeController {
   }
 
   // type
-
   @Post('type')
-  createType(@Body('name') name:string){
-    return this.typeThemeService.create(name)
+  createType(@Body('name') name: string) {
+    return this.typeThemeService.create(name);
   }
 
   @Get('type')
-  findAllType(){
-    return this.typeThemeService.findAll()
+  findAllType() {
+    return this.typeThemeService.findAll();
   }
 
   @Delete('type/:id')
-  deleteType(@Param('id') id:string){
-
+  deleteType(@Param('id') id: string) {
+    return this.typeThemeService.delete(id);
   }
 }

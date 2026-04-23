@@ -1,5 +1,6 @@
 import { Store } from "../../store/entities/store.entity";
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { CategoryNiche } from "./category-niche.entity";
 
 @Entity({name : 'niches'})
 export class Niche {
@@ -24,4 +25,7 @@ export class Niche {
 
     @OneToMany(()=> Store , (stores)=> stores.niche)
     stores : Store[]
+    
+    @OneToMany(()=> CategoryNiche , categoryNiche => categoryNiche.niche )
+    categoryNiches:CategoryNiche[]
 }

@@ -31,4 +31,8 @@ export class CreateCategoryDto {
   @IsString()
   @MaxLength(150)
   slug?: string;
+
+  @IsUUID()
+  @IsOptional()
+  categoryNicheId?:string
 }

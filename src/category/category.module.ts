@@ -5,7 +5,7 @@ import { CategoryController } from './category.controller';
 import { Category } from './entities/category.entity';
 import { Product } from '../product/entities/product.entity';
 import { StoreModule } from '../store/store.module';
-import { Store } from 'src/store/entities/store.entity';
+import { Store } from '../store/entities/store.entity';
 
 @Module({
   imports: [

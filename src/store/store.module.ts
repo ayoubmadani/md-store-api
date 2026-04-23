@@ -18,6 +18,8 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 import { PublicStoreController } from './public-store.controller';
 import { PublicStoreService } from './public-store.service';
 import { Product } from '../product/entities/product.entity';
+import { CategoryNiche } from '../niche/entities/category-niche.entity';
+import { ImageProduct } from '../image-product/entities/image-product.entity';
 
 @Module({
   imports: [
@@ -31,7 +33,9 @@ import { Product } from '../product/entities/product.entity';
       User,
       Niche,
       Category,
-      Product
+      Product,
+      CategoryNiche,
+      ImageProduct,
     ]),
     SubscriptionModule,
   ],

@@ -1,6 +1,8 @@
-import { Entity, Column, OneToMany, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from "typeorm";
+import { Entity, Column, OneToMany, PrimaryGeneratedColumn, ManyToOne, JoinColumn, OneToOne } from "typeorm";
 import { ThemeUser } from "./theme-user.entity";
 import { ThemeType } from "./theme-type.entity";
+import { ThemePlan } from "./theme-plan.entity";
+import { Store } from "src/store/entities/store.entity";
 
 @Entity()
 export class Theme {
@@ -35,20 +37,28 @@ export class Theme {
     imageUrl: string;
 
     @Column({ type: 'json', nullable: true })
-    tag: string[]; // أو any
+    tag: string[];
 
-    // ✅ هذا هو العمود الذي سيخزن الـ ID في قاعدة البيانات
     @Column()
     typeId: string;
 
-    @Column({default : false})
-    isActive:boolean
+    @Column({ default: false })
+    isActive: boolean;
 
-    // ✅ ربط العلاقة بالعمود أعلاه
+    // ✅ تصحيح 1: العلاقة ManyToOne تعيد كائناً واحداً فقط، لذا نستخدم الاسم المفرد 'type' وليس 'types'
     @ManyToOne(() => ThemeType, (themeType) => themeType.theme, { onDelete: 'CASCADE' })
     @JoinColumn({ name: "typeId" })
-    types: ThemeType;
+    type: ThemeType;
 
     @OneToMany(() => ThemeUser, (themeUser) => themeUser.theme)
     themeUsers: ThemeUser[];
+
+    // ✅ تصحيح 2: العلاقة OneToMany يجب أن تعيد مصفوفة []ThemePlan لأن الثيم الواحد يمكن أن يرتبط بخطط متعددة
+    // ✅ تصحيح 3: تأكد من الربط مع الحقل الصحيح في ThemePlan (يفضل أن يكون اسمه 'theme' كما فعلنا في الرد السابق)
+    @OneToMany(() => ThemePlan, (themePlan) => themePlan.theme)
+    themePlans: ThemePlan[];
+
+    // تغيير من OneToOne إلى OneToMany
+    @OneToMany(() => Store, (store) => store.theme)
+    stores: Store[]; // لاحظ الجمع هنا لأنها أصبحت قائمة متاجر
 }
