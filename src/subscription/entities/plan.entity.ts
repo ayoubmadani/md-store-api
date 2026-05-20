@@ -39,4 +39,5 @@ export class Plan {
     // ✅ وأيضاً نربطها بالحقل 'plan' الموجود في ملف ThemePlan
     @OneToMany(() => ThemePlan, (themePlan) => themePlan.plan)
     themePlans: ThemePlan[];
+
 }

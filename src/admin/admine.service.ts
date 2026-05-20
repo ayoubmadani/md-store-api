@@ -493,7 +493,7 @@ export class AdminService {
 
     async getAllThemes({ page = 1, limit = 20 }: PaginationQuery) {
         const [themes, total] = await this.themeRepo.findAndCount({
-            relations: ['type'],
+            relations: ['type','themePlans'],
             order: { price: 'ASC' },
             skip: (page - 1) * limit,
             take: limit,
@@ -567,6 +567,7 @@ export class AdminService {
 
         return allPlans.map(plan => ({
             ...plan,
+            planId: plan.id,
             isAssigned: assignedPlanIds.has(plan.id),
         }));
     }

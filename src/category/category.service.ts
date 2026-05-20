@@ -1,11 +1,9 @@
-import { 
-  Injectable, 
-  NotFoundException, 
-  BadRequestException,
-  InternalServerErrorException,
+import {
+  Injectable, NotFoundException,
+  BadRequestException, InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { TreeRepository, In, Repository, Like } from 'typeorm';
+import { Repository, In, Like } from 'typeorm';
 import { Category } from './entities/category.entity';
 import { Product } from '../product/entities/product.entity';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -17,62 +15,265 @@ import { QueryProductsDto } from './dto/query-products.dto';
 export class CategoryService {
   constructor(
     @InjectRepository(Category)
-    private categoryRepository: TreeRepository<Category>,
-    
+    private categoryRepository: Repository<Category>,
     @InjectRepository(Product)
     private productRepository: Repository<Product>,
-    
     private readonly storeService: StoreService,
-  ) {}
+  ) { }
 
-  // ==================== جلب منتجات التصنيف وأبنائه (مع Pagination) ====================
+  // ==================== Recursive CTE: جلب IDs الأبناء ====================
 
-  /**
-   * عند الضغط على تصنيف (مثل Home)، نجلب جميع منتجاته ومنتجات الأقسام التابعة له
-   */
-  async getCategoryProductsRecursive(
-    categoryId: string,
-    storeId: string,
-    userId: string,
-    queryDto: QueryProductsDto = {}
-  ): Promise<{
-    products: Product[];
-    total: number;
-    page: number;
-    totalPages: number;
-    categoryName: string;
-  }> {
-    // التحقق من الملكية
+  private async findDescendantIds(categoryId: string): Promise<string[]> {
+    const rows = await this.categoryRepository.query(
+      `WITH RECURSIVE descendants AS (
+         SELECT id FROM categories WHERE id = $1 AND "deletedAt" IS NULL
+         UNION ALL
+         SELECT c.id FROM categories c
+         INNER JOIN descendants d ON c."parentId" = d.id
+         WHERE c."deletedAt" IS NULL
+       )
+       SELECT id FROM descendants`,
+      [categoryId],
+    );
+    return rows.map((r: any) => r.id);
+  }
+
+  // فحص إذا كان nodeId ابناً لـ ancestorId (لمنع الحلقة الدائرية)
+  private async isDescendantOf(nodeId: string, ancestorId: string): Promise<boolean> {
+    const ids = await this.findDescendantIds(ancestorId);
+    return ids.includes(nodeId);
+  }
+
+  // ==================== إنشاء تصنيف ====================
+
+  // ==================== إنشاء تصنيف ====================
+
+  async create(storeId: string, userId: string, dto: CreateCategoryDto): Promise<Category> {
     await this.storeService.verifyOwnership(storeId, userId);
 
-    const { page = 1, limit = 20, search, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
-
-    // التأكد من وجود التصنيف
-    const category = await this.categoryRepository.findOne({
-      where: { id: categoryId, store: { id: storeId } }
+    const existing = await this.categoryRepository.findOne({
+      where: { name: dto.name, storeId },
     });
-
-    if (!category) {
-      throw new NotFoundException(`التصنيف #${categoryId} غير موجود`);
+    if (existing) {
+      throw new BadRequestException(`التصنيف "${dto.name}" موجود بالفعل في هذا المتجر`);
     }
 
-    // جلب كل الأبناء والأحفاد
-    const descendants = await this.categoryRepository.findDescendants(category);
-    const categoryIds = descendants.map(cat => cat.id);
+    const { parentId, categoryNicheId, ...restDto } = dto;
 
-    // بناء شروط البحث
+    if (parentId) {
+      const parentExists = await this.categoryRepository.findOne({
+        where: { id: parentId, storeId },
+      });
+      if (!parentExists) throw new NotFoundException(`التصنيف الأب #${parentId} غير موجود`);
+    }
+
+    // 1. نقوم بالتحويل هنا عند الإنشاء مباشرة باستخدام "as unknown as Category"
+    const category = this.categoryRepository.create({
+      ...restDto,
+      storeId,
+      parentId: parentId ?? null,
+      categoryNicheId: categoryNicheId ?? null,
+    } as any) as unknown as Category;
+
+    try {
+      // 2. الآن TypeORM سيعلم تلقائياً أن الناتج كائن مفرد وليس مصفوفة
+      const saved = await this.categoryRepository.save(category);
+      return this.findOne(saved.id, storeId);
+    } catch (error) {
+      throw new InternalServerErrorException('فشل إنشاء التصنيف');
+    }
+  }
+
+  // ==================== تحديث تصنيف ====================
+
+  async update(id: string, storeId: string, userId: string, dto: UpdateCategoryDto): Promise<Category> {
+    await this.storeService.verifyOwnership(storeId, userId);
+
+    const category = await this.findOne(id, storeId);
+    const { parentId, categoryNicheId, ...scalarFields } = dto;
+
+    if (scalarFields.name && scalarFields.name !== category.name) {
+      const existing = await this.categoryRepository.findOne({
+        where: { name: scalarFields.name, storeId },
+      });
+      if (existing) throw new BadRequestException(`التصنيف "${scalarFields.name}" موجود بالفعل`);
+    }
+
+    const updatePayload: any = { ...scalarFields };
+
+    if (parentId !== undefined) {
+      if (parentId === null) {
+        updatePayload.parentId = null;
+      } else {
+        if (parentId === id) throw new BadRequestException('لا يمكن جعل التصنيف أباً لنفسه');
+
+        const parent = await this.categoryRepository.findOne({
+          where: { id: parentId, storeId },
+        });
+        if (!parent) throw new NotFoundException(`التصنيف الأب #${parentId} غير موجود`);
+
+        // فحص الحلقة الدائرية
+        const isCircular = await this.isDescendantOf(parentId, id);
+        if (isCircular) {
+          throw new BadRequestException('لا يمكن جعل أحد الأبناء أباً لهذا التصنيف (حلقة دائرية)');
+        }
+
+        updatePayload.parentId = parentId;
+      }
+    } else {
+      updatePayload.parentId = null;
+    }
+
+    if (categoryNicheId !== undefined) {
+      updatePayload.categoryNicheId = categoryNicheId ?? null;
+    }
+
+    try {
+      await this.categoryRepository.update(id, updatePayload);
+      return this.findOne(id, storeId);
+    } catch (error) {
+      throw new InternalServerErrorException('فشل تحديث التصنيف');
+    }
+  }
+
+  // ==================== جلب التصنيفات ====================
+
+  // findAll و findTrees — احذف 'children' و 'parent' من relations
+  async findAll(storeId: string, userId: string): Promise<Category[]> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const categories = await this.categoryRepository.find({
+      where: { storeId },
+      relations: ['categoryNiche'], // ← فقط categoryNiche
+      order: { sortOrder: 'ASC', name: 'ASC' },
+    });
+    return this.buildTree(categories);
+  }
+
+  async findTrees(storeId: string, userId: string): Promise<Category[]> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const categories = await this.categoryRepository.find({
+      where: { storeId },
+      relations: ['categoryNiche'], // ← فقط categoryNiche
+      order: { sortOrder: 'ASC', name: 'ASC' },
+    });
+    return this.buildTree(categories);
+  }
+
+  async findOne(id: string, storeId: string, userId?: string): Promise<Category> {
+    if (userId) await this.storeService.verifyOwnership(storeId, userId);
+    const category = await this.categoryRepository.findOne({
+      where: { id, storeId },
+      relations: ['children', 'parent', 'categoryNiche'],
+    });
+    if (!category) throw new NotFoundException(`التصنيف #${id} غير موجود`);
+    return category;
+  }
+
+  // ==================== حذف (soft + cascade أبناء) ====================
+
+  async remove(id: string, storeId: string, userId: string): Promise<{ message: string }> {
+    await this.storeService.verifyOwnership(storeId, userId);
+
+    const category = await this.categoryRepository.findOne({
+      where: { id, storeId },
+      relations: ['products'],
+    });
+    if (!category) throw new NotFoundException(`التصنيف #${id} غير موجود`);
+
+    if (category.products?.length > 0) {
+      throw new BadRequestException(
+        `لا يمكن حذف التصنيف، يحتوي على ${category.products.length} منتج/منتجات`,
+      );
+    }
+
+    // جلب IDs جميع الأبناء
+    const descendantIds = await this.findDescendantIds(id);
+
+    // التحقق من عدم وجود منتجات في الأبناء
+    const childIds = descendantIds.filter(did => did !== id);
+    if (childIds.length > 0) {
+      const productsCount = await this.productRepository.count({
+        where: { category: { id: In(childIds) } },
+      });
+      if (productsCount > 0) {
+        throw new BadRequestException(
+          `لا يمكن الحذف، التصنيفات الفرعية تحتوي على ${productsCount} منتج/منتجات`,
+        );
+      }
+    }
+
+    try {
+      // soft delete للجميع
+      await this.categoryRepository
+        .createQueryBuilder()
+        .softDelete()
+        .where('id IN (:...ids)', { ids: descendantIds })
+        .execute();
+
+      return {
+        message: childIds.length > 0
+          ? `تم حذف التصنيف و${childIds.length} تصنيف/تصنيفات فرعية بنجاح`
+          : 'تم حذف التصنيف بنجاح',
+      };
+    } catch {
+      throw new InternalServerErrorException('فشل حذف التصنيف');
+    }
+  }
+
+  async forceRemove(id: string, storeId: string, userId: string): Promise<{ message: string }> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const category = await this.categoryRepository.findOne({
+      where: { id, storeId },
+      withDeleted: true,
+    });
+    if (!category) throw new NotFoundException(`التصنيف #${id} غير موجود`);
+    try {
+      await this.categoryRepository.delete(id);
+      return { message: 'تم حذف التصنيف نهائياً' };
+    } catch {
+      throw new InternalServerErrorException('فشل الحذف النهائي');
+    }
+  }
+
+  async restore(id: string, storeId: string, userId: string): Promise<Category> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const category = await this.categoryRepository.findOne({
+      where: { id, storeId },
+      withDeleted: true,
+    });
+    if (!category) throw new NotFoundException(`التصنيف #${id} غير موجود`);
+    if (!category.deletedAt) throw new BadRequestException('التصنيف غير محذوف');
+    try {
+      await this.categoryRepository.restore(id);
+      return this.findOne(id, storeId);
+    } catch {
+      throw new InternalServerErrorException('فشل استعادة التصنيف');
+    }
+  }
+
+  // ==================== منتجات التصنيف وأبنائه ====================
+
+  async getCategoryProductsRecursive(
+    categoryId: string, storeId: string, userId: string,
+    queryDto: QueryProductsDto = {},
+  ) {
+    await this.storeService.verifyOwnership(storeId, userId);
+
+    const category = await this.categoryRepository.findOne({
+      where: { id: categoryId, storeId },
+    });
+    if (!category) throw new NotFoundException(`التصنيف #${categoryId} غير موجود`);
+
+    const { page = 1, limit = 20, search, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    const categoryIds = await this.findDescendantIds(categoryId);
+
     const whereCondition: any = {
       category: { id: In(categoryIds) },
       store: { id: storeId },
       isActive: true,
     };
+    if (search) whereCondition.name = Like(`%${search}%`);
 
-    // إضافة البحث النصي إذا وُجد
-    if (search) {
-      whereCondition.name = Like(`%${search}%`);
-    }
-
-    // جلب المنتجات مع العد
     const [products, total] = await this.productRepository.findAndCount({
       where: whereCondition,
       relations: ['category', 'images'],
@@ -81,301 +282,27 @@ export class CategoryService {
       take: limit,
     });
 
-    return {
-      products,
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
-      categoryName: category.name,
-    };
+    return { products, total, page, totalPages: Math.ceil(total / limit), categoryName: category.name };
   }
 
-  // ==================== إنشاء تصنيف جديد ====================
-
-  async create(storeId: string, userId: string, dto: CreateCategoryDto): Promise<Category> {
-    await this.storeService.verifyOwnership(storeId, userId);
-
-    // التحقق من عدم تكرار الاسم في نفس المتجر
-    const existingCategory = await this.categoryRepository.findOne({
-      where: { 
-        name: dto.name, 
-        store: { id: storeId },
-      }
-    });
-
-    if (existingCategory) {
-      throw new BadRequestException(`التصنيف "${dto.name}" موجود بالفعل في هذا المتجر`);
-    }
-
-    const category = this.categoryRepository.create({
-      ...dto,
-      store: { id: storeId },
-    });
-
-    // إضافة التصنيف الأب إذا وُجد
-    if (dto.parentId) {
-      const parent = await this.findOne(dto.parentId, storeId);
-      category.parent = parent;
-    }
-
-    try {
-      return await this.categoryRepository.save(category);
-    } catch (error) {
-      throw new InternalServerErrorException('فشل إنشاء التصنيف');
-    }
-  }
-
-  // ==================== جلب جميع التصنيفات كقائمة مسطحة ====================
-
-  async findAll(storeId: string, userId: string): Promise<Category[]> {
-    await this.storeService.verifyOwnership(storeId, userId);
-
-    const categories = await this.categoryRepository.find({
-      where: { store: { id: storeId } },
-      relations: ['children', 'parent'],
-      order: { sortOrder: 'ASC', name: 'ASC' },
-    });
-
-    return this.buildTree(categories);
-  }
-
-  // ==================== جلب التصنيفات كشجرة هرمية ====================
-
-  async findTrees(storeId: string, userId: string): Promise<Category[]> {
-    await this.storeService.verifyOwnership(storeId, userId);
-
-    // جلب جميع التصنيفات أولاً
-    const allCategories = await this.categoryRepository.find({
-      where: { store: { id: storeId } },
-      order: { sortOrder: 'ASC', name: 'ASC' },
-    });
-
-    // بناء الشجرة يدوياً
-    return this.buildTree(allCategories);
-  }
-
-  // ==================== جلب تصنيف واحد ====================
-
-  async findOne(id: string, storeId: string, userId?: string): Promise<Category> {
-    if (userId) {
-      await this.storeService.verifyOwnership(storeId, userId);
-    }
-
-    const category = await this.categoryRepository.findOne({
-      where: { id, store: { id: storeId } },
-      relations: ['children', 'parent'],
-    });
-
-    if (!category) {
-      throw new NotFoundException(`التصنيف #${id} غير موجود`);
-    }
-
-    return category;
-  }
-
-  // ==================== تحديث تصنيف ====================
-
-  async update(
-    id: string, 
-    storeId: string, 
-    userId: string, 
-    dto: UpdateCategoryDto
-  ): Promise<Category> {
-    await this.storeService.verifyOwnership(storeId, userId);
-    const category = await this.findOne(id, storeId);
-
-    // التحقق من عدم تكرار الاسم إذا تم تغييره
-    if (dto.name && dto.name !== category.name) {
-      const existingCategory = await this.categoryRepository.findOne({
-        where: { 
-          name: dto.name, 
-          store: { id: storeId },
-        }
-      });
-
-      if (existingCategory) {
-        throw new BadRequestException(`التصنيف "${dto.name}" موجود بالفعل`);
-      }
-    }
-
-    // تحديث البيانات
-    Object.assign(category, dto);
-
-    // تحديث التصنيف الأب
-    if (dto.parentId !== undefined) {
-      if (dto.parentId === null) {
-        category.parent = null;
-      } else {
-        if (dto.parentId === id) {
-          throw new BadRequestException('لا يمكن جعل التصنيف أباً لنفسه');
-        }
-
-        // التحقق من عدم إنشاء حلقة دائرية
-        const parent = await this.findOne(dto.parentId, storeId);
-        const parentAncestors = await this.categoryRepository.findAncestors(parent);
-        
-        if (parentAncestors.some(ancestor => ancestor.id === id)) {
-          throw new BadRequestException('لا يمكن جعل أحد الأبناء أباً لهذا التصنيف (حلقة دائرية)');
-        }
-
-        category.parent = parent;
-      }
-    }
-
-    try {
-      return await this.categoryRepository.save(category);
-    } catch (error) {
-      throw new InternalServerErrorException('فشل تحديث التصنيف');
-    }
-  }
-
-  // ==================== حذف تصنيف (Soft Delete) ====================
-
-  async remove(id: string, storeId: string, userId: string): Promise<{ message: string }> {
-    await this.storeService.verifyOwnership(storeId, userId);
-    const category = await this.categoryRepository.findOne({
-      where: { id, store: { id: storeId } },
-      relations: ['products'],
-    });
-
-    if (!category) {
-      throw new NotFoundException(`التصنيف #${id} غير موجود`);
-    }
-
-    // التحقق من عدم وجود منتجات
-    if (category.products?.length > 0) {
-      throw new BadRequestException(
-        `لا يمكن حذف التصنيف، يحتوي على ${category.products.length} منتج/منتجات`
-      );
-    }
-
-    // التحقق من عدم وجود تصنيفات فرعية
-    const childrenCount = await this.categoryRepository.countDescendants(category);
-    if (childrenCount > 1) {
-      throw new BadRequestException(
-        `لا يمكن حذف التصنيف، يحتوي على ${childrenCount - 1} تصنيف/تصنيفات فرعية`
-      );
-    }
-
-    try {
-      await this.categoryRepository.softRemove(category);
-      return { message: 'تم حذف التصنيف بنجاح' };
-    } catch (error) {
-      throw new InternalServerErrorException('فشل حذف التصنيف');
-    }
-  }
-
-  // ==================== الحذف النهائي (للأدمن فقط) ====================
-
-  async forceRemove(id: string, storeId: string, userId: string): Promise<{ message: string }> {
-    await this.storeService.verifyOwnership(storeId, userId);
-    const category = await this.categoryRepository.findOne({
-      where: { id, store: { id: storeId } },
-      withDeleted: true, // جلب حتى المحذوفة
-    });
-
-    if (!category) {
-      throw new NotFoundException(`التصنيف #${id} غير موجود`);
-    }
-
-    try {
-      await this.categoryRepository.remove(category);
-      return { message: 'تم حذف التصنيف نهائياً' };
-    } catch (error) {
-      throw new InternalServerErrorException('فشل الحذف النهائي');
-    }
-  }
-
-  // ==================== استعادة تصنيف محذوف ====================
-
-  async restore(id: string, storeId: string, userId: string): Promise<Category> {
-    await this.storeService.verifyOwnership(storeId, userId);
-    
-    const category = await this.categoryRepository.findOne({
-      where: { id, store: { id: storeId } },
-      withDeleted: true,
-    });
-
-    if (!category) {
-      throw new NotFoundException(`التصنيف #${id} غير موجود`);
-    }
-
-    if (!category.deletedAt) {
-      throw new BadRequestException('التصنيف غير محذوف');
-    }
-
-    try {
-      await this.categoryRepository.recover(category);
-      return category;
-    } catch (error) {
-      throw new InternalServerErrorException('فشل استعادة التصنيف');
-    }
-  }
-
-  // ==================== بناء شجرة التصنيفات ====================
-
-  private buildTree(categories: Category[]): Category[] {
-    const map = new Map<string, Category>();
-    const roots: Category[] = [];
-
-    // إنشاء خريطة من التصنيفات
-    categories.forEach(cat => {
-      map.set(cat.id, { ...cat, children: [] });
-    });
-
-    // بناء الشجرة
-    categories.forEach(cat => {
-      const node = map.get(cat.id);
-      if (!node) return; // تحقق من وجود العقدة
-      
-      if (cat.parent && cat.parent.id && map.has(cat.parent.id)) {
-        const parent = map.get(cat.parent.id);
-        if (parent) {
-          if (!parent.children) {
-            parent.children = [];
-          }
-          parent.children.push(node);
-        }
-      } else {
-        roots.push(node);
-      }
-    });
-
-    return roots;
-  }
-
-  // ==================== إحصائيات التصنيف ====================
+  // ==================== إحصائيات ====================
 
   async getStats(id: string, storeId: string, userId: string) {
     await this.storeService.verifyOwnership(storeId, userId);
-    
     const category = await this.categoryRepository.findOne({
-      where: { id, store: { id: storeId } },
+      where: { id, storeId },
       relations: ['products'],
     });
+    if (!category) throw new NotFoundException(`التصنيف #${id} غير موجود`);
 
-    if (!category) {
-      throw new NotFoundException(`التصنيف #${id} غير موجود`);
-    }
+    const descendantIds = await this.findDescendantIds(id);
+    const childIds = descendantIds.filter(did => did !== id);
 
-    // جلب جميع الأبناء
-    const descendants = await this.categoryRepository.findDescendants(category);
-    const categoryIds = descendants.map(cat => cat.id);
-
-    // عد المنتجات في جميع التصنيفات الفرعية
     const totalProducts = await this.productRepository.count({
-      where: { 
-        category: { id: In(categoryIds) },
-        isActive: true,
-      }
+      where: { category: { id: In(descendantIds) }, isActive: true },
     });
-
-    // عد المنتجات النشطة فقط في هذا التصنيف
     const activeProducts = await this.productRepository.count({
-      where: { 
-        category: { id: category.id },
-        isActive: true,
-      }
+      where: { category: { id: category.id }, isActive: true },
     });
 
     return {
@@ -383,77 +310,65 @@ export class CategoryService {
       categoryName: category.name,
       directProducts: category.products?.length || 0,
       activeProducts,
-      totalSubcategories: descendants.length - 1,
+      totalSubcategories: childIds.length,
       totalProducts,
       isActive: category.isActive,
       createdAt: category.createdAt,
     };
   }
 
-  // ==================== نقل المنتجات بين التصنيفات ====================
+  // ==================== نقل المنتجات ====================
 
-  async moveProducts(
-    fromCategoryId: string,
-    toCategoryId: string,
-    storeId: string,
-    userId: string
-  ): Promise<{ message: string; movedCount: number }> {
+  async moveProducts(fromCategoryId: string, toCategoryId: string, storeId: string, userId: string) {
     await this.storeService.verifyOwnership(storeId, userId);
-
-    // التحقق من التصنيفات
-    const fromCategory = await this.findOne(fromCategoryId, storeId);
     const toCategory = await this.findOne(toCategoryId, storeId);
-
-    // جلب المنتجات
     const products = await this.productRepository.find({
-      where: { 
-        category: { id: fromCategoryId },
-        store: { id: storeId },
-      }
+      where: { category: { id: fromCategoryId }, store: { id: storeId } },
     });
-
-    if (products.length === 0) {
-      throw new BadRequestException('لا توجد منتجات لنقلها');
-    }
-
-    // تحديث التصنيف لجميع المنتجات
+    if (products.length === 0) throw new BadRequestException('لا توجد منتجات لنقلها');
     await this.productRepository.update(
       { category: { id: fromCategoryId } },
-      { category: toCategory }
+      { category: toCategory },
     );
-
-    return {
-      message: `تم نقل ${products.length} منتج/منتجات بنجاح`,
-      movedCount: products.length,
-    };
+    return { message: `تم نقل ${products.length} منتج/منتجات بنجاح`, movedCount: products.length };
   }
 
-  // ==================== البحث في التصنيفات ====================
+  // ==================== البحث ====================
 
-  async search(
-    storeId: string,
-    userId: string,
-    searchTerm: string
-  ): Promise<Category[]> {
+  async search(storeId: string, userId: string, searchTerm: string): Promise<Category[]> {
     await this.storeService.verifyOwnership(storeId, userId);
-
-    if (!searchTerm || searchTerm.trim().length === 0) {
-      return this.findAll(storeId, userId);
-    }
-
-    return this.categoryRepository.find({
+    if (!searchTerm?.trim()) return this.findAll(storeId, userId);
+    const results = await this.categoryRepository.find({
       where: [
-        { 
-          name: Like(`%${searchTerm}%`),
-          store: { id: storeId },
-        },
-        { 
-          description: Like(`%${searchTerm}%`),
-          store: { id: storeId },
-        },
+        { name: Like(`%${searchTerm}%`), storeId },
+        { description: Like(`%${searchTerm}%`), storeId },
       ],
-      relations: ['parent', 'children'],
+      relations: ['parent', 'children', 'categoryNiche'],
       order: { name: 'ASC' },
     });
+    return results;
   }
+
+  // ==================== بناء الشجرة ====================
+
+  private buildTree(categories: Category[]): Category[] {
+  const map = new Map<string, Category>();
+  const roots: Category[] = [];
+
+  // إنشاء خريطة مع reset للأبناء
+  categories.forEach(cat => map.set(cat.id, { ...cat, children: [] }));
+
+  // ربط كل تصنيف بأبيه عبر parentId
+  categories.forEach(cat => {
+    const node = map.get(cat.id)!;
+    if (cat.parentId && map.has(cat.parentId)) {
+      const parent = map.get(cat.parentId)!;
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  return roots;
+}
 }

@@ -22,10 +22,16 @@ export class NicheController {
   @Get()
   async findAll() {
     const niches = await this.nicheService.findAll();
+    
     return {
       success: true,
       data: niches,
     };
+  }
+
+  @Get('category-niche/:storeId')
+  async findAllByStoreId(@Param('storeId') storeId:string) {
+    return await this.nicheService.categoriesNiche(storeId);
   }
 
   // جلب Niche واحدة بالـ id

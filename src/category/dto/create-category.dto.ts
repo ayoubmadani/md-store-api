@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsUrl, IsInt, Min, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsInt, Min, IsBoolean, MaxLength, ValidateIf } from 'class-validator';
 
 export class CreateCategoryDto {
   @IsString()
@@ -14,9 +14,11 @@ export class CreateCategoryDto {
   @IsString({ message: 'رابط الصورة غير صالح' })
   imageUrl?: string;
 
+  // 👈 الحل هنا: نطلب من الفلتر عدم الفحص إذا كانت القيمة خالية أو null
   @IsOptional()
+  @ValidateIf((object, value) => value !== null && value !== '')
   @IsUUID('4', { message: 'معرّف التصنيف الأب غير صالح' })
-  parentId?: string;
+  parentId?: string | null;
 
   @IsOptional()
   @IsInt()
@@ -32,7 +34,9 @@ export class CreateCategoryDto {
   @MaxLength(150)
   slug?: string;
 
-  @IsUUID()
+  // 👈 نفس الفكرة للـ Niche لكي لا يسبب مشكلة مشابهة مستقبلاً
   @IsOptional()
-  categoryNicheId?:string
+  @ValidateIf((object, value) => value !== null && value !== '')
+  @IsUUID('4', { message: 'معرّف الـ Niche غير صالح' })
+  categoryNicheId?: string | null;
 }

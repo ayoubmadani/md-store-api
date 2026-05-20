@@ -342,7 +342,7 @@ export class AdminController {
     return this.adminService.toggleThemeStatus(id);
   }
 
-  @Delete('themes/:id')
+  @Delete('theme/:id')
   @HttpCode(HttpStatus.OK)
   deleteTheme(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.deleteTheme(id);

@@ -74,6 +74,7 @@ export class StoreController {
     @Body() dto: UpdateFullStoreDto,
     @GetUser() user: any,
   ) {
+    console.log(dto);
     
     const store = await this.storeService.updateFullStore(storeId, dto, this.getUserId(user));
     //return { success: true, data: store };

@@ -16,6 +16,9 @@ export class StoreContact {
   @Column({ nullable: true })
   wilaya?: string;
 
+  @Column({ type: 'text', nullable: true })
+  address?: string;
+
    @Column()
   storeId:string
 

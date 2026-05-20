@@ -147,6 +147,12 @@ export class StoreService {
     async createFullStore(dto: CreateFullStoreDto, userId: string) {
         await this.assertStoreLimitNotReached(userId);
 
+        const store = await this.storeRepository.findOne({ where: { subdomain: dto.store.subdomain } })
+
+        if (store) {
+            throw new BadRequestException('DOMAIN_ALREADY_EXISTS');
+        }
+
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
@@ -160,6 +166,7 @@ export class StoreService {
                 subdomain: storeDto.subdomain,
                 currency: storeDto.currency,
                 language: storeDto.language,
+                cart: storeDto.cart,
                 user: { id: userId },
                 niche: storeDto.nicheId ? { id: storeDto.nicheId } : null,
             } as any);
@@ -244,6 +251,7 @@ export class StoreService {
                 store.name = dto.store.name ?? store.name;
                 store.currency = dto.store.currency ?? store.currency;
                 store.language = dto.store.language ?? store.language;
+                store.cart = dto.store.cart ?? store.cart;
                 if (dto.store.nicheId) store.niche = { id: dto.store.nicheId } as any;
             }
 
@@ -316,7 +324,7 @@ export class StoreService {
             .leftJoinAndSelect('store.hero', 'hero')
             .leftJoinAndSelect('store.categories', 'categories')
             .leftJoinAndSelect('store.pixels', 'pixels')
-            .leftJoinAndSelect('store.theme', 'theme') // تم التصحيح هنا لربط جدول الثيمات
+            .leftJoinAndSelect('store.theme', 'theme')
             .leftJoinAndSelect('store.user', 'user')
             .where('(store.subdomain = :identifier OR domains.domain = :identifier)', { identifier: subdomain })
             .addOrderBy('categories.sortOrder', 'ASC')
@@ -324,15 +332,21 @@ export class StoreService {
 
         if (!store) return null;
 
-        // 2. منطق جلب التصنيفات (كما هو)
+        // 2. منطق جلب التصنيفات (تم تحديثه هنا بالاعتماد على الـ CTE العاودي ليتوافق مع التعديل الجديد)
         let categoryIds: string[] = [];
         if (categoryId) {
-            const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
-            if (category) {
-                // ملاحظة: تأكد أن TreeRepository يعمل مع categoryRepository
-                const descendants = await this.categoryRepository.findDescendants(category);
-                categoryIds = descendants.map(c => c.id);
-            }
+            const rows = await this.categoryRepository.query(
+                `WITH RECURSIVE descendants AS (
+             SELECT id FROM categories WHERE id = $1 AND "deletedAt" IS NULL
+             UNION ALL
+             SELECT c.id FROM categories c
+             INNER JOIN descendants d ON c."parentId" = d.id
+             WHERE c."deletedAt" IS NULL
+           )
+           SELECT id FROM descendants`,
+                [categoryId],
+            );
+            categoryIds = rows.map((r: any) => r.id);
         }
 
         // 3. استعلام المنتجات
