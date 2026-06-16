@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
 import { LandingPageService } from './landing-page.service';
 import { CreateLandingPageDto } from './dto/create-landing-page.dto';
 import { UpdateLandingPageDto } from './dto/update-landing-page.dto';
@@ -11,9 +11,9 @@ export class LandingPageController {
 
   @Post()
   @UseGuards(AuthGuard)
-  create(@Body() dto: CreateLandingPageDto , @GetUser() user: any) {
+  create(@Body() dto: CreateLandingPageDto, @GetUser() user: any) {
     const userId = user.id || user.sub
-    return this.landingPageService.create(dto,userId);
+    return this.landingPageService.create(dto, userId);
   }
 
   @Get()
@@ -21,9 +21,10 @@ export class LandingPageController {
     return this.landingPageService.findAll();
   }
 
-  @Get(':domain')
-  getByDomain(@Param('domain') domain: string) {
-    return this.landingPageService.getByDomain(domain)
+  // في الـ Controller (إذا اخترت الخيار الثاني)
+  @Get('find') // تغيير المسار ليتماشى مع الاستعلام ويمنع التداخل مع findAll
+  getByDomain(@Query('domain') domain: string) {
+    return this.landingPageService.getByDomain(domain);
   }
 
   @Get('store/:storeId')
@@ -49,10 +50,10 @@ export class LandingPageController {
 
   @Get('toggle-status/:id')
   @UseGuards(AuthGuard)
-  toggleStatus(@Param('id') id: string,@GetUser() user: any) {
-        const userId = user.id || user.sub
+  toggleStatus(@Param('id') id: string, @GetUser() user: any) {
+    const userId = user.id || user.sub
 
-    return this.landingPageService.toggleStatus(id , userId)
+    return this.landingPageService.toggleStatus(id, userId)
   }
 
   @Post('duplicate/:id')
@@ -63,9 +64,9 @@ export class LandingPageController {
 
   @Patch('update-platform/:id')
   updatePlatform(
-    @Param('id') id:string,
-    @Body('platform') platform : string
-  ){
+    @Param('id') id: string,
+    @Body('platform') platform: string
+  ) {
     return this.landingPageService.updatePlatfor(id, platform)
   }
 
