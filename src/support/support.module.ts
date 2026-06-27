@@ -9,10 +9,11 @@ import { Subscription } from '../subscription/entities/subscription.entity';
 import { Plan } from '../subscription/entities/plan.entity';
 import { PaymentModule } from '../payment/payment.module';
 import { SupportUser } from './entities/support-users.entity';
+import { Store } from '../store/entities/store.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([User, Theme, ThemeUser, Subscription, Plan, SupportUser]),
+        TypeOrmModule.forFeature([User, Theme, ThemeUser, Subscription, Plan, SupportUser, Store]),
         PaymentModule,
     ],
     controllers: [SupportController],

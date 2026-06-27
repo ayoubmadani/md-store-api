@@ -64,7 +64,7 @@ export class ThemeController {
     return await this.themeService.activeThemePlan(userId, data);
   }
 
-  @Get('install-theme/:themeId')
+  @Post('install-theme/:themeId')
   @UseGuards(AuthGuard)
   installTheme(
     @GetUser() user: any,

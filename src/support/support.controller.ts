@@ -18,6 +18,7 @@ import {
     SupportBuyThemeDto,
     SupportTopUpDto,
     TopUpWalletDto,
+    TransferStoreDto,
 } from './dto/create-support.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { UserRole } from '../user/entities/user.entity';
@@ -95,5 +96,20 @@ export class SupportController {
     @HttpCode(HttpStatus.OK)
     supportBuyTheme(@Request() req: any, @Body() dto: SupportBuyThemeDto) {
         return this.supportService.supportBuyThemeForUser(req.user.sub, dto.userId, dto.themeId);
+    }
+
+    // ── Store endpoints ───────────────────────────────────────────────────────
+
+    @Get('stores')
+    @UseGuards(AuthGuard)
+    getMyStores(@Request() req: any) {
+        return this.supportService.getMyStores(req.user.sub);
+    }
+
+    @Post('stores/transfer')
+    @UseGuards(AuthGuard)
+    @HttpCode(HttpStatus.OK)
+    transferStore(@Request() req: any, @Body() dto: TransferStoreDto) {
+        return this.supportService.transferStore(req.user.sub, dto.storeId, dto.targetUserId);
     }
 }

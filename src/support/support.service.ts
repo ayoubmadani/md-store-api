@@ -9,6 +9,7 @@ import { Plan } from '../subscription/entities/plan.entity';
 import { PaymentService } from '../payment/payment.service';
 import { TransactionType } from '../payment/entities/transaction.entity';
 import { SupportUser } from './entities/support-users.entity';
+import { Store } from '../store/entities/store.entity';
 
 @Injectable()
 export class SupportService {
@@ -30,6 +31,9 @@ export class SupportService {
 
         @InjectRepository(SupportUser)
         private readonly supportUserRepo: Repository<SupportUser>,
+
+        @InjectRepository(Store)
+        private readonly storeRepo: Repository<Store>,
 
         private readonly paymentService: PaymentService,
         private readonly dataSource: DataSource,
@@ -241,5 +245,32 @@ export class SupportService {
             message: `Theme "${theme.name_ar}" purchased for user successfully`,
             cost: theme.price,
         };
+    }
+
+    // ── Store Management ──────────────────────────────────────────────────────
+
+    async getMyStores(supportId: string) {
+        return this.storeRepo.find({
+            where: { user: { id: supportId } },
+            relations: ['niche', 'theme'],
+            order: { createdAt: 'DESC' },
+        });
+    }
+
+    async transferStore(supportId: string, storeId: string, targetUserId: string) {
+        const store = await this.storeRepo.findOne({
+            where: { id: storeId, user: { id: supportId } },
+        });
+        if (!store) throw new NotFoundException('Store not found or does not belong to you');
+
+        await this.assertUserInList(supportId, targetUserId);
+
+        const targetUser = await this.userRepo.findOne({ where: { id: targetUserId } });
+        if (!targetUser) throw new NotFoundException(`User #${targetUserId} not found`);
+
+        store.user = targetUser;
+        await this.storeRepo.save(store);
+
+        return { success: true, message: `Store "${store.name}" transferred to ${targetUser.username}` };
     }
 }

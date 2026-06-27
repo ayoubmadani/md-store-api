@@ -82,3 +82,13 @@ export class SupportBuyThemeDto {
     @IsNotEmpty()
     themeId: string;
 }
+
+export class TransferStoreDto {
+    @IsUUID()
+    @IsNotEmpty()
+    storeId: string;
+
+    @IsUUID()
+    @IsNotEmpty()
+    targetUserId: string;
+}
