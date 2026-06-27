@@ -26,6 +26,8 @@ import { CategoryNiche } from '../niche/entities/category-niche.entity';
 import { CreateCategoryNicheDto } from '../niche/dto/create-cat-niche.dto';
 import { ThemePlan } from '../theme/entities/theme-plan.entity';
 import { Plan } from '../subscription/entities/plan.entity';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local shape types — used only as plain type annotations inside the service,
@@ -80,6 +82,8 @@ export interface DashboardStats {
 @Injectable()
 export class AdminService {
     constructor(
+        private readonly config: ConfigService,
+
         @InjectRepository(User)
         private readonly userRepo: Repository<User>,
 
@@ -517,6 +521,7 @@ export class AdminService {
             if (!type) throw new NotFoundException(`ThemeType #${dto.typeId} not found`);
         }
         const theme = this.themeRepo.create(dto);
+
         return this.themeRepo.save(theme);
     }
 

@@ -26,6 +26,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { CronJobModule } from './cron-job/cron-job.module';
 import { ShowModule } from './show/show.module';
 import { DomainModule } from './domain/domain.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { DomainModule } from './domain/domain.module';
     CronJobModule,
     ShowModule,
     DomainModule,
+    SupportModule,
   ],
   controllers: [AppController]
 })

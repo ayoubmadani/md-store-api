@@ -62,7 +62,7 @@ export class AuthController {
     async googleAuth(@Req() req) { }
 
     @Get('google/callback')
-    @UseGuards(AuthGuard('google'))
+    @UseGuards(AuthGuard('google' ))
     async googleAuthRedirect(@Req() req, @Res() res: Response) {
         try {
             const result = await this.authService.GoogleLogin(req.user);
@@ -75,6 +75,27 @@ export class AuthController {
             return (res as any).redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=auth_failed`);
         } catch (error) {
             return (res as any).redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=google_auth_error`);
+        }
+    }
+
+    @Get('support/google')
+    @UseGuards(AuthGuard('google-support'))
+    async googleSupportAuth(@Req() req) { }
+
+    @Get('support/google/callback')
+    @UseGuards(AuthGuard('google-support'))
+    async googleSupportAuthRedirect(@Req() req, @Res() res: Response) {
+        try {
+            const result = await this.authService.GoogleLogin(req.user);
+
+            if (result && result.access_token) {
+                const frontendUrl = `${this.config.get<string>('SUPPORT_URL')}/auth/callback?token=${result.access_token}`;
+                return (res as any).redirect(frontendUrl);
+            }
+
+            return (res as any).redirect(`${this.config.get<string>('SUPPORT_URL')}/auth/login?error=auth_failed`);
+        } catch (error) {
+            return (res as any).redirect(`${this.config.get<string>('SUPPORT_URL')}/auth/login?error=google_auth_error`);
         }
     }
 }

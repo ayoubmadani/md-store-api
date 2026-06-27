@@ -7,6 +7,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { MailModule } from "../mail/mail.module";
 import { PassportModule } from "@nestjs/passport"; // 2. استورد PassportModule
 import { GoogleStrategy } from "./strategy/google.strategy";
+import { GoogleSupportStrategy } from "./strategy/google-support.strategy";
 
 @Module({
     imports: [
@@ -27,8 +28,9 @@ import { GoogleStrategy } from "./strategy/google.strategy";
     ],
     controllers: [AuthController],
     providers: [
-        AuthService, 
-        GoogleStrategy // 4. هذا هو السطر الناقص الذي يحل المشكلة!
+        AuthService,
+        GoogleStrategy,
+        GoogleSupportStrategy,
     ],
 })
 export class AuthModule {}
