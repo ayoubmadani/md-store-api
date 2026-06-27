@@ -57,6 +57,12 @@ export class SupportController {
 
     // ── Support Agent endpoints ───────────────────────────────────────────────
 
+    @Get('stats')
+    @UseGuards(AuthGuard)
+    getStats(@Request() req: any) {
+        return this.supportService.getStats(req.user.sub);
+    }
+
     @Post('users/add')
     @UseGuards(AuthGuard)
     @HttpCode(HttpStatus.OK)

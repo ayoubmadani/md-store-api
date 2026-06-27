@@ -119,6 +119,35 @@ export class SupportService {
         });
     }
 
+    async getStats(supportId: string) {
+        const [myUsersCount, wallet] = await Promise.all([
+            this.supportUserRepo.count({ where: { supportId } }),
+            this.paymentService.getBalanceUser(supportId),
+        ]);
+
+        const transactions: any[] = wallet?.user?.transactions ?? [];
+
+        const totalSpent = transactions
+            .filter(t => t.action === 'payment')
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+
+        const totalReceived = transactions
+            .filter(t => t.action === 'deposit')
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+
+        const recent = [...transactions]
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+            .slice(0, 10);
+
+        return {
+            balance: Number(wallet?.balance ?? 0),
+            myUsersCount,
+            totalSpent: +totalSpent.toFixed(2),
+            totalReceived: +totalReceived.toFixed(2),
+            recentTransactions: recent,
+        };
+    }
+
     private async assertUserInList(supportId: string, userId: string) {
         const link = await this.supportUserRepo.findOne({ where: { supportId, userId } });
         if (!link) throw new ForbiddenException('This user is not in your list');
