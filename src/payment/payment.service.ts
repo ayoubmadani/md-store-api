@@ -21,7 +21,7 @@ export class PaymentService {
         // تهيئة العميل بمفتاح API الخاص بك
         this.chargilyClient = new ChargilyClient({
             api_key: config.get<string>('chargily_Secret_key')!,
-            mode: 'test', // غيرها إلى 'live' عند النشر الفعلي
+            mode: 'live', // غيرها إلى 'live' عند النشر الفعلي
         });
     }
 
