@@ -32,6 +32,11 @@ export class SubscriptionController {
     return this.subscriptionService.subscribeToPlan(this.uid(user), dto.planId, dto.interval);
   }
 
+  @Post('upgrade')
+  async upgrade(@GetUser() user: any, @Body() dto: SubscribeDto) {
+    return this.subscriptionService.upgradePlan(this.uid(user), dto.planId, dto.interval);
+  }
+
   @Get('my')
   async getMySub(@GetUser() user: any) {
     return this.subscriptionService.findSub(this.uid(user));

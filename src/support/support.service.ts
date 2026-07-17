@@ -183,7 +183,7 @@ export class SupportService {
         const plan = await this.planRepo.findOne({ where: { id: planId, isActive: true } });
         if (!plan) throw new NotFoundException(`Plan #${planId} not found or inactive`);
 
-        const price = interval === 'year' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice);
+        let price = interval === 'year' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice);
 
         const startDate = new Date();
         const endDate = new Date();
@@ -196,8 +196,48 @@ export class SupportService {
             endDate.setMonth(startDate.getMonth() + 1);
         }
 
+        // ── فحص الاشتراك الحالي ────────────────────────────────────
+        let credit = 0;
+        const currentSub = await this.subRepo.findOne({
+            where: { userId, status: 'active' },
+            relations: ['plan'],
+            order: { endDate: 'DESC' } as any,
+        });
+
+        if (currentSub) {
+            const currentPrice = currentSub.interval === 'year'
+                ? Number(currentSub.plan.yearlyPrice)
+                : Number(currentSub.plan.monthlyPrice);
+
+            // منع الشراء إذا كانت الخطة الحالية أغلى من الخطة الجديدة
+            if (currentPrice > price) {
+                throw new BadRequestException(
+                    `User already has a more expensive plan "${currentSub.plan.name}" (${currentPrice} DZD). Cannot downgrade.`,
+                );
+            }
+
+            // حساب الرصيد المتبقي من الخطة الحالية
+            const remainingMs = new Date(currentSub.endDate).getTime() - Date.now();
+            const remainingDays = Math.max(0, remainingMs / (1000 * 60 * 60 * 24));
+
+            if (remainingDays > 0) {
+                const intervalDays = currentSub.interval === 'year' ? 365 : 30;
+                const dailyRate = currentPrice / intervalDays;
+                credit = Math.floor(remainingDays * dailyRate);
+                const finalPrice = price - credit;
+                if (finalPrice <= 0) {
+                    throw new BadRequestException(
+                        `Upgrade not allowed: remaining credit (${credit} DZD) covers the full cost of the new plan.`,
+                    );
+                }
+                price = finalPrice;
+            }
+        }
+
         await this.dataSource.transaction(async (manager) => {
-            await this.paymentService.handleWalletBalance(supportId, price, 'SUB', TransactionType.PLAN_SUBSCRIPTION, manager);
+            if (price > 0) {
+                await this.paymentService.handleWalletBalance(supportId, price, 'SUB', TransactionType.PLAN_SUBSCRIPTION, manager);
+            }
 
             await manager.update(Subscription, { userId, status: 'active' }, { status: 'expired' });
 
@@ -215,9 +255,42 @@ export class SupportService {
 
         return {
             success: true,
-            message: `Plan "${plan.name}" assigned to user successfully`,
+            message: `Plan "${plan.name}" assigned successfully${credit > 0 ? ` (credit applied: ${credit} DZD)` : ''}`,
             expiresAt: endDate,
             cost: price,
+            credit,
+        };
+    }
+
+    async getUserCurrentPlan(supportId: string, userId: string) {
+        await this.assertUserInList(supportId, userId);
+
+        const currentSub = await this.subRepo.findOne({
+            where: { userId, status: 'active' },
+            relations: ['plan'],
+            order: { endDate: 'DESC' } as any,
+        });
+
+        if (!currentSub) return { hasActivePlan: false };
+
+        const currentPrice = currentSub.interval === 'year'
+            ? Number(currentSub.plan.yearlyPrice)
+            : Number(currentSub.plan.monthlyPrice);
+
+        const remainingMs = new Date(currentSub.endDate).getTime() - Date.now();
+        const remainingDays = Math.max(0, remainingMs / (1000 * 60 * 60 * 24));
+        const intervalDays = currentSub.interval === 'year' ? 365 : 30;
+        const credit = Math.floor(remainingDays * (currentPrice / intervalDays));
+
+        return {
+            hasActivePlan: true,
+            planId: currentSub.planId,
+            planName: currentSub.plan.name,
+            price: currentPrice,
+            interval: currentSub.interval,
+            endDate: currentSub.endDate,
+            remainingDays: Math.ceil(remainingDays),
+            credit,
         };
     }
 
@@ -268,9 +341,32 @@ export class SupportService {
         const targetUser = await this.userRepo.findOne({ where: { id: targetUserId } });
         if (!targetUser) throw new NotFoundException(`User #${targetUserId} not found`);
 
+        // إذا كان المتجر مرتبطاً بثيم، تحقق هل المستخدم الجديد يملكه
+        let themeUnlinked = false;
+
+        if (store.themeId) {
+            const targetOwnsTheme = await this.themeUserRepo.findOne({
+                where: { userId: targetUserId, themeId: store.themeId },
+            });
+
+            if (targetOwnsTheme) {
+                // المستخدم الجديد يملك الثيم — اربط المتجر بـ ThemeUser الخاص به
+                store.themeUserId = targetOwnsTheme.id;
+            } else {
+                // لا يملك الثيم — أزل ارتباط الثيم من المتجر
+                (store as any).themeId = null;
+                (store as any).themeUserId = null;
+                themeUnlinked = true;
+            }
+        }
+
         store.user = targetUser;
         await this.storeRepo.save(store);
 
-        return { success: true, message: `Store "${store.name}" transferred to ${targetUser.username}` };
+        return {
+            success: true,
+            message: `Store "${store.name}" transferred to ${targetUser.username}${themeUnlinked ? ' (theme unlinked — new owner does not own it)' : ''}`,
+            themeUnlinked,
+        };
     }
 }

@@ -5,6 +5,7 @@ import {
     Get,
     HttpCode,
     HttpStatus,
+    Param,
     Post,
     Request,
     UseGuards,
@@ -75,6 +76,12 @@ export class SupportController {
     @UseGuards(AuthGuard)
     getMyUsers(@Request() req: any) {
         return this.supportService.getMyUsers(req.user.sub);
+    }
+
+    @Get('users/:userId/subscription')
+    @UseGuards(AuthGuard)
+    getUserSubscription(@Request() req: any, @Param('userId') userId: string) {
+        return this.supportService.getUserCurrentPlan(req.user.sub, userId);
     }
 
     @Post('users/topup')

@@ -7,6 +7,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { StoreModule } from './store/store.module';
 import { CategoryModule } from './category/category.module';
 import { LandingPageModule } from './landing-page/landing-page.module';
+import { BuilderPagesModule } from './builder-pages/builder-pages.module';
 import { ProductModule } from './product/product.module';
 import { NicheModule } from './niche/niche.module';
 import { ImageProductModule } from './image-product/image-product.module';
@@ -62,6 +63,7 @@ import { SupportModule } from './support/support.module';
     StoreModule,
     CategoryModule,
     LandingPageModule,
+    BuilderPagesModule,
     ProductModule,
     NicheModule,
     ImageProductModule,

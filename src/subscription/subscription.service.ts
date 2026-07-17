@@ -181,6 +181,80 @@ export class SubscriptionService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    async upgradePlan(userId: string, planId: string, interval: 'month' | 'year') {
+        const plan = await this.planRepo.findOne({ where: { id: planId, isActive: true } });
+        if (!plan) throw new NotFoundException('الخطة غير موجودة أو غير متاحة');
+
+        let price = interval === 'year' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice);
+
+        const currentSub = await this.subRepo.findOne({
+            where: { userId, status: 'active' },
+            relations: ['plan'],
+            order: { endDate: 'DESC' } as any,
+        });
+
+        let credit = 0;
+
+        if (currentSub) {
+            const currentPrice = currentSub.interval === 'year'
+                ? Number(currentSub.plan.yearlyPrice)
+                : Number(currentSub.plan.monthlyPrice);
+
+            if (currentPrice > price) {
+                throw new BadRequestException('لا يمكن التخفيض إلى خطة أرخص');
+            }
+
+            const remainingMs = new Date(currentSub.endDate).getTime() - Date.now();
+            const remainingDays = Math.max(0, remainingMs / (1000 * 60 * 60 * 24));
+
+            if (remainingDays > 0) {
+                const intervalDays = currentSub.interval === 'year' ? 365 : 30;
+                credit = Math.floor(remainingDays * (currentPrice / intervalDays));
+                const finalPrice = price - credit;
+                if (finalPrice <= 0) {
+                    throw new BadRequestException('لا يمكن الترقية: رصيد الأيام المتبقية يغطي التكلفة كاملاً');
+                }
+                price = finalPrice;
+            }
+        }
+
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            const startDate = new Date();
+            const endDate = new Date();
+            if (interval === 'month') endDate.setMonth(startDate.getMonth() + 1);
+            else endDate.setFullYear(startDate.getFullYear() + 1);
+
+            await this.paymentService.handleWalletBalance(
+                userId, price, 'SUB', TransactionType.PLAN_UPGRADE, queryRunner.manager,
+            );
+
+            await queryRunner.manager.update(Subscription, { userId, status: 'active' }, { status: 'expired' });
+
+            const newSub = this.subRepo.create({ userId, planId, interval, status: 'active', startDate, endDate, autoRenew: false });
+            await queryRunner.manager.save(newSub);
+            await queryRunner.commitTransaction();
+
+            this.invalidateSubCache(userId);
+            return {
+                success: true,
+                message: `تمت الترقية إلى خطة ${plan.name} بنجاح${credit > 0 ? ` (خصم ${credit} DZD من الأيام المتبقية)` : ''}`,
+                expiresAt: endDate,
+                cost: price,
+                credit,
+            };
+        } catch (error) {
+            await queryRunner.rollbackTransaction();
+            throw new BadRequestException(error.message || 'فشلت عملية الترقية');
+        } finally {
+            await queryRunner.release();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     async setAutoRenew(userId: string, autoRenew: boolean) {
         const subscription = await this.subRepo.findOne({ where: { userId, status: 'active' } });
         if (!subscription) throw new NotFoundException('لا يوجد اشتراك نشط');

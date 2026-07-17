@@ -98,6 +98,33 @@ export class S3Service {
     return Promise.all(uploadPromises);
   }
 
+  // Upload arbitrary content at an explicit key — unlike uploadFile(), the
+  // caller controls the key (needed when the key encodes meaning, e.g.
+  // builder-pages/{storeId}/{pageId}-{timestamp}.js) rather than an
+  // auto-generated random filename.
+  async uploadBuffer(buffer: Buffer, key: string, contentType: string): Promise<{ key: string; url: string }> {
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      });
+
+      await this.s3Client.send(command);
+
+      const publicUrl = this.configService.get<string>('AWS_PUBLIC_URL');
+      const url = publicUrl
+        ? `${publicUrl.replace(/\/$/, '')}/${key}`
+        : `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${key}`;
+
+      return { key, url };
+    } catch (error) {
+      console.error('S3 Upload Error:', error);
+      throw new InternalServerErrorException('حدث خطأ أثناء رفع الملف إلى السيرفر');
+    }
+  }
+
   async deleteFile(key: string): Promise<void> {
     try {
       const command = new DeleteObjectCommand({
