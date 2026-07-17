@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { BuilderPagesService } from './builder-pages.service';
 import { CreateBuilderPageDto } from './dto/create-builder-page.dto';
 import { UpdateTreeDto } from './dto/update-tree.dto';
@@ -69,6 +69,26 @@ export class BuilderPagesController {
   @UseGuards(AuthGuard)
   generate(@Param('id') id: string, @Body() dto: GenerateBuilderPageDto) {
     return this.builderPagesService.generate(id, dto);
+  }
+
+  // POST, not GET like the older landing-page module's equivalent route —
+  // this one actually mutates state, so it shouldn't be a GET.
+  @Post(':id/toggle-status')
+  @UseGuards(AuthGuard)
+  toggleStatus(@Param('id') id: string) {
+    return this.builderPagesService.toggleStatus(id);
+  }
+
+  @Patch(':id/platform')
+  @UseGuards(AuthGuard)
+  updatePlatform(@Param('id') id: string, @Body('platform') platform: string) {
+    return this.builderPagesService.updatePlatform(id, platform);
+  }
+
+  @Post(':id/duplicate')
+  @UseGuards(AuthGuard)
+  duplicate(@Param('id') id: string) {
+    return this.builderPagesService.duplicate(id);
   }
 
   @Delete(':id')

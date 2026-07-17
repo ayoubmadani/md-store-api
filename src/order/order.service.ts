@@ -72,6 +72,7 @@ export class OrdersService {
             status: StatusEnum.PENDING,
             platform: first.platform ?? 'mdstore',
             lpId: first.lpId,
+            builderPageId: first.builderPageId,
         });
 
         const savedOrder = await this.ordersRepo.save(order);

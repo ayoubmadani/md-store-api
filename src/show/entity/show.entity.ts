@@ -10,6 +10,7 @@ import {
 import { Product } from "../../product/entities/product.entity";
 import { Store } from "../../store/entities/store.entity";
 import { LandingPage } from "../../landing-page/entities/landing-page.entity";
+import { BuilderPage } from "../../builder-pages/entities/builder-page.entity";
 
 @Entity('shows')
 @Unique(['visitorId', 'productId', 'storeId', 'dayDate']) // منع التكرار بناءً على هذه المجموعة
@@ -26,6 +27,8 @@ export class Show {
     @Column({ nullable: true })
     lpId:string
 
+    @Column({ nullable: true })
+    builderPageId?: string
 
     @Column()
     visitorId: string;
@@ -45,6 +48,10 @@ export class Show {
     @ManyToOne(() => LandingPage, lp => lp.shows, { onDelete: "CASCADE" }) // 👈 يفضل إضافتها هنا أيضاً
     @JoinColumn({ name: "lpId" })
     lp?: LandingPage
+
+    @ManyToOne(() => BuilderPage, builderPage => builderPage.shows, { onDelete: "CASCADE" })
+    @JoinColumn({ name: "builderPageId" })
+    builderPage?: BuilderPage
 
     @ManyToOne(() => Product, product => product.shows, { onDelete: "CASCADE" }) // 👈 وهنا أيضاً لضمان سلامة البيانات
     @JoinColumn({ name: "productId" })

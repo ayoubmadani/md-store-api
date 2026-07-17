@@ -1,4 +1,5 @@
 import { LandingPage } from "src/landing-page/entities/landing-page.entity";
+import { BuilderPage } from "src/builder-pages/entities/builder-page.entity";
 import { Commune } from "../../shipping/entity/commune.entity";
 import { Wilaya } from "../../shipping/entity/wilaya.entity";
 import { Store } from "../../store/entities/store.entity";
@@ -97,6 +98,13 @@ export class Order {
   @ManyToOne(() => LandingPage, lp => lp.orders)
   @JoinColumn({ name: 'lpId' })
   lp?: LandingPage;
+
+  @Column({ nullable: true })
+  builderPageId?: string;
+
+  @ManyToOne(() => BuilderPage, builderPage => builderPage.orders)
+  @JoinColumn({ name: 'builderPageId' })
+  builderPage?: BuilderPage;
 
   // ── العناصر ────────────────────────────────────────
   @OneToMany(() => OrderItem, item => item.order, { cascade: true, eager: false })

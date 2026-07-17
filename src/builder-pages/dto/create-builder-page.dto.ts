@@ -18,4 +18,11 @@ export class CreateBuilderPageDto {
   @IsString()
   @IsOptional()
   domain?: string;
+
+  // Ad-campaign source tag, e.g. "tiktok"/"facebook" — free text, same
+  // convention as the older landing-page module. Defaults to "md store" on
+  // the entity if omitted.
+  @IsString()
+  @IsOptional()
+  platform?: string;
 }

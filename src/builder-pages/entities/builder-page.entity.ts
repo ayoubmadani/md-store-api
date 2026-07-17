@@ -1,4 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Show } from '../../show/entity/show.entity';
+import { Order } from '../../order/entities/order.entity';
 
 @Entity({ name: 'builder_pages' })
 export class BuilderPage {
@@ -22,6 +24,21 @@ export class BuilderPage {
   // (see api/src/landing-page) but is this feature's own, separate column.
   @Column({ nullable: true, unique: true })
   domain: string;
+
+  // Ad-campaign source tag (e.g. "tiktok", "facebook") and a soft on/off
+  // switch — same fields/semantics as LandingPage's, so the dashboard list
+  // can show both features with one UI.
+  @Column({ default: 'md store' })
+  platform: string;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @OneToMany(() => Show, (show) => show.builderPage)
+  shows: Show[];
+
+  @OneToMany(() => Order, (order) => order.builderPage)
+  orders: Order[];
 
   @Column({ type: 'jsonb', default: [] })
   tree: Record<string, any>[];

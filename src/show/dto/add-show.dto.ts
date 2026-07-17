@@ -16,4 +16,8 @@ export class AddShowDto {
     @IsUUID()
     @IsOptional()
     lpId?: string
+
+    @IsUUID()
+    @IsOptional()
+    builderPageId?: string
 }

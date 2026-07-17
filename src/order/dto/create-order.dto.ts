@@ -141,6 +141,10 @@ export class CreateOrderDto {
 
   @IsOptional()
   @IsString()
+  builderPageId?: string
+
+  @IsOptional()
+  @IsString()
   storeId?: string
 
   @IsOptional()

@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
+import axios from 'axios';
 import { BuilderPage } from './entities/builder-page.entity';
 import { CreateBuilderPageDto } from './dto/create-builder-page.dto';
 import { UpdateTreeDto } from './dto/update-tree.dto';
@@ -37,16 +38,53 @@ export class BuilderPagesService {
       storeId: dto.storeId,
       productId: dto.productId || undefined,
       domain: dto.domain || undefined,
+      platform: dto.platform || undefined,
       tree: [],
     });
     return this.builderPageRepo.save(page);
   }
 
+  // Attaches showsCount/ordersCount as computed row-level counts (not raw
+  // shows/orders arrays) — mirrors LandingPageService.getByStoreId exactly,
+  // so the dashboard list can compute the same Views/Orders/CR% stats for
+  // both features with identical logic.
   async getByStoreId(storeId: string) {
-    return this.builderPageRepo.find({
-      where: { storeId },
-      order: { updatedAt: 'DESC' },
+    return this.builderPageRepo
+      .createQueryBuilder('bp')
+      .loadRelationCountAndMap('bp.showsCount', 'bp.shows')
+      .loadRelationCountAndMap('bp.ordersCount', 'bp.orders')
+      .where('bp.storeId = :storeId', { storeId })
+      .orderBy('bp.updatedAt', 'DESC')
+      .getMany();
+  }
+
+  async toggleStatus(id: string) {
+    const page = await this.findOne(id);
+    page.isActive = !page.isActive;
+    await this.builderPageRepo.save(page);
+    return { isActive: page.isActive };
+  }
+
+  async updatePlatform(id: string, platform: string) {
+    const page = await this.findOne(id);
+    page.platform = platform;
+    return this.builderPageRepo.save(page);
+  }
+
+  async duplicate(id: string) {
+    const page = await this.findOne(id);
+    const randomNumber = Math.floor(Math.random() * 1000) + 1;
+    const copy = this.builderPageRepo.create({
+      name: `${page.name} (نسخة)`,
+      storeId: page.storeId,
+      productId: page.productId,
+      // domain is unique — a straight copy would collide with the original.
+      domain: page.domain ? `${page.domain}-${randomNumber}` : undefined,
+      platform: page.platform,
+      tree: page.tree,
+      settings: page.settings,
     });
+    return this.builderPageRepo.save(copy);
   }
 
   // Feeds the productForm block: it needs the product's own info plus its
@@ -90,10 +128,17 @@ export class BuilderPagesService {
   // `publishedUrl` matters here — the storefront fetches that R2 JSON
   // snapshot directly rather than the DB's live (possibly newer, unpublished)
   // tree/settings, keeping the same draft/publish separation the editor has.
+  // Fetches the published JSON from R2 server-side and returns it inline —
+  // the storefront used to fetch `publishedUrl` itself from the browser,
+  // which the R2 bucket's missing CORS headers silently blocked (a same-
+  // origin failure that looked like a 404 further down the fallback chain).
+  // A server-to-server fetch has no CORS restriction, so this sidesteps the
+  // problem entirely instead of needing bucket-level CORS configuration.
   async findByDomain(domain: string) {
     const page = await this.builderPageRepo.findOne({ where: { domain } });
     if (!page || !page.publishedUrl) throw new NotFoundException('الصفحة غير موجودة');
-    return { id: page.id, name: page.name, storeId: page.storeId, publishedUrl: page.publishedUrl };
+    const { data } = await axios.get(page.publishedUrl);
+    return data;
   }
 
   // Silently drops any entry that isn't a real block object (e.g. a stray
