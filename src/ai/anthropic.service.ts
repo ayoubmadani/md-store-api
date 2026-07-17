@@ -75,22 +75,35 @@ const PAGE_TREE_SCHEMA = {
 
 @Injectable()
 export class AnthropicService {
-  private client: Anthropic;
+  private client: Anthropic | null = null;
   private model: string;
 
+  // Deliberately does NOT throw here if the key is missing — this service is
+  // constructor-injected into BuilderPagesService, which NestJS instantiates
+  // eagerly at app bootstrap regardless of which route is actually hit.
+  // Throwing in the constructor previously crashed the *entire* API (every
+  // route, not just AI generation) whenever ANTHROPIC_API_KEY wasn't set in
+  // an environment — the missing key only matters once generatePageTree()
+  // is actually called, so that's where it's now checked.
   constructor(private configService: ConfigService) {
+    this.model = this.configService.get<string>('ANTHROPIC_MODEL') || 'claude-opus-4-8';
+  }
+
+  private getClient(): Anthropic {
+    if (this.client) return this.client;
     const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY is not configured. Please set it in .env file');
+      throw new InternalServerErrorException('ANTHROPIC_API_KEY is not configured. Please set it in .env file');
     }
-    this.model = this.configService.get<string>('ANTHROPIC_MODEL') || 'claude-opus-4-8';
     this.client = new Anthropic({ apiKey });
+    return this.client;
   }
 
   async generatePageTree(productDescription: string, language: 'ar' | 'fr' | 'en' = 'ar'): Promise<BuilderBlock[]> {
+    const client = this.getClient();
     let response: Anthropic.Message;
     try {
-      response = await this.client.messages.create({
+      response = await client.messages.create({
         model: this.model,
         max_tokens: 4096,
         system: [

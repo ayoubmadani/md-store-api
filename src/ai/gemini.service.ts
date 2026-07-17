@@ -42,20 +42,29 @@ const GEMINI_TREE_SCHEMA = {
 
 @Injectable()
 export class GeminiService {
-  private client: GoogleGenerativeAI;
+  private client: GoogleGenerativeAI | null = null;
   private model: string;
 
+  // See AnthropicService for why this doesn't throw at construction time —
+  // this service is eagerly instantiated at app bootstrap via DI, so a
+  // missing key here previously crashed every route in the API, not just
+  // the free-trial generation this actually powers.
   constructor(private configService: ConfigService) {
+    this.model = this.configService.get<string>('GEMINI_MODEL') || 'gemini-2.5-flash';
+  }
+
+  private getClient(): GoogleGenerativeAI {
+    if (this.client) return this.client;
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not configured. Get a free key at https://aistudio.google.com/apikey and set it in .env');
+      throw new InternalServerErrorException('GEMINI_API_KEY is not configured. Get a free key at https://aistudio.google.com/apikey and set it in .env');
     }
-    this.model = this.configService.get<string>('GEMINI_MODEL') || 'gemini-2.5-flash';
     this.client = new GoogleGenerativeAI(apiKey);
+    return this.client;
   }
 
   async generatePageTree(productDescription: string, language: 'ar' | 'fr' | 'en' = 'ar'): Promise<BuilderBlock[]> {
-    const model = this.client.getGenerativeModel({
+    const model = this.getClient().getGenerativeModel({
       model: this.model,
       systemInstruction: BLOCK_SYSTEM_PROMPT,
       generationConfig: {

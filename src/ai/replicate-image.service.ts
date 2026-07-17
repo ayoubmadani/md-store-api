@@ -14,27 +14,35 @@ const STYLE_SUFFIX =
 
 @Injectable()
 export class ReplicateImageService {
-  private replicate: Replicate;
+  private replicate: Replicate | null = null;
 
-  constructor(private configService: ConfigService) {
+  // See AnthropicService for why this doesn't throw at construction time —
+  // eagerly instantiated at app bootstrap via DI, so a missing key here
+  // previously crashed every route in the API, not just this one.
+  constructor(private configService: ConfigService) {}
+
+  private getClient(): Replicate {
+    if (this.replicate) return this.replicate;
     const apiKey = this.configService.get<string>('REPLICATE_API_KEY');
     if (!apiKey) {
-      throw new Error('REPLICATE_API_KEY is not configured. Please set it in .env file');
+      throw new InternalServerErrorException('REPLICATE_API_KEY is not configured. Please set it in .env file');
     }
     this.replicate = new Replicate({ auth: apiKey });
+    return this.replicate;
   }
 
   // Generates `variations.length` photos for one page in a single "session" —
   // same seed across all of them so they read as one coherent shoot (same
   // lighting/mood/color grading) instead of visually mismatched stock photos.
   async generateProductPhotos(productDescription: string, variations: string[]): Promise<Buffer[]> {
+    const client = this.getClient();
     const seed = Math.floor(Math.random() * 1_000_000);
     const buffers: Buffer[] = [];
 
     for (const variation of variations) {
       const prompt = `${productDescription}, ${variation}, ${STYLE_SUFFIX}`;
       try {
-        const output: any = await this.replicate.run('black-forest-labs/flux-schnell', {
+        const output: any = await client.run('black-forest-labs/flux-schnell', {
           input: {
             prompt,
             seed,
