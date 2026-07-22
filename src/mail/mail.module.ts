@@ -10,16 +10,17 @@ import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handleba
         MailerModule.forRootAsync({
             imports: [ConfigModule],
             inject: [ConfigService],
-            useFactory: (config: ConfigService) => ({
+            useFactory: (config: ConfigService) => {
+                const port = Number(config.get('MAIL_PORT')) || 465;
+                return {
                 transport: {
                     host: config.get('MAIL_HOST'),
-                    port: 587,
-                    secure: false, // يجب أن تكون false للمنفذ 587
+                    port,
+                    secure: port === 465, // SSL للمنفذ 465، STARTTLS لغير ذلك
                     auth: {
-                        user: config.get('MAIL_USER'), // هنا سيستخدم a0f3c4001@smtp-brevo.com
+                        user: config.get('MAIL_USER'),
                         pass: config.get('MAIL_PASS'),
                     },
-                    // أضف هذا الجزء لضمان التوافق مع Brevo
                     tls: {
                         rejectUnauthorized: false
                     }
@@ -32,7 +33,8 @@ import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handleba
                     adapter: new HandlebarsAdapter(),
                     options: { strict: true },
                 },
-            }),
+                };
+            },
         }),
     ],
     providers: [MailService],
