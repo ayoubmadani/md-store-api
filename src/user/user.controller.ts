@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, BadReques
 import { UserService } from './user.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from './decorator/get-user.decorator';
+import { ResetNewPassword } from './dto/reset-new-password.dto';
 
 @Controller('user')
 export class UserController {
@@ -24,6 +25,16 @@ export class UserController {
   ) {
     const userId = user.id || user.sub;
     return this.userService.updateUser(dto, userId)
+  }
+
+  @Patch('password')
+  @UseGuards(AuthGuard)
+  changePassword(
+    @GetUser() user: any,
+    @Body() dto: ResetNewPassword
+  ) {
+    const userId = user.id || user.sub;
+    return this.userService.resetNewPassword(userId, dto);
   }
 
   @Post('toggle-ntfy')

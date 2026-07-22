@@ -93,8 +93,12 @@ export class UserService {
 
     await this.userRepo.save(user);
 
+    // نُعيد الإيميل ومعرّف المستخدم (بدون كلمة المرور) لأن تدفق دخول جوجل
+    // يحتاجها مباشرة بعد إنشاء حساب جديد عبر جوجل
     return {
-      success: true
+      success: true,
+      id: user.id,
+      email: user.email,
     } as any
   }
 

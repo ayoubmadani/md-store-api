@@ -38,24 +38,23 @@ export class AuthService {
             };
         }
 
-        // منع الدخول التقليدي لحسابات جوجل (أمنياً أفضل)
-        if (user.provider === AuthProvider.GOOGLE || user.provider === AuthProvider.CREDENTIALS_GOOGLE) {
+        // منع الدخول التقليدي فقط لحساب جوجل "النقي" الذي لم يضف كلمة مرور بعد
+        // CREDENTIALS_GOOGLE لديه كلمة مرور فعلية، فيُسمح له بالدخول بها
+        if (!user.password) {
             throw new BadRequestException('Please login with Google');
         }
 
-        if (user.password) {
-            const isMatch = await bcrypt.compare(dto.password, user.password);
-            if (isMatch) {
-                const payload = { sub: user.id, role: user.role };
-                const token = await this.generateToken(payload);
-                return {
-                    access_token: token,
-                    success: true
-                };
-            } else {
-                throw new BadRequestException('Password does not match');
-            }
+        const isMatch = await bcrypt.compare(dto.password, user.password);
+        if (!isMatch) {
+            throw new BadRequestException('Password does not match');
         }
+
+        const payload = { sub: user.id, role: user.role };
+        const token = await this.generateToken(payload);
+        return {
+            access_token: token,
+            success: true
+        };
     }
 
     async GoogleLogin(dto: GoogleLoginDto) {
@@ -229,6 +228,15 @@ export class AuthService {
         try {
             // سيحاول البحث، وإذا لم يجده سيرمي Exception
             user = await this.userService.findUserByEmail(googleUser.email);
+
+            // حساب مسجّل بالإيميل وكلمة المرور يحاول الدخول بجوجل لأول مرة
+            // نربط الحسابين تلقائياً (نفس الإيميل = نفس المالك) بدل رفض الدخول
+            if (user.provider === AuthProvider.CREDENTIALS) {
+                user = await this.userService.updateUser(
+                    { provider: AuthProvider.CREDENTIALS_GOOGLE } as any,
+                    user.id,
+                );
+            }
         } catch (error) {
             // إذا رمى Exception "user not found"، نقوم بإنشاء مستخدم جديد
             if (error instanceof BadRequestException && error.message === 'user not found') {
