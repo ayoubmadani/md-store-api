@@ -40,6 +40,15 @@ export class BuilderPagesController {
     return this.builderPagesService.generateTrial(dto);
   }
 
+  // Backs the image block's own per-block "generate with AI" control —
+  // independent of generate/generate-trial above, which generate a whole
+  // page tree at once.
+  @Post('generate-image')
+  @UseGuards(AuthGuard)
+  generateImage(@Body('prompt') prompt: string) {
+    return this.builderPagesService.generateImageFromPrompt(prompt);
+  }
+
   // Public — the storefront's productForm block needs this for real,
   // live pricing/stock/variants, the same way the editor's own preview does.
   @Get('product-info/:productId')

@@ -52,4 +52,32 @@ export class PollinationsImageService {
 
     return buffers;
   }
+
+  // One-shot single image generation — unlike generateProductPhotos (several
+  // variations sharing one seed for the whole-page "Generate with AI" flow),
+  // this is for the image block's own per-block "generate with AI" control,
+  // where a merchant supplies the exact single prompt themselves.
+  async generateImage(prompt: string): Promise<Buffer> {
+    const seed = Math.floor(Math.random() * 1_000_000);
+    const fullPrompt = `${prompt}, ${STYLE_SUFFIX}`;
+    const url = `${this.baseUrl}/${encodeURIComponent(fullPrompt)}`;
+
+    try {
+      const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 60000,
+        params: {
+          width: 1024,
+          height: 1024,
+          seed,
+          model: 'flux',
+          nologo: true,
+          enhance: false,
+        },
+      });
+      return Buffer.from(response.data);
+    } catch (error) {
+      throw new InternalServerErrorException(`فشل توليد الصورة: ${error.message}`);
+    }
+  }
 }

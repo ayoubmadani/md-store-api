@@ -268,6 +268,18 @@ export class BuilderPagesService {
     return { blocks: updated, imageFailed: false };
   }
 
+  // Backs the image block's own per-block "generate with AI" control (see
+  // PropsPanel.jsx's ImageField) — a merchant-written prompt, one image,
+  // dropped straight into that block's src the same way a manual upload
+  // would be. Independent of the whole-page generation flow above.
+  async generateImageFromPrompt(prompt: string) {
+    if (!prompt?.trim()) throw new BadRequestException('يجب إدخال وصف للصورة');
+    const buffer = await this.pollinationsImageService.generateImage(prompt.trim());
+    const key = `builder-pages/manual/${randomUUID()}.jpg`;
+    const { url } = await this.s3Service.uploadBuffer(buffer, key, 'image/jpeg');
+    return { url };
+  }
+
   private async resolveDescription(dto: GenerateBuilderPageDto): Promise<string> {
     if (dto.productId) {
       const product = await this.productRepo.findOne({ where: { id: dto.productId } });
