@@ -13,6 +13,16 @@ export class SetShippingProviderDto {
   credentials: Record<string, string>;
 }
 
+export class UpdateShippingProviderDto {
+  @IsString()
+  @IsOptional()
+  accountName?: string;
+
+  @IsObject()
+  @IsOptional()
+  credentials?: Record<string, string>;
+}
+
 export class CreateShippingOrderDto {
   @IsObject()
   orderData: Record<string, unknown>;

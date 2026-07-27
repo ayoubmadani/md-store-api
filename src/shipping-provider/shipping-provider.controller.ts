@@ -10,7 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { SetShippingProviderDto, CreateShippingOrderDto } from './dto/shipping.dto';
+import { SetShippingProviderDto, UpdateShippingProviderDto, CreateShippingOrderDto } from './dto/shipping.dto';
 import { ShippingProviderService } from './shipping-provider.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
@@ -24,8 +24,8 @@ export class ShippingProviderController {
 
   // ─── مزودي الخدمة (العامة) ───
   @Get('providers')
-  getAllProviders() {
-    return this.shippingService.getAllProviders();
+  getAllProviders(@Param('storeId') storeId: string) {
+    return this.shippingService.getAllProviders(storeId);
   }
 
   // ─── إدارة حسابات المستخدم ───
@@ -33,7 +33,7 @@ export class ShippingProviderController {
   @Get('accounts')
   getAccounts(@Param('storeId') storeId: string, @GetUser() user: any) {
     const userId = user.id || user.sub;
-    return this.shippingService.getStoreAccounts(userId);
+    return this.shippingService.getStoreAccounts(storeId, userId);
   }
 
   @Post('accounts')
@@ -43,7 +43,18 @@ export class ShippingProviderController {
     @GetUser() user: any,
   ) {
     const userId = user.id || user.sub;
-    return this.shippingService.createAccount(userId, dto);
+    return this.shippingService.createAccount(storeId, userId, dto);
+  }
+
+  @Patch('accounts/:accountId')
+  updateAccount(
+    @Param('storeId') storeId: string,
+    @Param('accountId') accountId: string,
+    @Body() dto: UpdateShippingProviderDto,
+    @GetUser() user: any,
+  ) {
+    const userId = user.id || user.sub;
+    return this.shippingService.updateAccount(storeId, userId, accountId, dto);
   }
 
   @Patch('accounts/:accountId/default')
@@ -53,7 +64,7 @@ export class ShippingProviderController {
     @GetUser() user: any,
   ) {
     const userId = user.id || user.sub;
-    return this.shippingService.setDefaultAccount( userId, accountId);
+    return this.shippingService.setDefaultAccount(storeId, userId, accountId);
   }
 
   @Delete('accounts/:accountId')
@@ -63,7 +74,7 @@ export class ShippingProviderController {
     @GetUser() user: any,
   ) {
     const userId = user.id || user.sub;
-    return this.shippingService.deleteAccount( userId, accountId);
+    return this.shippingService.deleteAccount(storeId, userId, accountId);
   }
 
   // ─── عمليات الشحن ───
