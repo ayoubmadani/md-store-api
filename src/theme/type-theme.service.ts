@@ -1,8 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ThemeType } from "./entities/theme-type.entity";
-import { Repository } from "typeorm";
+import { Not, In, Repository } from "typeorm";
 import { PaymentService } from "../payment/payment.service";
+import { HIDDEN_TYPE_NAMES } from "./theme.constants";
 
 @Injectable()
 export class TypeThemeService {
@@ -20,8 +21,13 @@ export class TypeThemeService {
     }
 
     // دالة إضافية لجلب كل الأنواع (ستحتاجها للـ Sidebar في الـ Admin)
-    async findAll() {
-        return await this.themeTypeRepo.find();
+    async findAll(isAdmin: boolean = false) {
+        if (isAdmin) {
+            return await this.themeTypeRepo.find();
+        }
+        return await this.themeTypeRepo.find({
+            where: { name: Not(In(HIDDEN_TYPE_NAMES)) },
+        });
     }
 
     async delete(id: string) {

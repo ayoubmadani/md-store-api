@@ -3,7 +3,7 @@ import { CreateThemeDto } from './dto/create-theme.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Theme } from './entities/theme.entity';
-import { DataSource, ILike, Repository } from 'typeorm';
+import { DataSource, ILike, In, Not, Repository } from 'typeorm';
 import { TypeThemeService } from './type-theme.service';
 import { ThemeUser } from './entities/theme-user.entity';
 import { ThemePlan } from './entities/theme-plan.entity';
@@ -11,10 +11,10 @@ import { Store } from '../store/entities/store.entity';
 import { PaymentService } from '../payment/payment.service';
 import { TransactionType } from '../payment/entities/transaction.entity';
 import { Subscription } from '../subscription/entities/subscription.entity';
+import { HIDDEN_TYPE_NAMES } from './theme.constants';
 
 @Injectable()
 export class ThemeService {
-
   constructor(
     @InjectRepository(Theme) private readonly themeRepo: Repository<Theme>,
     @InjectRepository(ThemeUser) private readonly themeUserRepo: Repository<ThemeUser>,
@@ -39,20 +39,23 @@ export class ThemeService {
     const filterType = (typeId && typeId !== 'undefined' as any) ? typeId : null;
 
     const activeFilter = isAdmin ? {} : { isActive: true };
+    const hiddenTypesFilter = isAdmin
+      ? {}
+      : { type: { name: Not(In(HIDDEN_TYPE_NAMES)) } };
 
     let whereCondition: any;
 
     if (searchQuery) {
       const ilikeQuery = ILike(`%${searchQuery}%`);
       whereCondition = [
-        { name_ar: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter },
-        { name_en: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter },
-        { desc_ar: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter },
+        { name_ar: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter, ...hiddenTypesFilter },
+        { name_en: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter, ...hiddenTypesFilter },
+        { desc_ar: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter, ...hiddenTypesFilter },
       ];
     } else if (filterType) {
-      whereCondition = { typeId: filterType, ...activeFilter };
+      whereCondition = { typeId: filterType, ...activeFilter, ...hiddenTypesFilter };
     } else {
-      whereCondition = { ...activeFilter };
+      whereCondition = { ...activeFilter, ...hiddenTypesFilter };
     }
 
     const [data, total] = await this.themeRepo.findAndCount({

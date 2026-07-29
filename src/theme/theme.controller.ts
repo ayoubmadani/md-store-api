@@ -111,8 +111,8 @@ export class ThemeController {
   }
 
   @Get('type')
-  findAllType() {
-    return this.typeThemeService.findAll();
+  findAllType(@Query('isAdmin') isAdmin?: string) {
+    return this.typeThemeService.findAll(Boolean(isAdmin));
   }
 
   @Delete('type/:id')

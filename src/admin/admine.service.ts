@@ -28,6 +28,8 @@ import { ThemePlan } from '../theme/entities/theme-plan.entity';
 import { Plan } from '../subscription/entities/plan.entity';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { PaymentService } from '../payment/payment.service';
+import { Transaction, TransactionType } from '../payment/entities/transaction.entity';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local shape types — used only as plain type annotations inside the service,
@@ -132,6 +134,8 @@ export class AdminService {
 
         @InjectRepository(Plan)
         private readonly planRepo : Repository<Plan>,
+
+        private readonly paymentService: PaymentService,
 
         // 2. احقن الـ DataSource هنا
         private readonly dataSource: DataSource,
@@ -313,6 +317,58 @@ export class AdminService {
             .getManyAndCount();
 
         return { data: users, total, page, limit, totalPages: Math.ceil(total / limit) };
+    }
+
+    async getUserWallet(id: string) {
+        await this.getUserById(id); // ensure exists
+        const wallet = await this.paymentService.getBalanceUser(id);
+        return { balance: Number(wallet.balance ?? 0), currency: 'DZD' };
+    }
+
+    async getUserTransactions(id: string) {
+        await this.getUserById(id); // ensure exists
+        const wallet = await this.paymentService.getBalanceUser(id);
+        const transactions: Transaction[] = wallet.user?.transactions ?? [];
+
+        return transactions
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+            .map((t) => ({
+                id: t.id,
+                type: t.type,
+                action: t.action,
+                amount: t.action === 'payment' ? -Number(t.amount) : Number(t.amount),
+                currency: 'DZD',
+                createdAt: t.createdAt,
+            }));
+    }
+
+    async rechargeUserWallet(id: string, amount: number) {
+        await this.getUserById(id); // ensure exists
+        if (!amount || amount <= 0) {
+            throw new BadRequestException('Amount must be greater than 0');
+        }
+        const result = await this.paymentService.handleWalletBalance(
+            id,
+            amount,
+            'ADD',
+            TransactionType.TOP_UP,
+        );
+        return { success: true, balance: result.newBalance, transactionId: result.transactionId };
+    }
+
+    async assignThemeToUser(id: string, themeId: string) {
+        await this.getUserById(id); // ensure exists
+
+        const theme = await this.themeRepo.findOne({ where: { id: themeId } });
+        if (!theme) throw new NotFoundException(`Theme #${themeId} not found`);
+
+        const existing = await this.themeUserRepo.findOne({ where: { userId: id, themeId } });
+        if (existing) throw new BadRequestException('User already owns this theme');
+
+        const themeUser = this.themeUserRepo.create({ userId: id, themeId });
+        await this.themeUserRepo.save(themeUser);
+
+        return { success: true, message: 'Theme assigned successfully' };
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

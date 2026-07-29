@@ -17,6 +17,7 @@ import { StatusEnum } from '../order/entities/order.entity';
 import { AdminService } from './admine.service';
 import { CreateMessageAdminDto } from './dto/message-admine.dto';
 import { CreateCategoryNicheDto } from '../niche/dto/create-cat-niche.dto';
+import { IsNumber, IsPositive, IsString, IsNotEmpty, IsEnum } from 'class-validator';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Query classes
@@ -48,7 +49,20 @@ export class DateRangePaginationQuery {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class UpdateRoleDto {
+  @IsEnum(UserRole)
   role: UserRole;
+}
+
+export class RechargeWalletDto {
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+}
+
+export class AssignThemeDto {
+  @IsString()
+  @IsNotEmpty()
+  themeId: string;
 }
 
 export class UpdateOrderStatusDto {
@@ -137,6 +151,10 @@ export class AdminController {
   // PATCH  /admin/users/:id/role
   // PATCH  /admin/users/:id/verify
   // DELETE /admin/users/:id
+  // GET    /admin/users/:id/wallet
+  // GET    /admin/users/:id/transactions
+  // POST   /admin/users/:id/wallet/recharge
+  // POST   /admin/users/:id/theme
   // ═══════════════════════════════════════════════════════════════════════════
 
   @Get('users')
@@ -174,6 +192,32 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   deleteUser(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.deleteUser(id);
+  }
+
+  @Get('users/:id/wallet')
+  getUserWallet(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getUserWallet(id);
+  }
+
+  @Get('users/:id/transactions')
+  getUserTransactions(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getUserTransactions(id);
+  }
+
+  @Post('users/:id/wallet/recharge')
+  rechargeUserWallet(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RechargeWalletDto,
+  ) {
+    return this.adminService.rechargeUserWallet(id, dto.amount);
+  }
+
+  @Post('users/:id/theme')
+  assignThemeToUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignThemeDto,
+  ) {
+    return this.adminService.assignThemeToUser(id, dto.themeId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
