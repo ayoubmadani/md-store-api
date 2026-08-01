@@ -39,7 +39,7 @@ export class MessageUser {
     @Column()
     storeId: string;
 
-    @ManyToOne(() => Store, (store) => store.messages)
+    @ManyToOne(() => Store, (store) => store.messages, { onDelete: 'CASCADE' })
     @JoinColumn({ name: "storeId" })
     store: Store;
 

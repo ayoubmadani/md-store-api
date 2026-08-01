@@ -174,35 +174,22 @@ export class CategoryService {
   async remove(id: string, storeId: string, userId: string): Promise<{ message: string }> {
     await this.storeService.verifyOwnership(storeId, userId);
 
-    const category = await this.categoryRepository.findOne({
-      where: { id, storeId },
-      relations: ['products'],
-    });
+    const category = await this.categoryRepository.findOne({ where: { id, storeId } });
     if (!category) throw new NotFoundException(`التصنيف #${id} غير موجود`);
-
-    if (category.products?.length > 0) {
-      throw new BadRequestException(
-        `لا يمكن حذف التصنيف، يحتوي على ${category.products.length} منتج/منتجات`,
-      );
-    }
 
     // جلب IDs جميع الأبناء
     const descendantIds = await this.findDescendantIds(id);
-
-    // التحقق من عدم وجود منتجات في الأبناء
     const childIds = descendantIds.filter(did => did !== id);
-    if (childIds.length > 0) {
-      const productsCount = await this.productRepository.count({
-        where: { category: { id: In(childIds) } },
-      });
-      if (productsCount > 0) {
-        throw new BadRequestException(
-          `لا يمكن الحذف، التصنيفات الفرعية تحتوي على ${productsCount} منتج/منتجات`,
-        );
-      }
-    }
 
     try {
+      // فك ربط المنتجات (التصنيف + الأبناء) بدل منع الحذف
+      const { affected: unlinkedProducts } = await this.productRepository
+        .createQueryBuilder()
+        .update(Product)
+        .set({ category: null } as any)
+        .where('categoryId IN (:...ids)', { ids: descendantIds })
+        .execute();
+
       // soft delete للجميع
       await this.categoryRepository
         .createQueryBuilder()
@@ -210,11 +197,14 @@ export class CategoryService {
         .where('id IN (:...ids)', { ids: descendantIds })
         .execute();
 
-      return {
-        message: childIds.length > 0
+      const parts = [
+        childIds.length > 0
           ? `تم حذف التصنيف و${childIds.length} تصنيف/تصنيفات فرعية بنجاح`
           : 'تم حذف التصنيف بنجاح',
-      };
+      ];
+      if (unlinkedProducts) parts.push(`وتم إلغاء ربط ${unlinkedProducts} منتج/منتجات به`);
+
+      return { message: parts.join('، ') };
     } catch {
       throw new InternalServerErrorException('فشل حذف التصنيف');
     }

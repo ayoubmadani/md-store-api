@@ -25,7 +25,7 @@ export class OrderItem {
   @Column()
   productId: string;
 
-  @ManyToOne(() => Product, { nullable: false })
+  @ManyToOne(() => Product, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'productId' })
   product: Product;
 
