@@ -214,16 +214,14 @@ async getPlanInfo(userId: string) {
       return this.res(false, 'User already owns this theme');
     }
 
-    // هل الثيم مضمّن في خطة المستخدم؟
-    const planInfo = await this.getPlanInfo(userId);
-    const isIncludedInPlan = planInfo.planThemeIds.includes(themeId);
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      const basePrice = isIncludedInPlan ? 0 : Number(theme.price || 0);
+      // السعر يُدفع دائماً حسب سعر الثيم الحقيقي، حتى لو كان مضمّناً في خطة
+      // المستخدم — "مضمّن في الخطة" مجرد شارة إعلامية هنا، لا يُسقط السعر.
+      const basePrice = Number(theme.price || 0);
 
       const newThemeUser = this.themeUserRepo.create({ userId, themeId });
       await queryRunner.manager.save(newThemeUser);
