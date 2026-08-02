@@ -5,6 +5,8 @@ import { Subscription } from './entities/subscription.entity';
 import { DataSource, Repository } from 'typeorm';
 import { PaymentService } from '../payment/payment.service';
 import { TransactionType } from '../payment/entities/transaction.entity';
+import { CouponService } from '../coupon/coupon.service';
+import { CouponContext } from '../coupon/entities/coupon-redemption.entity';
 
 @Injectable()
 export class SubscriptionService {
@@ -20,6 +22,7 @@ export class SubscriptionService {
         private dataSource: DataSource,
         @Inject(forwardRef(() => PaymentService))
         private paymentService: PaymentService,
+        private couponService: CouponService,
     ) {}
 
     // ─── invalidate عند أي تغيير في الاشتراك ────────────────────────────────
@@ -28,7 +31,7 @@ export class SubscriptionService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    async subscribeToPlan(userId: string, planId: string, interval: 'month' | 'year') {
+    async subscribeToPlan(userId: string, planId: string, interval: 'month' | 'year', couponCode?: string) {
         const plan = await this.planRepo.findOne({ where: { id: planId, isActive: true } });
         if (!plan) throw new NotFoundException('الخطة غير موجودة أو غير متاحة حالياً');
 
@@ -57,18 +60,28 @@ export class SubscriptionService {
             if (interval === 'month') endDate.setMonth(startDate.getMonth() + 1);
             else endDate.setFullYear(startDate.getFullYear() + 1);
 
-            if (price > 0) {
+            const newSub = this.subRepo.create({ userId, planId, interval, status: 'active', startDate, endDate });
+            await queryRunner.manager.save(newSub);
+
+            let finalPrice = price;
+            if (couponCode && price > 0) {
+                const result = await this.couponService.redeemCoupon(
+                    couponCode, userId, 'plan', price,
+                    CouponContext.PLAN_SUBSCRIPTION, newSub.id, queryRunner.manager,
+                );
+                finalPrice = result.finalPrice;
+            }
+
+            if (finalPrice > 0) {
                 await this.paymentService.handleWalletBalance(
-                    userId, price, 'SUB', TransactionType.PLAN_SUBSCRIPTION, queryRunner.manager,
+                    userId, finalPrice, 'SUB', TransactionType.PLAN_SUBSCRIPTION, queryRunner.manager,
                 );
             }
 
-            const newSub = this.subRepo.create({ userId, planId, interval, status: 'active', startDate, endDate });
-            await queryRunner.manager.save(newSub);
             await queryRunner.commitTransaction();
 
             this.invalidateSubCache(userId); // ← invalidate بعد التغيير
-            return { success: true, message: `تم الاشتراك في خطة ${plan.name} بنجاح`, expiresAt: endDate };
+            return { success: true, message: `تم الاشتراك في خطة ${plan.name} بنجاح`, expiresAt: endDate, price: finalPrice };
         } catch (error) {
             await queryRunner.rollbackTransaction();
             throw new BadRequestException(error.message || 'فشلت عملية الاشتراك');
@@ -181,7 +194,7 @@ export class SubscriptionService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    async upgradePlan(userId: string, planId: string, interval: 'month' | 'year') {
+    async upgradePlan(userId: string, planId: string, interval: 'month' | 'year', couponCode?: string) {
         const plan = await this.planRepo.findOne({ where: { id: planId, isActive: true } });
         if (!plan) throw new NotFoundException('الخطة غير موجودة أو غير متاحة');
 
@@ -228,14 +241,26 @@ export class SubscriptionService {
             if (interval === 'month') endDate.setMonth(startDate.getMonth() + 1);
             else endDate.setFullYear(startDate.getFullYear() + 1);
 
-            await this.paymentService.handleWalletBalance(
-                userId, price, 'SUB', TransactionType.PLAN_UPGRADE, queryRunner.manager,
-            );
-
             await queryRunner.manager.update(Subscription, { userId, status: 'active' }, { status: 'expired' });
 
             const newSub = this.subRepo.create({ userId, planId, interval, status: 'active', startDate, endDate, autoRenew: false });
             await queryRunner.manager.save(newSub);
+
+            let finalPrice = price;
+            if (couponCode && price > 0) {
+                const result = await this.couponService.redeemCoupon(
+                    couponCode, userId, 'plan', price,
+                    CouponContext.PLAN_UPGRADE, newSub.id, queryRunner.manager,
+                );
+                finalPrice = result.finalPrice;
+            }
+
+            if (finalPrice > 0) {
+                await this.paymentService.handleWalletBalance(
+                    userId, finalPrice, 'SUB', TransactionType.PLAN_UPGRADE, queryRunner.manager,
+                );
+            }
+
             await queryRunner.commitTransaction();
 
             this.invalidateSubCache(userId);
@@ -243,7 +268,7 @@ export class SubscriptionService {
                 success: true,
                 message: `تمت الترقية إلى خطة ${plan.name} بنجاح${credit > 0 ? ` (خصم ${credit} DZD من الأيام المتبقية)` : ''}`,
                 expiresAt: endDate,
-                cost: price,
+                cost: finalPrice,
                 credit,
             };
         } catch (error) {

@@ -28,6 +28,7 @@ import { CronJobModule } from './cron-job/cron-job.module';
 import { ShowModule } from './show/show.module';
 import { DomainModule } from './domain/domain.module';
 import { SupportModule } from './support/support.module';
+import { CouponModule } from './coupon/coupon.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { SupportModule } from './support/support.module';
     ShowModule,
     DomainModule,
     SupportModule,
+    CouponModule,
   ],
   controllers: [AppController]
 })

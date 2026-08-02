@@ -8,6 +8,7 @@ import { PaymentModule } from '../payment/payment.module';
 import { PlansController } from './plan.controller';
 import { PlansService } from './plan.service';
 import { FeaturesEntity } from './entities/features.entity';
+import { CouponModule } from '../coupon/coupon.module';
 
 @Module({
   controllers: [SubscriptionController, PlansController],
@@ -16,6 +17,7 @@ import { FeaturesEntity } from './entities/features.entity';
   imports: [
     TypeOrmModule.forFeature([Plan, Subscription, FeaturesEntity]),
     forwardRef(() => PaymentModule), // ✅ مهم لحل الاعتمادية الدائرية
+    CouponModule,
   ],
 })
 export class SubscriptionModule {}

@@ -11,20 +11,22 @@ import { TypeThemeService } from './type-theme.service';
 import { Store } from '../store/entities/store.entity';
 import { PaymentModule } from '../payment/payment.module';
 import { Subscription } from '../subscription/entities/subscription.entity'; // 👈 أضف هذا الاستيراد
+import { CouponModule } from '../coupon/coupon.module';
 
 @Module({
   controllers: [ThemeController],
   providers: [ThemeService, TypeThemeService],
   imports: [
     TypeOrmModule.forFeature([
-      ThemeUser, 
-      Theme, 
-      ThemeType, 
-      ThemePlan, 
+      ThemeUser,
+      Theme,
+      ThemeType,
+      ThemePlan,
       Store,
       Subscription // 👈 يجب إضافة Subscription هنا لكي يعمل subRepo في الخدمة
     ]),
     PaymentModule,
+    CouponModule,
   ],
 })
 export class ThemeModule {}

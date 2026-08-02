@@ -1,10 +1,17 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import { IsOptional, IsString } from 'class-validator';
 import { ThemeService } from './theme.service';
 import { CreateThemeDto } from './dto/create-theme.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
 import { TypeThemeService } from './type-theme.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
+
+class InstallThemeDto {
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
+}
 
 @Controller('theme')
 export class ThemeController {
@@ -69,9 +76,10 @@ export class ThemeController {
   installTheme(
     @GetUser() user: any,
     @Param('themeId') themeId: string,
+    @Body() dto: InstallThemeDto,
   ) {
     const userId = user.id || user.sub;
-    return this.themeService.installTheme(themeId, userId);
+    return this.themeService.installTheme(themeId, userId, dto?.couponCode);
   }
 
   @Post('active-theme')

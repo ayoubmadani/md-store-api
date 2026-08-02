@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Patch, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsEnum, IsUUID, IsNotEmpty } from 'class-validator';
+import { IsBoolean, IsEnum, IsUUID, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { SubscriptionService } from './subscription.service';
 import { GetUser } from 'src/user/decorator/get-user.decorator';
 import { AuthGuard } from 'src/auth/guard/auth.guard';
@@ -11,6 +11,10 @@ class SubscribeDto {
 
   @IsEnum(['month', 'year'])
   interval: 'month' | 'year';
+
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
 }
 
 class AutoRenewDto {
@@ -29,12 +33,12 @@ export class SubscriptionController {
 
   @Post('subscribe')
   async subscribe(@GetUser() user: any, @Body() dto: SubscribeDto) {
-    return this.subscriptionService.subscribeToPlan(this.uid(user), dto.planId, dto.interval);
+    return this.subscriptionService.subscribeToPlan(this.uid(user), dto.planId, dto.interval, dto.couponCode);
   }
 
   @Post('upgrade')
   async upgrade(@GetUser() user: any, @Body() dto: SubscribeDto) {
-    return this.subscriptionService.upgradePlan(this.uid(user), dto.planId, dto.interval);
+    return this.subscriptionService.upgradePlan(this.uid(user), dto.planId, dto.interval, dto.couponCode);
   }
 
   @Get('my')

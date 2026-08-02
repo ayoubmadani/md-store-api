@@ -12,6 +12,8 @@ import { PaymentService } from '../payment/payment.service';
 import { TransactionType } from '../payment/entities/transaction.entity';
 import { Subscription } from '../subscription/entities/subscription.entity';
 import { HIDDEN_TYPE_NAMES } from './theme.constants';
+import { CouponService } from '../coupon/coupon.service';
+import { CouponContext } from '../coupon/entities/coupon-redemption.entity';
 
 @Injectable()
 export class ThemeService {
@@ -24,6 +26,7 @@ export class ThemeService {
 
     private readonly paymentService: PaymentService,
     private readonly dataSource: DataSource,
+    private readonly couponService: CouponService,
   ) { }
 
 
@@ -196,7 +199,7 @@ async getPlanInfo(userId: string) {
   // ─────────────────────────────────────────────
   //  installTheme
   // ─────────────────────────────────────────────
-  async installTheme(themeId: string, userId: string) {
+  async installTheme(themeId: string, userId: string, couponCode?: string) {
     if (!themeId || !userId || themeId === 'undefined' || userId === 'undefined') {
       throw new BadRequestException('Invalid ID provided');
     }
@@ -220,7 +223,19 @@ async getPlanInfo(userId: string) {
     await queryRunner.startTransaction();
 
     try {
-      const price = isIncludedInPlan ? 0 : Number(theme.price || 0);
+      const basePrice = isIncludedInPlan ? 0 : Number(theme.price || 0);
+
+      const newThemeUser = this.themeUserRepo.create({ userId, themeId });
+      await queryRunner.manager.save(newThemeUser);
+
+      let price = basePrice;
+      if (couponCode && basePrice > 0) {
+        const result = await this.couponService.redeemCoupon(
+          couponCode, userId, 'theme', basePrice,
+          CouponContext.THEME_PURCHASE, newThemeUser.id, queryRunner.manager,
+        );
+        price = result.finalPrice;
+      }
 
       if (price > 0) {
         await this.paymentService.handleWalletBalance(
@@ -231,9 +246,6 @@ async getPlanInfo(userId: string) {
           queryRunner.manager,
         );
       }
-
-      const newThemeUser = this.themeUserRepo.create({ userId, themeId });
-      await queryRunner.manager.save(newThemeUser);
 
       await queryRunner.commitTransaction();
       return this.res(true, 'Theme installed successfully');
