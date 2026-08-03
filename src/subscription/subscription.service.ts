@@ -149,7 +149,7 @@ export class SubscriptionService {
     // عند انتهاء الاشتراك: أي متجر يستخدم ثيماً كان "مضمّناً في الخطة" القديمة
     // (وليس مملوكاً فعلياً عبر الشراء) يجب إرجاعه إلى الثيم الافتراضي، لأن هذا
     // الوصول كان مشروطاً باستمرار الاشتراك في تلك الخطة تحديداً.
-    private async revertUnauthorizedThemes(userId: string, activePlanId: string | null): Promise<void> {
+    async revertUnauthorizedThemes(userId: string, activePlanId: string | null): Promise<void> {
         const [ownedThemes, allowedThemePlans, stores] = await Promise.all([
             this.themeUserRepo.find({ where: { userId } }),
             activePlanId ? this.themePlanRepo.find({ where: { planId: activePlanId } }) : Promise.resolve([]),

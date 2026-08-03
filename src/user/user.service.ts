@@ -213,15 +213,12 @@ export class UserService {
   }
 
   async initSub(userId: string) {
-    // 1. جلب بيانات الاشتراك الفعال مع كافة علاقات الثيمات المرتبطة بالخطة
-    const sub = await this.subRepo.findOne({
-      where: { userId, status: 'active' },
-      relations: ['plan', 'plan.features', 'plan.themePlans', 'plan.themePlans.theme'],
-      order: { startDate: 'DESC' },
-    });
+    // ✅ findSub تعالج انتهاء الاشتراك أولاً (تجديد/رجوع للمجاني) قبل إرجاع النتيجة،
+    // فلا يمكن أن يعتمد هذا على صف "active" قديم لم تتم معالجة انتهائه بعد.
+    const sub = await this.subscriptionService.findSub(userId);
 
     // إذا لم يوجد اشتراك فعال، يفضل تصفير الميزات أو الخروج (حسب منطق عملك)
-    if (!sub || !sub.plan.features) return;
+    if (!sub || !sub.plan?.features) return;
     const f = sub.plan.features;
 
     // 2. حساب الأعداد الحالية للموارد (المتاجر، المنتجات، البيكسل، صفحات الهبوط)
@@ -283,34 +280,8 @@ export class UserService {
     }
 
     // 4. التحقق من صلاحية الثيمات (Theme Access Enforcement)
-    const themePlanIds = sub.plan.themePlans.map(item => item.themeId);
-    const themeUser = await this.themeUserRepo.find({ where: { userId } });
-    const themeUserIds = themeUser.map(item => item.themeId);
-
-    const stores = await this.storeRepo.find({ where: { user: { id: userId } } });
-
-    console.log({themePlanIds ,themeUserIds , stores });
-    
-
-    const updatePromises:any = [];
-
-    for (const store of stores) {
-      // إذا كان للمتجر ثيم، وهذا الثيم غير موجود في الخطة ولا في الثيمات المشتراة من المستخدم
-      if (store.themeId && !themePlanIds.includes(store.themeId) && !themeUserIds.includes(store.themeId)) {
-        console.log(`🚫 Removing unauthorized theme ${store.themeId} from store ${store.name}`);
-
-        updatePromises.push(
-          this.storeRepo.update(store.id, { themeId: null as any })
-        );
-      }
-    }
-
-    // تنفيذ جميع عمليات تصفير الثيمات غير المصرح بها
-    if (updatePromises.length > 0) {
-      await Promise.all(updatePromises);
-    }
-
-    console.log(`✅ Subscription initialization completed for user: ${userId}`);
+    // نفس المنطق المستخدم عند انتهاء الاشتراك — موحّد في مكان واحد بدل تكراره هنا
+    await this.subscriptionService.revertUnauthorizedThemes(userId, sub.planId);
   }
 
   async createMessage(dto: any) {
