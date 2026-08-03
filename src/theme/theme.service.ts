@@ -10,10 +10,10 @@ import { ThemePlan } from './entities/theme-plan.entity';
 import { Store } from '../store/entities/store.entity';
 import { PaymentService } from '../payment/payment.service';
 import { TransactionType } from '../payment/entities/transaction.entity';
-import { Subscription } from '../subscription/entities/subscription.entity';
 import { HIDDEN_TYPE_NAMES } from './theme.constants';
 import { CouponService } from '../coupon/coupon.service';
 import { CouponContext } from '../coupon/entities/coupon-redemption.entity';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class ThemeService {
@@ -22,11 +22,11 @@ export class ThemeService {
     @InjectRepository(ThemeUser) private readonly themeUserRepo: Repository<ThemeUser>,
     @InjectRepository(ThemePlan) private readonly themePlanRepo: Repository<ThemePlan>,
     @InjectRepository(Store) private readonly storeRepo: Repository<Store>,
-    @InjectRepository(Subscription) private readonly subRepo: Repository<Subscription>,
 
     private readonly paymentService: PaymentService,
     private readonly dataSource: DataSource,
     private readonly couponService: CouponService,
+    private readonly subscriptionService: SubscriptionService,
   ) { }
 
 
@@ -109,12 +109,9 @@ export class ThemeService {
   //  getPlanInfo — معلومات خطة المستخدم + الثيمات
   // ─────────────────────────────────────────────
 async getPlanInfo(userId: string) {
-    // 1. جلب اشتراك المستخدم النشط باستخدام الـ Repository لضمان التوافق مع Postgres
-    const sub = await this.subRepo.findOne({
-      where: { userId, status: 'active' },
-      relations: ['plan'], // جلب بيانات الخطة المرتبطة
-      order: { createdAt: 'DESC' }, // أو startDate حسب الموجود عندك
-    });
+    // ✅ findSub تعالج انتهاء الاشتراك أولاً (تجديد/رجوع للمجاني) قبل إرجاع النتيجة،
+    // فلا يمكن أن يعتمد هذا على صف "active" قديم لم تتم معالجة انتهائه بعد.
+    const sub = await this.subscriptionService.findSub(userId);
 
     // 2. تجهيز المتغيرات الأساسية
     let planThemeIds: string[] = [];
@@ -156,43 +153,35 @@ async getPlanInfo(userId: string) {
   }
 
   async getThemePlan(userId:string){
-    const sub = await this.subRepo.findOne({
-      where: { userId, status: 'active' },
-      relations: ['plan', 'plan.features'],
-      order: { startDate: 'DESC' },
-    });
+    // ✅ نفس السبب: findSub يضمن أن حالة الاشتراك محدّثة قبل التحقق
+    const sub = await this.subscriptionService.findSub(userId);
 
     if (!sub) {
       throw new NotFoundException('')
     }
-    
+
     return this.themeRepo.find({
-      where: { themePlans : {plan : {id : sub.plan.id}} },
+      where: { themePlans : {plan : {id : sub.planId}} },
     });
   }
 
   async activeThemePlan(userId: string, data: { storeId: string; themeId: string }) {
     const { themeId, storeId } = data;
-    
-    const sub = await this.subRepo.findOne({
-      where: { 
-        userId, 
-        status: 'active', 
-        plan: { 
-          themePlans: { themeId: themeId as any } // تأكد من مطابقة النوع هنا
-        }
-      },
-      relations: ['plan', 'plan.themePlans'], // أضف themePlans للتأكد من التحقق العميق
-      order: { createdAt: 'DESC' },
-    });
 
-    if (!sub) {
+    // ✅ findSub يعالج انتهاء الصلاحية أولاً — لا يمكن استخدام صف اشتراك منتهٍ
+    // لم تتم معالجته بعد لتفعيل ثيم لم يعد ضمن الخطة الفعلية للمستخدم
+    const sub = await this.subscriptionService.findSub(userId);
+    const themePlan = sub?.planId
+      ? await this.themePlanRepo.findOne({ where: { planId: sub.planId, themeId } })
+      : null;
+
+    if (!themePlan) {
       throw new NotFoundException('هذا القالب غير مدرج في خطتك النشطة');
     }
 
     // التحديث
     await this.storeRepo.update(storeId, { themeId: themeId });
-    
+
     return { message: 'تم تفعيل القالب بنجاح' };
 }
 

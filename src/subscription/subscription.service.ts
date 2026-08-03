@@ -7,6 +7,9 @@ import { PaymentService } from '../payment/payment.service';
 import { TransactionType } from '../payment/entities/transaction.entity';
 import { CouponService } from '../coupon/coupon.service';
 import { CouponContext } from '../coupon/entities/coupon-redemption.entity';
+import { Store } from '../store/entities/store.entity';
+import { ThemeUser } from '../theme/entities/theme-user.entity';
+import { ThemePlan } from '../theme/entities/theme-plan.entity';
 
 @Injectable()
 export class SubscriptionService {
@@ -19,6 +22,9 @@ export class SubscriptionService {
     constructor(
         @InjectRepository(Subscription) private readonly subRepo: Repository<Subscription>,
         @InjectRepository(Plan) private readonly planRepo: Repository<Plan>,
+        @InjectRepository(Store) private readonly storeRepo: Repository<Store>,
+        @InjectRepository(ThemeUser) private readonly themeUserRepo: Repository<ThemeUser>,
+        @InjectRepository(ThemePlan) private readonly themePlanRepo: Repository<ThemePlan>,
         private dataSource: DataSource,
         @Inject(forwardRef(() => PaymentService))
         private paymentService: PaymentService,
@@ -127,6 +133,9 @@ export class SubscriptionService {
                 result = await this.activateFreePlan(userId);
             }
 
+            // الخطة القديمة انتهت — أعد أي ثيم مفعّل عبر الخطة (وليس مملوكاً) إلى الافتراضي
+            await this.revertUnauthorizedThemes(userId, result?.planId ?? null);
+
             this.subCache.set(userId, { data: result, ts: Date.now() });
             return result;
         }
@@ -134,6 +143,27 @@ export class SubscriptionService {
         // cache النتيجة
         this.subCache.set(userId, { data: subscription, ts: Date.now() });
         return subscription;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // عند انتهاء الاشتراك: أي متجر يستخدم ثيماً كان "مضمّناً في الخطة" القديمة
+    // (وليس مملوكاً فعلياً عبر الشراء) يجب إرجاعه إلى الثيم الافتراضي، لأن هذا
+    // الوصول كان مشروطاً باستمرار الاشتراك في تلك الخطة تحديداً.
+    private async revertUnauthorizedThemes(userId: string, activePlanId: string | null): Promise<void> {
+        const [ownedThemes, allowedThemePlans, stores] = await Promise.all([
+            this.themeUserRepo.find({ where: { userId } }),
+            activePlanId ? this.themePlanRepo.find({ where: { planId: activePlanId } }) : Promise.resolve([]),
+            this.storeRepo.find({ where: { user: { id: userId } } }),
+        ]);
+
+        const ownedThemeIds = new Set(ownedThemes.map(tu => tu.themeId));
+        const allowedThemeIds = new Set(allowedThemePlans.map(tp => tp.themeId));
+
+        const resets = stores
+            .filter(store => store.themeId && !ownedThemeIds.has(store.themeId) && !allowedThemeIds.has(store.themeId))
+            .map(store => this.storeRepo.update(store.id, { themeId: null as any }));
+
+        if (resets.length > 0) await Promise.all(resets);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

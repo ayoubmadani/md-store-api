@@ -9,13 +9,16 @@ import { PlansController } from './plan.controller';
 import { PlansService } from './plan.service';
 import { FeaturesEntity } from './entities/features.entity';
 import { CouponModule } from '../coupon/coupon.module';
+import { Store } from '../store/entities/store.entity';
+import { ThemeUser } from '../theme/entities/theme-user.entity';
+import { ThemePlan } from '../theme/entities/theme-plan.entity';
 
 @Module({
   controllers: [SubscriptionController, PlansController],
   providers: [SubscriptionService, PlansService],
   exports: [SubscriptionService, PlansService],
   imports: [
-    TypeOrmModule.forFeature([Plan, Subscription, FeaturesEntity]),
+    TypeOrmModule.forFeature([Plan, Subscription, FeaturesEntity, Store, ThemeUser, ThemePlan]),
     forwardRef(() => PaymentModule), // ✅ مهم لحل الاعتمادية الدائرية
     CouponModule,
   ],

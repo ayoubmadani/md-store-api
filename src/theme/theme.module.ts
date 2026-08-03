@@ -10,8 +10,8 @@ import { ThemePlan } from './entities/theme-plan.entity';
 import { TypeThemeService } from './type-theme.service';
 import { Store } from '../store/entities/store.entity';
 import { PaymentModule } from '../payment/payment.module';
-import { Subscription } from '../subscription/entities/subscription.entity'; // 👈 أضف هذا الاستيراد
 import { CouponModule } from '../coupon/coupon.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   controllers: [ThemeController],
@@ -23,10 +23,10 @@ import { CouponModule } from '../coupon/coupon.module';
       ThemeType,
       ThemePlan,
       Store,
-      Subscription // 👈 يجب إضافة Subscription هنا لكي يعمل subRepo في الخدمة
     ]),
     PaymentModule,
     CouponModule,
+    SubscriptionModule,
   ],
 })
 export class ThemeModule {}
