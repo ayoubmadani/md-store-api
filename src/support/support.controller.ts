@@ -22,6 +22,7 @@ import {
     TransferStoreDto,
 } from './dto/create-support.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
+import { SupportGuard } from './guard/support.guard';
 import { UserRole } from '../user/entities/user.entity';
 
 @Controller('support')
@@ -60,61 +61,61 @@ export class SupportController {
     // ── Support Agent endpoints ───────────────────────────────────────────────
 
     @Get('stats')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     getStats(@Request() req: any) {
         return this.supportService.getStats(req.user.sub);
     }
 
     @Post('users/add')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     @HttpCode(HttpStatus.OK)
     addUserToList(@Request() req: any, @Body() dto: AddSupportUserDto) {
         return this.supportService.addUserToList(req.user.sub, dto.userId);
     }
 
     @Get('users/my')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     getMyUsers(@Request() req: any) {
         return this.supportService.getMyUsers(req.user.sub);
     }
 
     @Get('users/:userId/subscription')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     getUserSubscription(@Request() req: any, @Param('userId') userId: string) {
         return this.supportService.getUserCurrentPlan(req.user.sub, userId);
     }
 
     @Post('users/topup')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     @HttpCode(HttpStatus.OK)
     supportTopUp(@Request() req: any, @Body() dto: SupportTopUpDto) {
         return this.supportService.supportTopUpUserWallet(req.user.sub, dto.userId, dto.amount);
     }
 
     @Post('users/plan')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     @HttpCode(HttpStatus.OK)
     supportAssignPlan(@Request() req: any, @Body() dto: SupportAssignPlanDto) {
-        return this.supportService.supportAssignPlan(req.user.sub, dto.userId, dto.planId, dto.interval, dto.days);
+        return this.supportService.supportAssignPlan(req.user.sub, dto.userId, dto.planId, dto.interval, dto.days, dto.couponCode);
     }
 
     @Post('users/theme')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     @HttpCode(HttpStatus.OK)
     supportBuyTheme(@Request() req: any, @Body() dto: SupportBuyThemeDto) {
-        return this.supportService.supportBuyThemeForUser(req.user.sub, dto.userId, dto.themeId);
+        return this.supportService.supportBuyThemeForUser(req.user.sub, dto.userId, dto.themeId, dto.couponCode);
     }
 
     // ── Store endpoints ───────────────────────────────────────────────────────
 
     @Get('stores')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     getMyStores(@Request() req: any) {
         return this.supportService.getMyStores(req.user.sub);
     }
 
     @Post('stores/transfer')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, SupportGuard)
     @HttpCode(HttpStatus.OK)
     transferStore(@Request() req: any, @Body() dto: TransferStoreDto) {
         return this.supportService.transferStore(req.user.sub, dto.storeId, dto.targetUserId);

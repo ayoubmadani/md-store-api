@@ -10,6 +10,8 @@ import { PaymentService } from '../payment/payment.service';
 import { TransactionType } from '../payment/entities/transaction.entity';
 import { SupportUser } from './entities/support-users.entity';
 import { Store } from '../store/entities/store.entity';
+import { CouponService } from '../coupon/coupon.service';
+import { CouponContext } from '../coupon/entities/coupon-redemption.entity';
 
 @Injectable()
 export class SupportService {
@@ -36,6 +38,7 @@ export class SupportService {
         private readonly storeRepo: Repository<Store>,
 
         private readonly paymentService: PaymentService,
+        private readonly couponService: CouponService,
         private readonly dataSource: DataSource,
     ) {}
 
@@ -104,6 +107,10 @@ export class SupportService {
     // ── Support Agent Methods ─────────────────────────────────────────────────
 
     async addUserToList(supportId: string, userId: string) {
+        if (userId === supportId) {
+            throw new BadRequestException('You cannot add yourself to your own user list');
+        }
+
         const user = await this.userRepo.findOne({ where: { id: userId } });
         if (!user) throw new NotFoundException(`User #${userId} not found`);
 
@@ -174,6 +181,7 @@ export class SupportService {
         planId: string,
         interval: 'month' | 'year',
         days?: number,
+        couponCode?: string,
     ) {
         await this.assertUserInList(supportId, userId);
 
@@ -234,11 +242,10 @@ export class SupportService {
             }
         }
 
-        await this.dataSource.transaction(async (manager) => {
-            if (price > 0) {
-                await this.paymentService.handleWalletBalance(supportId, price, 'SUB', TransactionType.PLAN_SUBSCRIPTION, manager);
-            }
+        let finalPrice = price;
+        let discountAmount = 0;
 
+        await this.dataSource.transaction(async (manager) => {
             await manager.update(Subscription, { userId, status: 'active' }, { status: 'expired' });
 
             const newSub = manager.create(Subscription, {
@@ -251,14 +258,29 @@ export class SupportService {
                 autoRenew: false,
             });
             await manager.save(newSub);
+
+            if (couponCode && price > 0) {
+                const result = await this.couponService.redeemCoupon(
+                    couponCode, userId, 'plan', price,
+                    credit > 0 ? CouponContext.PLAN_UPGRADE : CouponContext.PLAN_SUBSCRIPTION,
+                    newSub.id, manager,
+                );
+                finalPrice = result.finalPrice;
+                discountAmount = result.discountAmount;
+            }
+
+            if (finalPrice > 0) {
+                await this.paymentService.handleWalletBalance(supportId, finalPrice, 'SUB', TransactionType.PLAN_SUBSCRIPTION, manager);
+            }
         });
 
         return {
             success: true,
-            message: `Plan "${plan.name}" assigned successfully${credit > 0 ? ` (credit applied: ${credit} DZD)` : ''}`,
+            message: `Plan "${plan.name}" assigned successfully${credit > 0 ? ` (credit applied: ${credit} DZD)` : ''}${discountAmount > 0 ? ` (coupon discount: ${discountAmount} DZD)` : ''}`,
             expiresAt: endDate,
-            cost: price,
+            cost: finalPrice,
             credit,
+            discountAmount,
         };
     }
 
@@ -282,6 +304,8 @@ export class SupportService {
         const intervalDays = currentSub.interval === 'year' ? 365 : 30;
         const credit = Math.floor(remainingDays * (currentPrice / intervalDays));
 
+        const isFree = currentPrice === 0;
+
         return {
             hasActivePlan: true,
             planId: currentSub.planId,
@@ -289,12 +313,13 @@ export class SupportService {
             price: currentPrice,
             interval: currentSub.interval,
             endDate: currentSub.endDate,
-            remainingDays: Math.ceil(remainingDays),
+            remainingDays: isFree ? null : Math.ceil(remainingDays),
             credit,
+            isFree,
         };
     }
 
-    async supportBuyThemeForUser(supportId: string, userId: string, themeId: string) {
+    async supportBuyThemeForUser(supportId: string, userId: string, themeId: string, couponCode?: string) {
         await this.assertUserInList(supportId, userId);
 
         const user = await this.userRepo.findOne({ where: { id: userId } });
@@ -306,17 +331,33 @@ export class SupportService {
         const existing = await this.themeUserRepo.findOne({ where: { userId, themeId } });
         if (existing) throw new BadRequestException('User already owns this theme');
 
-        await this.dataSource.transaction(async (manager) => {
-            await this.paymentService.handleWalletBalance(supportId, theme.price, 'SUB', TransactionType.SELL_THEME, manager);
+        const basePrice = Number(theme.price);
+        let finalPrice = basePrice;
+        let discountAmount = 0;
 
+        await this.dataSource.transaction(async (manager) => {
             const themeUser = manager.create(ThemeUser, { userId, themeId });
             await manager.save(themeUser);
+
+            if (couponCode && basePrice > 0) {
+                const result = await this.couponService.redeemCoupon(
+                    couponCode, userId, 'theme', basePrice,
+                    CouponContext.THEME_PURCHASE, themeUser.id, manager,
+                );
+                finalPrice = result.finalPrice;
+                discountAmount = result.discountAmount;
+            }
+
+            if (finalPrice > 0) {
+                await this.paymentService.handleWalletBalance(supportId, finalPrice, 'SUB', TransactionType.SELL_THEME, manager);
+            }
         });
 
         return {
             success: true,
-            message: `Theme "${theme.name_ar}" purchased for user successfully`,
-            cost: theme.price,
+            message: `Theme "${theme.name_ar}" purchased for user successfully${discountAmount > 0 ? ` (coupon discount: ${discountAmount} DZD)` : ''}`,
+            cost: finalPrice,
+            discountAmount,
         };
     }
 

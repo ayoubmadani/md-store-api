@@ -17,29 +17,61 @@ import { StatusEnum } from '../order/entities/order.entity';
 import { AdminService } from './admine.service';
 import { CreateMessageAdminDto } from './dto/message-admine.dto';
 import { CreateCategoryNicheDto } from '../niche/dto/create-cat-niche.dto';
-import { IsNumber, IsPositive, IsString, IsNotEmpty, IsEnum } from 'class-validator';
+import { IsNumber, IsPositive, IsString, IsNotEmpty, IsEnum, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Query classes
 // Must be CLASSES (not interfaces) — interfaces are erased at runtime and
 // cannot carry emitDecoratorMetadata reflection info.
+//
+// Every field needs at least one class-validator decorator: the global
+// ValidationPipe runs with `whitelist: true`, which silently DROPS any query
+// param that isn't declared with a decorator — so an undecorated `limit`
+// here means `?limit=200` is stripped before the controller ever sees it,
+// and the handler's `limit = 20` default always wins.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class PaginationQuery {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   limit?: number;
 }
 
 export class DateRangeQuery {
+  @IsOptional()
+  @IsString()
   from?: string;
+
+  @IsOptional()
+  @IsString()
   to?: string;
 }
 
 // Combines both so a single @Query() captures all four params cleanly.
 export class DateRangePaginationQuery {
+  @IsOptional()
+  @IsString()
   from?: string;
+
+  @IsOptional()
+  @IsString()
   to?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   limit?: number;
 }
 

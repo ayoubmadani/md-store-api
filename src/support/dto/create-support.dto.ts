@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
+import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class GrantThemeDto {
     @IsUUID()
@@ -71,6 +71,10 @@ export class SupportAssignPlanDto {
     @IsNumber()
     @Min(1)
     days?: number;
+
+    @IsOptional()
+    @IsString()
+    couponCode?: string;
 }
 
 export class SupportBuyThemeDto {
@@ -81,6 +85,10 @@ export class SupportBuyThemeDto {
     @IsUUID()
     @IsNotEmpty()
     themeId: string;
+
+    @IsOptional()
+    @IsString()
+    couponCode?: string;
 }
 
 export class TransferStoreDto {

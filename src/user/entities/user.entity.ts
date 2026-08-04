@@ -16,6 +16,7 @@ export enum AuthProvider {
 export enum UserRole {
     NORMAL_USER = 'NORMAL_USER',
     ADMIN = 'ADMIN',
+    SUPPORT = 'SUPPORT',
 }
 
 @Entity({ name: 'users' })

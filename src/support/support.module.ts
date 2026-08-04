@@ -10,11 +10,13 @@ import { Plan } from '../subscription/entities/plan.entity';
 import { PaymentModule } from '../payment/payment.module';
 import { SupportUser } from './entities/support-users.entity';
 import { Store } from '../store/entities/store.entity';
+import { CouponModule } from '../coupon/coupon.module';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([User, Theme, ThemeUser, Subscription, Plan, SupportUser, Store]),
         PaymentModule,
+        CouponModule,
     ],
     controllers: [SupportController],
     providers: [SupportService],
