@@ -213,6 +213,7 @@ export class UserService {
   }
 
   async initSub(userId: string) {
+     console.log("---------------------------");
     // ✅ findSub تعالج انتهاء الاشتراك أولاً (تجديد/رجوع للمجاني) قبل إرجاع النتيجة،
     // فلا يمكن أن يعتمد هذا على صف "active" قديم لم تتم معالجة انتهائه بعد.
     const sub = await this.subscriptionService.findSub(userId);

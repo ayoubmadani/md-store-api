@@ -13,6 +13,7 @@ import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { Category } from '../category/entities/category.entity';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { UserService } from '../user/user.service';
 import { Show } from '../show/entity/show.entity';
 import { Product } from '../product/entities/product.entity';
 import { Domain } from '../domain/entities/domain.entity';
@@ -46,6 +47,7 @@ export class StoreService {
 
 
         private readonly subscriptionService: SubscriptionService,
+        private readonly userService: UserService,
     ) { }
 
     // ─── helpers ─────────────────────────────────────────────────────────────
@@ -331,6 +333,16 @@ export class StoreService {
             .getOne();
 
         if (!store) return null;
+
+        // ✅ فرض حدود الخطة (متاجر/منتجات/بيكسل/صفحات هبوط) وإرجاع الثيمات غير المصرّح
+        // بها يتم بشكل كسول (lazy) فقط عبر initSub — وهذا المسار (زيارة المتجر من قبل
+        // الزوار) لم يكن يستدعيها أبداً سابقاً، فإذا لم يفتح التاجر لوحة التحكم بعد
+        // انتهاء اشتراكه تبقى الموارد الزائدة والثيم غير المصرّح به ظاهرَين للزوار إلى
+        // ما لا نهاية. نستدعيها هنا في الخلفية (بدون await) حتى لا تُبطئ استجابة
+        // المتجر — أي تصحيح سيُطبَّق بحلول الزيارة التالية.
+        if (store.user?.id) {
+            this.userService.initSub(store.user.id).catch(() => {});
+        }
 
         // 2. منطق جلب التصنيفات (تم تحديثه هنا بالاعتماد على الـ CTE العاودي ليتوافق مع التعديل الجديد)
         let categoryIds: string[] = [];

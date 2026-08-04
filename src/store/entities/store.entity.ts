@@ -100,7 +100,7 @@ export class Store {
   themeUser: ThemeUser;
 
   @Column({ nullable: true })
-  themeId: string;
+  themeId: string | null;
 
   // تغيير من OneToOne إلى ManyToOne
   @ManyToOne(() => Theme, (theme) => theme.stores, { // لاحظ تغيير theme.store إلى theme.stores

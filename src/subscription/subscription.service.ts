@@ -150,20 +150,34 @@ export class SubscriptionService {
     // (وليس مملوكاً فعلياً عبر الشراء) يجب إرجاعه إلى الثيم الافتراضي، لأن هذا
     // الوصول كان مشروطاً باستمرار الاشتراك في تلك الخطة تحديداً.
     async revertUnauthorizedThemes(userId: string, activePlanId: string | null): Promise<void> {
-        const [ownedThemes, allowedThemePlans, stores] = await Promise.all([
-            this.themeUserRepo.find({ where: { userId } }),
-            activePlanId ? this.themePlanRepo.find({ where: { planId: activePlanId } }) : Promise.resolve([]),
-            this.storeRepo.find({ where: { user: { id: userId } } }),
+        // 1. جلب الثيمات المملوكة أو المتاحة للباقة الحالية
+
+        const [ownedThemes, allowedThemePlans] = await Promise.all([
+            this.themeUserRepo.find({ select: ['themeId'], where: { userId } }),
+            activePlanId ? this.themePlanRepo.find({ select: ['themeId'], where: { planId: activePlanId } }) : Promise.resolve([]),
         ]);
 
-        const ownedThemeIds = new Set(ownedThemes.map(tu => tu.themeId));
-        const allowedThemeIds = new Set(allowedThemePlans.map(tp => tp.themeId));
+        const allowedThemeIds = Array.from(new Set([
+            ...ownedThemes.map(tu => tu.themeId),
+            ...allowedThemePlans.map(tp => tp.themeId),
+        ]));
 
-        const resets = stores
-            .filter(store => store.themeId && !ownedThemeIds.has(store.themeId) && !allowedThemeIds.has(store.themeId))
-            .map(store => this.storeRepo.update(store.id, { themeId: null as any }));
+        // 2. بناء استعلام التحديث المباشر للمتاجر
+        // ملاحظة: أسماء الأعمدة الفعلية في Postgres محفوظة بحروف كبيرة/صغيرة مختلطة
+        // ("userId", "themeId") — بدون علامات اقتباس، Postgres يحوّلها تلقائياً
+        // لحروف صغيرة (userid/themeid) وهي أعمدة غير موجودة → خطأ SQL عند التنفيذ.
+        const query = this.storeRepo
+            .createQueryBuilder()
+            .update()
+            .set({ themeId: null })
+            .where('"userId" = :userId', { userId })
+            .andWhere('"themeId" IS NOT NULL');
 
-        if (resets.length > 0) await Promise.all(resets);
+        if (allowedThemeIds.length > 0) {
+            query.andWhere('"themeId" NOT IN (:...allowedThemeIds)', { allowedThemeIds });
+        }
+
+        await query.execute();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

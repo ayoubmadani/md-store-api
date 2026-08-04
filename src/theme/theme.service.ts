@@ -14,6 +14,7 @@ import { HIDDEN_TYPE_NAMES } from './theme.constants';
 import { CouponService } from '../coupon/coupon.service';
 import { CouponContext } from '../coupon/entities/coupon-redemption.entity';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { log } from 'console';
 
 @Injectable()
 export class ThemeService {
@@ -237,7 +238,7 @@ async getPlanInfo(userId: string) {
       await queryRunner.commitTransaction();
       return this.res(true, 'Theme installed successfully');
 
-    } catch (error) {
+    } catch (error:any) {
       await queryRunner.rollbackTransaction();
       return this.res(false, error.message || 'Installation failed');
     } finally {
@@ -246,8 +247,11 @@ async getPlanInfo(userId: string) {
   }
 
   async activeTheme(userId, { themeId, storeId, isDefault }) {
+
     if (isDefault === true || !themeId) {
-      await this.storeRepo.update(storeId, { themeUserId: null });
+      console.log(!themeId);
+      
+      await this.storeRepo.update(storeId, { themeId: null });
       return this.res(true, 'Default theme activated successfully');
     }
 
