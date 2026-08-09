@@ -30,6 +30,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { PaymentService } from '../payment/payment.service';
 import { Transaction, TransactionType } from '../payment/entities/transaction.entity';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local shape types — used only as plain type annotations inside the service,
@@ -136,6 +137,8 @@ export class AdminService {
         private readonly planRepo : Repository<Plan>,
 
         private readonly paymentService: PaymentService,
+
+        private readonly subscriptionService: SubscriptionService,
 
         // 2. احقن الـ DataSource هنا
         private readonly dataSource: DataSource,
@@ -369,6 +372,16 @@ export class AdminService {
         await this.themeUserRepo.save(themeUser);
 
         return { success: true, message: 'Theme assigned successfully' };
+    }
+
+    async getUserSubscription(id: string) {
+        await this.getUserById(id); // ensure exists
+        return this.subscriptionService.findSub(id);
+    }
+
+    async assignPlanToUser(id: string, planId: string, interval: 'month' | 'year' = 'month') {
+        await this.getUserById(id); // ensure exists
+        return this.subscriptionService.adminAssignPlan(id, planId, interval);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

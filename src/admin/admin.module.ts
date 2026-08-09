@@ -31,11 +31,13 @@ import { CategoryNiche } from '../niche/entities/category-niche.entity';
 import { ThemePlan } from '../theme/entities/theme-plan.entity';
 import { Plan } from '../subscription/entities/plan.entity';
 import { PaymentModule } from '../payment/payment.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 
 @Module({
     imports: [
         PaymentModule,
+        SubscriptionModule,
         TypeOrmModule.forFeature([
             User,
             Product,

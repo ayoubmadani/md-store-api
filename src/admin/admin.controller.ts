@@ -17,7 +17,7 @@ import { StatusEnum } from '../order/entities/order.entity';
 import { AdminService } from './admine.service';
 import { CreateMessageAdminDto } from './dto/message-admine.dto';
 import { CreateCategoryNicheDto } from '../niche/dto/create-cat-niche.dto';
-import { IsNumber, IsPositive, IsString, IsNotEmpty, IsEnum, IsOptional } from 'class-validator';
+import { IsNumber, IsPositive, IsString, IsNotEmpty, IsEnum, IsOptional, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +95,16 @@ export class AssignThemeDto {
   @IsString()
   @IsNotEmpty()
   themeId: string;
+}
+
+export class AssignPlanDto {
+  @IsString()
+  @IsNotEmpty()
+  planId: string;
+
+  @IsOptional()
+  @IsIn(['month', 'year'])
+  interval?: 'month' | 'year';
 }
 
 export class UpdateOrderStatusDto {
@@ -187,6 +197,8 @@ export class AdminController {
   // GET    /admin/users/:id/transactions
   // POST   /admin/users/:id/wallet/recharge
   // POST   /admin/users/:id/theme
+  // GET    /admin/users/:id/subscription
+  // POST   /admin/users/:id/plan
   // ═══════════════════════════════════════════════════════════════════════════
 
   @Get('users')
@@ -250,6 +262,19 @@ export class AdminController {
     @Body() dto: AssignThemeDto,
   ) {
     return this.adminService.assignThemeToUser(id, dto.themeId);
+  }
+
+  @Get('users/:id/subscription')
+  getUserSubscription(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getUserSubscription(id);
+  }
+
+  @Post('users/:id/plan')
+  assignPlanToUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignPlanDto,
+  ) {
+    return this.adminService.assignPlanToUser(id, dto.planId, dto.interval ?? 'month');
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

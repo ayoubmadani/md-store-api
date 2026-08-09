@@ -324,6 +324,28 @@ export class SubscriptionService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // منح خطة لمستخدم من طرف الأدمن مباشرة، بدون خصم من المحفظة
+    async adminAssignPlan(userId: string, planId: string, interval: 'month' | 'year' = 'month') {
+        const plan = await this.planRepo.findOne({ where: { id: planId } });
+        if (!plan) throw new NotFoundException('الخطة غير موجودة');
+
+        await this.subRepo.update({ userId, status: 'active' }, { status: 'expired' });
+
+        const startDate = new Date();
+        const endDate = new Date();
+        if (interval === 'month') endDate.setMonth(startDate.getMonth() + 1);
+        else endDate.setFullYear(startDate.getFullYear() + 1);
+
+        const newSub = this.subRepo.create({
+            userId, planId, interval, status: 'active', startDate, endDate, autoRenew: false,
+        });
+        await this.subRepo.save(newSub);
+
+        this.invalidateSubCache(userId);
+        return { success: true, message: `تم ربط المستخدم بخطة ${plan.name} بنجاح`, expiresAt: endDate };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     async setAutoRenew(userId: string, autoRenew: boolean) {
         const subscription = await this.subRepo.findOne({ where: { userId, status: 'active' } });
         if (!subscription) throw new NotFoundException('لا يوجد اشتراك نشط');
