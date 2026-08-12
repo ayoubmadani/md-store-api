@@ -218,17 +218,6 @@ export class DomainService {
       throw new NotFoundException('الدومين غير موجود أو لا ينتمي لهذا المتجر');
     }
 
-    // 2. التحقق من شرط الإبقاء على دومين فرعي واحد على الأقل
-    if (domainRecord.isSub) {
-      const subDomainCount = await this.domainRepo.count({
-        where: { storeId, isSub: true }
-      });
-
-      if (subDomainCount <= 1) {
-        throw new BadRequestException('يجب الإبقاء على دومين فرعي واحد على الأقل للمتجر');
-      }
-    }
-
     const projectId = this.configService.get<string>('TARGET_STORE_ID');
     const token = this.configService.get<string>('MY_SECRET_TOKEN');
 
