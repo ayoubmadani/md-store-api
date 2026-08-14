@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import axios from 'axios';
-import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { CreateDomainDto } from './dto/create-domain.dto';
 import { Domain } from './entities/domain.entity';
@@ -83,7 +82,6 @@ export class DomainService {
 
   // 2. الفحص الدوري (تفعيل آلي)
 
-  @Cron(CronExpression.EVERY_HOUR)
   async handleCron() {
     this.logger.log('بدء فحص حالة الدومينات على Vercel...');
 

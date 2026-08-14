@@ -18,6 +18,7 @@ import { GetUser } from '../user/decorator/get-user.decorator';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('stores')
 export class StoreController {
@@ -41,14 +42,14 @@ export class StoreController {
   }
 
   @Get('domain/:subdomain')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 10000 } })
   async getStoreByDomain(
       @Param('subdomain') subdomain: string,
       @Query('categoryId') categoryId?:string,
       @Query('search') search?:string,
       @Query('page') page?:string,
   ) {
-    console.log("dfddddddddddddddddddddd");
-    
     const store = await this.storeService.getStoreByDomain(subdomain,categoryId,search,page);
     return { success: true, data: store };
   }

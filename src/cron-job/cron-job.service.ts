@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { Subscription } from '../subscription/entities/subscription.entity';
@@ -19,7 +18,6 @@ export class CronJobService {
     private productRepo: Repository<Product>,
   ) { }
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async syncSubscriptionsAndLimits() {
     this.logger.log('جاري فحص الاشتراكات وتحديث القيود...');
     const now = new Date();
