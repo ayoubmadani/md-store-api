@@ -12,6 +12,20 @@ import express from 'express';
 // ✅ إنشاء instance واحد من express
 const server = express();
 
+// ✅ حظر فوري لطلبات بوتات فحص الثغرات (.env, .git, wp-login.php, favicon.ico,
+// دومينات فرعية وهمية من *.vercel.app...) قبل أي معالجة من Nest (body-parser،
+// التوجيه، الـ Guards). هذا يوفر استعلام قاعدة البيانات الذي كان يحدث سابقاً
+// في getStoreByDomain لكل طلب من هذا النوع — نفس منطق middleware.ts في الواجهة
+const SCANNER_PATH_PATTERN =
+  /(^|\/)\.(?!well-known(\/|$))[^/]+|\.(php|aspx?|jsp|cgi|axd|key|pem|tfstate|ico)$|favicon\.(ico|png|jpg|gif)|\.vercel\.app|\b(wp-admin|wp-login|wp-json|phpinfo|_profiler|_debugbar|_ignition|telescope|actuator|nginx_status|server-status|server-info|elmah|id_rsa|id_dsa|id_ecdsa|id_ed25519|credentials\.json|secrets\.(json|yml)|serviceaccountkey|service-account|firebase-adminsdk|firebase-service-account|firebase-config|privatekey|terraform\.tfstate|docker-compose|dockerfile|rclone\.conf|swagger\.json|openapi\.json)\b/i;
+
+server.use((req, res, next) => {
+  if (SCANNER_PATH_PATTERN.test(req.path)) {
+    return res.status(404).end();
+  }
+  next();
+});
+
 // ✅ متغير global للتأكد من تهيئة التطبيق مرة واحدة فقط (Hot Reload في التطوير)
 let cachedApp: any;
 
