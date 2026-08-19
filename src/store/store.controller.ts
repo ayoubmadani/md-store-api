@@ -10,6 +10,7 @@ import {
   Delete,
   Put,
   Query,
+  NotFoundException,
 } from '@nestjs/common';
 import { StoreService } from './store.service';
 import { CreateFullStoreDto } from './dto/create-full-store.dto';
@@ -22,7 +23,7 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('stores')
 export class StoreController {
-  constructor(private readonly storeService: StoreService) {}
+  constructor(private readonly storeService: StoreService) { }
 
   private getUserId(user: any): string {
     const userId = user.id || user.sub;
@@ -42,15 +43,25 @@ export class StoreController {
   }
 
   @Get('domain/:subdomain')
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 20, ttl: 10000 } })
   async getStoreByDomain(
-      @Param('subdomain') subdomain: string,
-      @Query('categoryId') categoryId?:string,
-      @Query('search') search?:string,
-      @Query('page') page?:string,
+    @Param('subdomain') subdomain: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
   ) {
-    const store = await this.storeService.getStoreByDomain(subdomain,categoryId,search,page);
+
+    const cleanSubdomain = subdomain.toLowerCase().trim();
+
+    // 1. معالجة طلب أيقونة الموقع مباشرة
+    if (cleanSubdomain === 'favicon.ico') {
+      throw new NotFoundException('Favicon icon is not applicable for API endpoints');
+    }
+
+    if (cleanSubdomain.startsWith('ns1.') || cleanSubdomain.startsWith('ns2.')) {
+      throw new NotFoundException('Nameservers are not valid store domains');
+    }
+
+    const store = await this.storeService.getStoreByDomain(subdomain, categoryId, search, page);
     return { success: true, data: store };
   }
 
@@ -76,7 +87,7 @@ export class StoreController {
     @GetUser() user: any,
   ) {
     console.log(dto);
-    
+
     const store = await this.storeService.updateFullStore(storeId, dto, this.getUserId(user));
     //return { success: true, data: store };
   }
