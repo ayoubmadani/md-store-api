@@ -13,6 +13,7 @@ import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { Category } from '../category/entities/category.entity';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { UserService } from '../user/user.service';
 import { Show } from '../show/entity/show.entity';
 import { Product } from '../product/entities/product.entity';
 import { Domain } from '../domain/entities/domain.entity';
@@ -46,6 +47,7 @@ export class StoreService {
 
 
         private readonly subscriptionService: SubscriptionService,
+        private readonly userService: UserService,
     ) { }
 
     // ─── helpers ─────────────────────────────────────────────────────────────
@@ -167,6 +169,9 @@ export class StoreService {
                 currency: storeDto.currency,
                 language: storeDto.language,
                 cart: storeDto.cart,
+                supportQty: storeDto.supportQty,
+                supportFreeShipping: storeDto.supportFreeShipping,
+                freeShippingMinAmount: storeDto.freeShippingMinAmount,
                 user: { id: userId },
                 niche: storeDto.nicheId ? { id: storeDto.nicheId } : null,
             } as any);
@@ -252,6 +257,9 @@ export class StoreService {
                 store.currency = dto.store.currency ?? store.currency;
                 store.language = dto.store.language ?? store.language;
                 store.cart = dto.store.cart ?? store.cart;
+                store.supportQty = dto.store.supportQty ?? store.supportQty;
+                store.supportFreeShipping = dto.store.supportFreeShipping ?? store.supportFreeShipping;
+                store.freeShippingMinAmount = dto.store.freeShippingMinAmount ?? store.freeShippingMinAmount;
                 if (dto.store.nicheId) store.niche = { id: dto.store.nicheId } as any;
             }
 
@@ -330,18 +338,16 @@ export class StoreService {
             .addOrderBy('categories.sortOrder', 'ASC')
             .getOne();
 
-        if (!store) throw new NotFoundException('Store not found');
+        if (!store) return null;
 
-        // ✅ فحص انتهاء الاشتراك وإرجاع الثيمات غير المصرّح بها يتم بشكل كسول (lazy)
-        // عبر findSub — وهذا المسار (زيارة المتجر من قبل الزوار) لم يكن يستدعيها أبداً
-        // سابقاً، فإذا لم يفتح التاجر لوحة التحكم بعد انتهاء اشتراكه يبقى الثيم غير
-        // المصرّح به ظاهراً للزوار إلى ما لا نهاية. نستدعيها هنا في الخلفية (بدون
-        // await) حتى لا تُبطئ استجابة المتجر — أي تصحيح سيُطبَّق بحلول الزيارة التالية.
-        // ⚠️ عمداً findSub وليس initSub: initSub يشمل أيضاً تعطيل المتاجر/المنتجات/
-        // البيكسلات/صفحات الهبوط الزائدة عن حد الخطة، وهذا يجب ألا يُشغَّل أبداً من
-        // زيارة عامة غير موثّقة (قد يعطّل متجر التاجر نفسه كأثر جانبي لزيارة زائر).
+        // ✅ فرض حدود الخطة (متاجر/منتجات/بيكسل/صفحات هبوط) وإرجاع الثيمات غير المصرّح
+        // بها يتم بشكل كسول (lazy) فقط عبر initSub — وهذا المسار (زيارة المتجر من قبل
+        // الزوار) لم يكن يستدعيها أبداً سابقاً، فإذا لم يفتح التاجر لوحة التحكم بعد
+        // انتهاء اشتراكه تبقى الموارد الزائدة والثيم غير المصرّح به ظاهرَين للزوار إلى
+        // ما لا نهاية. نستدعيها هنا في الخلفية (بدون await) حتى لا تُبطئ استجابة
+        // المتجر — أي تصحيح سيُطبَّق بحلول الزيارة التالية.
         if (store.user?.id) {
-            this.subscriptionService.findSub(store.user.id).catch(() => {});
+            this.userService.initSub(store.user.id).catch(() => {});
         }
 
         // 2. منطق جلب التصنيفات (تم تحديثه هنا بالاعتماد على الـ CTE العاودي ليتوافق مع التعديل الجديد)

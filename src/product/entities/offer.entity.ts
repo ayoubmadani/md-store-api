@@ -11,11 +11,17 @@ export class Offer {
   @Column()
   name: string;
 
+  @Column({ nullable: true })
+  subTitle?: string;
+
   @Column('int')
   quantity: number;
 
   @Column('float')
   price: number;
+
+  @Column({ default: false })
+  shippingFree: boolean;
 
   @ManyToOne(() => Product, (product) => product.offers, { onDelete: 'CASCADE' })
   product: Product;

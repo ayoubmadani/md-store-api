@@ -61,6 +61,10 @@ export class CreateProductDto {
   isActive?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  shippingFree?: boolean;
+
+  @IsOptional()
   @IsUUID('4', { message: 'معرف التصنيف غير صالح' })
   categoryId?: string;
 

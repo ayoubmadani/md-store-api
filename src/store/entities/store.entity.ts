@@ -49,6 +49,15 @@ export class Store {
   @Column({ default: true })
   cart: boolean;
 
+  @Column({ default: true })
+  supportQty: boolean;
+
+  @Column({ default: false })
+  supportFreeShipping: boolean;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  freeShippingMinAmount: number;
+
   @CreateDateColumn()
   createdAt: Date;
 

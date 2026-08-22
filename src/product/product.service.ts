@@ -124,6 +124,7 @@ export class ProductService {
         priceOriginal: dto.priceOriginal, productImage: dto.productImage,
         sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
         isActive: dto.isActive ?? true,
+        shippingFree: dto.shippingFree ?? false,
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
@@ -164,8 +165,11 @@ export class ProductService {
       for (const offerDto of dto.offers ?? []) {
         await queryRunner.manager.save(
           this.offerRepository.create({
-            name: offerDto.name, quantity: Number(offerDto.quantity),
-            price: Number(offerDto.price), product: savedProduct,
+            name: offerDto.name, subTitle: offerDto.subTitle,
+            quantity: Number(offerDto.quantity),
+            price: Number(offerDto.price),
+            shippingFree: offerDto.shippingFree ?? false,
+            product: savedProduct,
           }),
         );
       }
@@ -207,6 +211,7 @@ export class ProductService {
         priceOriginal: dto.priceOriginal, productImage: dto.productImage,
         sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
         isActive: dto.isActive ?? true,
+        shippingFree: dto.shippingFree ?? false,
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
@@ -251,8 +256,11 @@ export class ProductService {
       for (const offerDto of dto.offers ?? []) {
         await queryRunner.manager.save(
           this.offerRepository.create({
-            name: offerDto.name, quantity: Number(offerDto.quantity),
-            price: Number(offerDto.price), product: savedProduct,
+            name: offerDto.name, subTitle: offerDto.subTitle,
+            quantity: Number(offerDto.quantity),
+            price: Number(offerDto.price),
+            shippingFree: offerDto.shippingFree ?? false,
+            product: savedProduct,
           }),
         );
       }
@@ -379,6 +387,7 @@ export class ProductService {
         slug: dto.slug ?? product.slug,
         stock: dto.stock !== undefined ? Number(dto.stock) : product.stock,
         isActive: dto.isActive ?? product.isActive,
+        shippingFree: dto.shippingFree ?? product.shippingFree,
         category: dto.categoryId ? { id: dto.categoryId } : product.category,
       });
       await queryRunner.manager.save(product);
@@ -445,8 +454,11 @@ export class ProductService {
           await queryRunner.manager.save(
             this.offerRepository.create({
               id: isUuid(offerDto.id) ? offerDto.id : undefined,
-              name: offerDto.name, quantity: Number(offerDto.quantity),
-              price: Number(offerDto.price), product,
+              name: offerDto.name, subTitle: offerDto.subTitle,
+              quantity: Number(offerDto.quantity),
+              price: Number(offerDto.price),
+              shippingFree: offerDto.shippingFree ?? false,
+              product,
             }),
           );
         }

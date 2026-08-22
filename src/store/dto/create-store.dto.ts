@@ -1,5 +1,5 @@
 // create-store.dto.ts
-import { IsString, IsOptional, IsUUID, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsBoolean, IsNumber, Min } from 'class-validator';
 
 export class CreateStoreDto {
   @IsString() name: string;
@@ -8,4 +8,7 @@ export class CreateStoreDto {
   @IsOptional() @IsString() language?: string;
   @IsOptional() @IsUUID() nicheId?: string;
   @IsOptional() @IsBoolean() cart?: boolean;
+  @IsOptional() @IsBoolean() supportQty?: boolean;
+  @IsOptional() @IsBoolean() supportFreeShipping?: boolean;
+  @IsOptional() @IsNumber() @Min(0) freeShippingMinAmount?: number;
 }

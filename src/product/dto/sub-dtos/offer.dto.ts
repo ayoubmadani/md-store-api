@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean } from 'class-validator';
 
 export class OfferDto {
   @IsString()
@@ -9,9 +9,17 @@ export class OfferDto {
   @IsNotEmpty()
   name: string;
 
+  @IsOptional()
+  @IsString()
+  subTitle?: string;
+
   @IsNotEmpty()
   quantity: string | number;
 
   @IsNotEmpty()
   price: string | number;
+
+  @IsOptional()
+  @IsBoolean()
+  shippingFree?: boolean;
 }

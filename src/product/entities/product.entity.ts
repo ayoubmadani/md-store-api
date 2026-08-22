@@ -47,6 +47,9 @@ export class Product {
   @Column({ default: true })
   isActive: boolean;
 
+  @Column({ default: false })
+  shippingFree: boolean;
+
   @Column({ default: 0 })
   stock: number;
 
