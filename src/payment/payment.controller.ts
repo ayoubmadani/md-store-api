@@ -1,4 +1,4 @@
-import { Controller, Post, Req, Res, Headers, HttpStatus, Get, UseGuards, Body } from '@nestjs/common';
+import { Controller, Post, Req, Res, Headers, HttpStatus, Get, UseGuards, Body, Redirect, Query } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { verifySignature } from '@chargily/chargily-pay';
 import { PaymentService } from './payment.service';
@@ -57,6 +57,20 @@ export class PaymentController {
       return 'Error processing webhook';
     }
   }
+
+
+  @Get('payment-success')
+  @Redirect()
+  paymentSuccess(@Query('checkout_id') checkoutId: string) {
+    return this.paymentService.paymentStatus(checkoutId , "Success");
+  }
+
+  @Get('payment-failed')
+  @Redirect()
+  paymentFailed(@Query('checkout_id') checkoutId: string) {
+    return this.paymentService.paymentStatus(checkoutId , "Failed");
+  }
+  
 
   @Post('top-up')
   @UseGuards(AuthGuard)

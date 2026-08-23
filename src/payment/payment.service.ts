@@ -33,7 +33,7 @@ export class PaymentService {
                 amount: amount, // المبلغ بالدينار الجزائري
                 currency: 'dzd',
                 success_url: `${this.config.get('Api_URL')}/payment/payment-success`,
-                failure_url: `${this.config.get('Api_URL')}/payment/payment-failure`,
+                failure_url: `${this.config.get('Api_URL')}/payment/payment-failed`,
                 metadata: {
                     userId: String(userId),
                     action: 'top_up'
@@ -140,6 +140,28 @@ export class PaymentService {
         } finally {
             if (queryRunner) await queryRunner.release();
         }
+    }
+
+    // status payment 
+
+    async paymentStatus(checkoutId: string, status: 'Success' | 'Failed') {
+        if (status === 'Success') {
+            const transaction = await this.transactionRepo.findOne({
+                where: { providerTransactionId: checkoutId },
+            });
+
+            const amountValue = transaction ? transaction.amount : 0;
+
+            return {
+                url: `https://app.mdstore.top/dashboard/wallet?payment=success&amount=${amountValue}`,
+                statusCode: 302,
+            };
+        }
+
+        return {
+            url: `https://app.mdstore.top/dashboard/wallet?payment=failed`,
+            statusCode: 302,
+        };
     }
 
     // 3 bay
