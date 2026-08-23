@@ -81,6 +81,7 @@ export class SubscriptionService {
             if (finalPrice > 0) {
                 await this.paymentService.handleWalletBalance(
                     userId, finalPrice, 'SUB', TransactionType.PLAN_SUBSCRIPTION, queryRunner.manager,
+                    undefined, undefined, planId,
                 );
             }
 
@@ -199,6 +200,7 @@ export class SubscriptionService {
 
             await this.paymentService.handleWalletBalance(
                 userId, price, 'SUB', TransactionType.PLAN_SUBSCRIPTION, queryRunner.manager,
+                undefined, undefined, planId,
             );
 
             const newSub = this.subRepo.create({ userId, planId, interval, status: 'active', startDate, endDate, autoRenew: true });
@@ -302,6 +304,7 @@ export class SubscriptionService {
             if (finalPrice > 0) {
                 await this.paymentService.handleWalletBalance(
                     userId, finalPrice, 'SUB', TransactionType.PLAN_UPGRADE, queryRunner.manager,
+                    undefined, undefined, planId,
                 );
             }
 

@@ -1,4 +1,6 @@
 import { User } from '../../user/entities/user.entity';
+import { Theme } from '../../theme/entities/theme.entity';
+import { Plan } from '../../subscription/entities/plan.entity';
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, JoinColumn } from 'typeorm';
 
 export enum TransactionAction {
@@ -43,6 +45,22 @@ export class Transaction {
     @ManyToOne(() => User, (user) => user.transactions)
     @JoinColumn({ name: "userId" })
     user: User;
+
+    // --- مرجع الغرض المشترى (لمعرفة أي ثيم/خطة بالضبط) ---
+    @Column({ type: 'uuid', nullable: true })
+    themeId: string | null;
+
+    @ManyToOne(() => Theme, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'themeId' })
+    theme: Theme;
+
+    @Column({ type: 'uuid', nullable: true })
+    planId: string | null;
+
+    @ManyToOne(() => Plan, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'planId' })
+    plan: Plan;
+    // ---------------------------
 
     @CreateDateColumn()
     createdAt: Date;

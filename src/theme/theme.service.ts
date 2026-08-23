@@ -232,6 +232,8 @@ async getPlanInfo(userId: string) {
           'SUB',
           TransactionType.SELL_THEME,
           queryRunner.manager,
+          undefined,
+          theme.id,
         );
       }
 

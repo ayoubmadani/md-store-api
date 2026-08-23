@@ -342,6 +342,10 @@ export class AdminService {
                 amount: t.action === 'payment' ? -Number(t.amount) : Number(t.amount),
                 currency: 'DZD',
                 createdAt: t.createdAt,
+                themeId: t.themeId,
+                themeName: t.theme ? { ar: t.theme.name_ar, en: t.theme.name_en, fr: t.theme.name_fr } : null,
+                planId: t.planId,
+                planName: t.plan?.name ?? null,
             }));
     }
 

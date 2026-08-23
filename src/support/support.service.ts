@@ -270,7 +270,7 @@ export class SupportService {
             }
 
             if (finalPrice > 0) {
-                await this.paymentService.handleWalletBalance(supportId, finalPrice, 'SUB', TransactionType.PLAN_SUBSCRIPTION, manager);
+                await this.paymentService.handleWalletBalance(supportId, finalPrice, 'SUB', TransactionType.PLAN_SUBSCRIPTION, manager, undefined, undefined, planId);
             }
         });
 
@@ -349,7 +349,7 @@ export class SupportService {
             }
 
             if (finalPrice > 0) {
-                await this.paymentService.handleWalletBalance(supportId, finalPrice, 'SUB', TransactionType.SELL_THEME, manager);
+                await this.paymentService.handleWalletBalance(supportId, finalPrice, 'SUB', TransactionType.SELL_THEME, manager, undefined, theme.id);
             }
         });
 

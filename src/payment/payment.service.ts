@@ -74,7 +74,9 @@ export class PaymentService {
         action: "SUB" | "ADD",
         type: TransactionType,
         existingManager?: EntityManager,
-        providerTransactionId?: string // بارامتر جديد
+        providerTransactionId?: string, // بارامتر جديد
+        themeId?: string, // مرجع الثيم عند SELL_THEME
+        planId?: string, // مرجع الخطة عند PLAN_SUBSCRIPTION/PLAN_UPGRADE
     ) {
         const queryRunner = !existingManager ? this.dataSource.createQueryRunner() : null;
         const manager = existingManager || queryRunner!.manager;
@@ -125,6 +127,8 @@ export class PaymentService {
                 amount,
                 userId: String(userId),
                 providerTransactionId, // حفظ المعرف لمنع التكرار مستقبلاً
+                themeId: themeId ?? null,
+                planId: planId ?? null,
                 description: `Operation: ${type} for User ${userId}`
             });
 
@@ -171,7 +175,7 @@ export class PaymentService {
             where: { userId },
             // نستخدم 'user' وليس 'users' لأن هذا هو الاسم في Wallet Entity
             // ونستخدم 'user.transactions' للوصول للعمليات من خلال المستخدم
-            relations: ['user', 'user.transactions'],
+            relations: ['user', 'user.transactions', 'user.transactions.theme', 'user.transactions.plan'],
         });
 
         if (!wallet) {
