@@ -15,29 +15,30 @@ export class ShowServices {
 
     // ... داخل الكلاس
     async addShow(dto: AddShowDto) {
-        console.log(dto);
-        
-        try {
-            // نجهز تاريخ اليوم بصيغة YYYY-MM-DD
-            const today = new Date().toISOString().split('T')[0];
+        // نجهز تاريخ اليوم بصيغة YYYY-MM-DD
+        const today = new Date().toISOString().split('T')[0];
 
-            // upsert تعني: "أضف السجل، وإذا كان موجوداً مسبقاً (بناءً على الـ Unique) فلا تفعل شيئاً"
-            await this.showRepo.upsert(
-                {
-                    ...dto,
-                    dayDate: today, // نمرر تاريخ اليوم للمقارنة
-                },
-                {
-                    conflictPaths: ['visitorId', 'productId', 'storeId', 'dayDate'],
-                    skipUpdateIfNoValuesChanged: true, // لا تقم بتحديث السجل إذا كان موجوداً
-                }
-            );
+        // upsert() على عمود nullable لا يعمل: في Postgres قيمتان NULL لا تُعتبران متطابقتين
+        // ضمن قيد Unique، وبما أن productId/storeId/lpId/builderPageId غالباً NULL (كل
+        // صفحة تمرر واحداً منها فقط)، كان القيد الحالي لا يمنع أي تكرار عملياً. لذا نتحقق
+        // يدوياً عن وجود سجل بنفس الزائر + نفس السياق (بمطابقة صريحة على NULL) + نفس اليوم.
+        const existing = await this.showRepo.findOne({
+            where: {
+                visitorId: dto.visitorId,
+                dayDate: today,
+                productId: dto.productId ?? IsNull(),
+                storeId: dto.storeId ?? IsNull(),
+                lpId: dto.lpId ?? IsNull(),
+                builderPageId: dto.builderPageId ?? IsNull(),
+            },
+        });
 
+        if (existing) {
             return { success: true };
-        } catch (error) {
-            // في حال فشل الـ upsert بسبب التكرار، لن ينهار السيرفر بل سيتجاهل الطلب
-            return { success: false, message: 'Request ignored to prevent duplication' };
         }
+
+        await this.showRepo.save(this.showRepo.create({ ...dto, dayDate: today }));
+        return { success: true };
     }
     // الطريقة الصحيحة للتحقق من أن الحقل ليس null في TypeORM هي Not(IsNull())
     async getCountShowStore(userId: string) {
