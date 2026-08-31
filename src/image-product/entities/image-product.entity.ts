@@ -12,6 +12,9 @@ export class ImageProduct {
     @Column()
     imageUrl: string
 
+    @Column({ type: 'int', default: 0 })
+    order: number
+
     @ManyToOne(() => Product, (product) => product.imagesProduct, { onDelete: 'CASCADE' })
     product: Product;
 }

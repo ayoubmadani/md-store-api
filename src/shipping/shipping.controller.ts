@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ShippingService } from "./shipping.service";
 import { WilayaDto } from "./dto/wilaya.dto";
 import { CommuneDto } from "./dto/commune.dto";
+import { DeleteShippingDto } from "./dto/delete-shipping.dto";
+import { AddMissingShippingDto } from "./dto/add-missing-shipping.dto";
 import { AuthGuard } from "../auth/guard/auth.guard";
 import { GetUser } from "../user/decorator/get-user.decorator";
 
@@ -65,6 +67,24 @@ export class ShippingController {
         return this.shippingService.updateShippingPrices(userId, dto)
     }
 
+    @Post('delete-shipping')
+    @UseGuards(AuthGuard)
+    deleteShippingPrices(
+        @GetUser() user: any,
+        @Body() dto: DeleteShippingDto
+    ) {
+        const userId = user.sub || user.Id
+        return this.shippingService.deleteShippingPrices(userId, dto.wilayaIds)
+    }
 
+    @Post('add-missing-shipping')
+    @UseGuards(AuthGuard)
+    addMissingWilayas(
+        @GetUser() user: any,
+        @Body() dto: AddMissingShippingDto
+    ) {
+        const userId = user.sub || user.Id
+        return this.shippingService.addMissingWilayas(userId, dto.wilayaIds)
+    }
 
 }

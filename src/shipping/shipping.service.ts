@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { WilayaDto } from "./dto/wilaya.dto";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Wilaya } from "./entity/wilaya.entity";
-import { Repository } from "typeorm";
+import { Repository, In } from "typeorm";
 import { Commune } from "./entity/commune.entity";
 import { CommuneDto } from "./dto/commune.dto";
 import { Shipping } from "./entity/shipping.entity";
@@ -68,9 +68,9 @@ export class ShippingService {
             shippingData = wilayas.map((wilaya) => ({
                 userId: userId, // تأكد أن هذا هو اسم العمود الفعلي في جدول الـ Shipping
                 wilayaId: wilaya.id,
-                priceHome: 600,
-                priceOffice: 400,
-                priceReturn: 200,
+                priceHome: 0,
+                priceOffice: 0,
+                priceReturn: 0,
             }));
         } else {
             shippingData = jsonWilayas.map((wilaya) => ({
@@ -174,7 +174,41 @@ export class ShippingService {
         return { message: "تم تحديث الحقول المرسلة فقط، والباقي بقي كما هو." };
     }
 
+    async deleteShippingPrices(userId: string, wilayaIds: number[]) {
+        await this.shippingRepo.delete({ userId, wilayaId: In(wilayaIds) });
+        return { message: "تم حذف الولايات المحددة." };
+    }
 
+    // يضيف فقط الولايات التي لا تملك سطر أسعار لهذا المستخدم بعد (بعد حذفها مثلاً)،
+    // بعملية insert صرفة بدون لمس أسعار الولايات الموجودة أصلاً.
+    // إذا مُرِّر wilayaIds، تُقتصر الإضافة على تقاطعها مع الولايات الناقصة فعلاً
+    // (نعيد التحقق من طرف السيرفر بدل الوثوق بما اختاره العميل في نافذة الاختيار)
+    async addMissingWilayas(userId: string, wilayaIds?: number[]) {
+        const [allWilayas, existingRows] = await Promise.all([
+            this.wilayaRepo.find({ order: { id: 'ASC' } }),
+            this.shippingRepo.find({ where: { userId }, select: ['wilayaId'] }),
+        ]);
 
+        const existingIds = new Set(existingRows.map((row) => row.wilayaId));
+        let missingWilayas = allWilayas.filter((wilaya) => !existingIds.has(wilaya.id));
+
+        if (wilayaIds && wilayaIds.length > 0) {
+            const requestedIds = new Set(wilayaIds);
+            missingWilayas = missingWilayas.filter((wilaya) => requestedIds.has(wilaya.id));
+        }
+
+        if (missingWilayas.length > 0) {
+            const newRows = missingWilayas.map((wilaya) => this.shippingRepo.create({
+                userId,
+                wilayaId: wilaya.id,
+                priceHome: 0,
+                priceOffice: 0,
+                priceReturn: 0,
+            }));
+            await this.shippingRepo.insert(newRows);
+        }
+
+        return { added: missingWilayas.length, wilayas: await this.getShipping(userId) };
+    }
 
 }

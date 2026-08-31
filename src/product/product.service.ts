@@ -174,9 +174,9 @@ export class ProductService {
         );
       }
 
-      for (const imageUrl of dto.images ?? []) {
+      for (const [index, imageUrl] of (dto.images ?? []).entries()) {
         await queryRunner.manager.save(
-          this.imageProductRepository.create({ imageUrl, product: savedProduct }),
+          this.imageProductRepository.create({ imageUrl, order: index, product: savedProduct }),
         );
       }
 
@@ -266,9 +266,9 @@ export class ProductService {
       }
 
       // --- معالجة الصور الإضافية ---
-      for (const imageUrl of dto.images ?? []) {
+      for (const [index, imageUrl] of (dto.images ?? []).entries()) {
         await queryRunner.manager.save(
-          this.imageProductRepository.create({ imageUrl, product: savedProduct }),
+          this.imageProductRepository.create({ imageUrl, order: index, product: savedProduct }),
         );
       }
 
@@ -332,6 +332,7 @@ export class ProductService {
 
     // الترتيب والترقيم الصفحي
     qb.orderBy('product.createdAt', 'DESC')
+      .addOrderBy('images.order', 'ASC')
       .skip((page - 1) * limit)
       .take(limit);
 
@@ -354,6 +355,7 @@ export class ProductService {
     const product = await this.productRepository.findOne({
       where: { id, store: { id: storeId } },
       relations: ['category', 'imagesProduct', 'attributes', 'attributes.variants', 'variantDetails', 'offers'],
+      order: { imagesProduct: { order: 'ASC' } },
     });
     if (!product) throw new NotFoundException(`المنتج #${id} غير موجود`);
     return product;
@@ -413,8 +415,8 @@ export class ProductService {
 
       if (dto.images) {
         await queryRunner.manager.delete(ImageProduct, { product: { id } });
-        for (const imgUrl of dto.images) {
-          await queryRunner.manager.save(this.imageProductRepository.create({ imageUrl: imgUrl, product }));
+        for (const [index, imgUrl] of dto.images.entries()) {
+          await queryRunner.manager.save(this.imageProductRepository.create({ imageUrl: imgUrl, order: index, product }));
         }
       }
 
@@ -603,12 +605,12 @@ export class ProductService {
     if (categoryId) qb.andWhere('product.categoryId = :categoryId', { categoryId });
     if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
 
-    qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
+    qb.orderBy('product.createdAt', 'DESC').addOrderBy('images.order', 'ASC').skip((page - 1) * limit).take(limit);
     const [products, total] = await qb.getManyAndCount();
 
     return { products, total, page, totalPages: Math.ceil(total / limit) };
   }
-  
+
 
   async findOneByDomain(domainName: string, productId: string): Promise<any> {
     // 1. تنظيف الدومين من www.
@@ -630,7 +632,7 @@ export class ProductService {
         'category', 'imagesProduct', 'attributes', 'attributes.variants',
         'variantDetails', 'offers',
       ],
-      order: { attributes: { id: 'ASC' } },
+      order: { attributes: { id: 'ASC' }, imagesProduct: { order: 'ASC' } },
     });
 
     if (!product) throw new NotFoundException('المنتج غير موجود في هذا المتجر');
@@ -713,7 +715,7 @@ export class ProductService {
     if (categoryId) qb.andWhere('product.categoryId = :categoryId', { categoryId });
     if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
 
-    qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
+    qb.orderBy('product.createdAt', 'DESC').addOrderBy('images.order', 'ASC').skip((page - 1) * limit).take(limit);
     const [products, total] = await qb.getManyAndCount();
 
     return { products, total, page, totalPages: Math.ceil(total / limit) };
@@ -737,7 +739,7 @@ export class ProductService {
         'category', 'imagesProduct', 'attributes', 'attributes.variants',
         'variantDetails', 'offers',
       ],
-      order: { attributes: { id: 'ASC' } },
+      order: { attributes: { id: 'ASC' }, imagesProduct: { order: 'ASC' } },
     });
 
     if (!product) throw new NotFoundException('المنتج غير موجود في هذا المتجر');
