@@ -97,15 +97,15 @@ export class BuilderPagesService {
   async getProductInfo(productId: string) {
     const product = await this.productRepo.findOne({
       where: { id: productId },
-      relations: ['store', 'store.user', 'attributes', 'attributes.variants', 'variantDetails', 'offers'],
-      order: { attributes: { id: 'ASC' } },
+      relations: ['store', 'store.user', 'attributes', 'attributes.variants', 'variantDetails', 'offers', 'imagesProduct'],
+      order: { attributes: { id: 'ASC' }, imagesProduct: { order: 'ASC' } },
     });
     if (!product) throw new NotFoundException('المنتج غير موجود');
     return {
       id: product.id,
       name: product.name,
       price: product.price,
-      productImage: product.productImage,
+      productImage: product.imagesProduct?.[0]?.imageUrl,
       storeId: product.store?.id,
       userId: product.store?.user?.id,
       domain: product.store?.subdomain,

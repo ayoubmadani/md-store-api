@@ -41,9 +41,6 @@ export class Product {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   priceOriginal?: number;
 
-  @Column({ nullable: true })
-  productImage?: string;
-
   @Column({ default: true })
   isActive: boolean;
 

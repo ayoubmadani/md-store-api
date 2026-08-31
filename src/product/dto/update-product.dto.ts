@@ -8,7 +8,6 @@ import {
   IsBoolean,
   Min,
   MaxLength,
-  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AttributeDto } from './sub-dtos/attribute.dto';
@@ -34,10 +33,6 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   desc?: string;
-
-  @IsOptional()
-  @IsUrl({}, { message: 'رابط الصورة غير صالح' })
-  productImage?: string;
 
   @IsOptional()
   @IsString()

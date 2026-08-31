@@ -121,7 +121,7 @@ export class ProductService {
     try {
       const product = this.productRepository.create({
         name: dto.name, desc: dto.desc, price: dto.price,
-        priceOriginal: dto.priceOriginal, productImage: dto.productImage,
+        priceOriginal: dto.priceOriginal,
         sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
         isActive: dto.isActive ?? true,
         shippingFree: dto.shippingFree ?? false,
@@ -208,7 +208,7 @@ export class ProductService {
       // --- إنشاء المنتج الأساسي ---
       const product = this.productRepository.create({
         name: dto.name, desc: dto.desc, price: dto.price,
-        priceOriginal: dto.priceOriginal, productImage: dto.productImage,
+        priceOriginal: dto.priceOriginal,
         sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
         isActive: dto.isActive ?? true,
         shippingFree: dto.shippingFree ?? false,
@@ -384,7 +384,6 @@ export class ProductService {
         desc: dto.desc ?? product.desc,
         price: dto.price !== undefined ? Number(dto.price) : product.price,
         priceOriginal: dto.priceOriginal !== undefined ? Number(dto.priceOriginal) : product.priceOriginal,
-        productImage: dto.productImage ?? product.productImage,
         sku: dto.sku ?? product.sku,
         slug: dto.slug ?? product.slug,
         stock: dto.stock !== undefined ? Number(dto.stock) : product.stock,

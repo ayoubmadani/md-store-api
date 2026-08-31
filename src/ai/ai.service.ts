@@ -29,6 +29,7 @@ export class AiService {
     const product = await this.productRepo.findOne({
       where: { id: productId },
       relations: ['category', 'imagesProduct'],
+      order: { imagesProduct: { order: 'ASC' } },
     });
 
     if (!product) {

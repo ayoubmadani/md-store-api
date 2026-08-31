@@ -124,6 +124,7 @@ export class OrdersService {
             .leftJoinAndSelect('o.customerCommune', 'commune')
             .where('o.storeId = :storeId', { storeId })
             .orderBy('o.createdAt', 'DESC')
+            .addOrderBy('img.order', 'ASC')
             .take(limit)
             .skip(skip);
 
@@ -170,6 +171,7 @@ export class OrdersService {
                 'items.variantDetail', 'items.offer',
                 'customerWilaya', 'customerCommune', 'store.user',
             ],
+            order: { items: { product: { imagesProduct: { order: 'ASC' } } } },
         });
 
         console.log(order);

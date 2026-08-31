@@ -384,6 +384,7 @@ export class StoreService {
 
         const [products, totalItems] = await productQuery
             .orderBy('products.createdAt', 'DESC')
+            .addOrderBy('imagesProduct.order', 'ASC')
             .skip(skip)
             .take(limit)
             .getManyAndCount();
@@ -587,7 +588,6 @@ export class StoreService {
                 desc: language === "ar" ? item.desc_ar : language === "fr" ? item.desc_fr : item.desc_en,
                 price: item.price,
                 store: { id: storeId },
-                productImage: item.images[0], // الصورة الأساسية
                 isActive: true,
                 stock: 100,
                 attributes: [],

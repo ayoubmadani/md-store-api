@@ -9,6 +9,7 @@ import { Repository, Between, In, TreeRepository, DataSource } from 'typeorm';
 import { User, UserRole } from '../user/entities/user.entity';
 import { Store } from '../store/entities/store.entity';
 import { Product } from '../product/entities/product.entity';
+import { ImageProduct } from '../image-product/entities/image-product.entity';
 import { Order } from '../order/entities/order.entity';
 import { StatusEnum } from '../order/entities/order.entity';
 import { Theme } from '../theme/entities/theme.entity';
@@ -540,6 +541,7 @@ export class AdminService {
                 'store', 'category', 'attributes', 'attributes.variants',
                 'variantDetails', 'offers', 'imagesProduct',
             ],
+            order: { imagesProduct: { order: 'ASC' } },
         });
         if (!product) throw new NotFoundException(`Product #${id} not found`);
         return product;
@@ -966,13 +968,17 @@ export class AdminService {
             .innerJoin('item.product', 'product')
             .select('product.id', 'productId')
             .addSelect('product.name', 'name')
-            .addSelect('product.productImage', 'image')
+            .addSelect((subQuery) => subQuery
+                .select('img.imageUrl')
+                .from(ImageProduct, 'img')
+                .where('img.productId = product.id')
+                .orderBy('img.order', 'ASC')
+                .limit(1), 'image')
             .addSelect('COUNT(DISTINCT order.id)', 'totalOrders')
             .addSelect('SUM(item.quantity)', 'totalQty') // الكمية من Item
             .addSelect('SUM(item.totalPrice)', 'revenue') // السعر من Item
             .groupBy('product.id')
             .addGroupBy('product.name')
-            .addGroupBy('product.productImage')
             .orderBy('SUM(item.quantity)', 'DESC')
             .limit(limit)
             .getRawMany();
