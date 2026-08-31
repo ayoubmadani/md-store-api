@@ -7,11 +7,13 @@ import { Image } from './entities/image.entity';
 import { S3Service } from './s3.service';
 import { ImageAdmin } from './entities/image-admin.entity';
 import { ImageAdminController } from './image-admin.controller';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Image , ImageAdmin]),
     ConfigModule, // للوصول إلى متغيرات البيئة
+    SubscriptionModule,
 
   ],
   controllers: [ImageController , ImageAdminController],

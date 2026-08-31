@@ -13,6 +13,14 @@ export class CreateFeaturesDto {
   productNumber: number;
 
   @IsInt() @Min(0)
+  @IsOptional()
+  productImagesNumber?: number;
+
+  @IsInt() @Min(0)
+  @IsOptional()
+  totalImagesNumber?: number;
+
+  @IsInt() @Min(0)
   landingPageNumber: number;
 
   @IsBoolean()

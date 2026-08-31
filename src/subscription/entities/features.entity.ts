@@ -11,6 +11,12 @@ export class FeaturesEntity {
     @Column({ type: 'int', default: 0 })
     productNumber: number;
 
+    @Column({ type: 'int', default: 1 })
+    productImagesNumber: number;
+
+    @Column({ type: 'int', default: 4 })
+    totalImagesNumber: number;
+
     @Column({ type: 'int', default: 0 })
     landingPageNumber: number;
 

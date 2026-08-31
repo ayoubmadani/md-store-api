@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,6 +10,7 @@ import { Image } from './entities/image.entity';
 import { S3Service } from './s3.service';
 import { count } from 'console';
 import { ImageAdmin } from './entities/image-admin.entity';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class ImageService {
@@ -21,7 +23,21 @@ export class ImageService {
 
 
     private s3Service: S3Service,
+    private subscriptionService: SubscriptionService,
   ) { }
+
+  // ─── helper: الحد الكلي لصور المستخدم — حقل مستقل في الخطة يضبطه الأدمن ───
+  private async assertTotalImagesLimitNotReached(userId: string): Promise<void> {
+    const sub = await this.subscriptionService.findSub(userId);
+    const totalLimit = sub?.plan?.features?.totalImagesNumber ?? 4;
+
+    const count = await this.imageRepository.count({ where: { user: { id: userId } } });
+    if (count >= totalLimit) {
+      throw new BadRequestException(
+        `لقد وصلت إلى الحد الأقصى لعدد الصور في خطتك (${totalLimit} صورة).`
+      );
+    }
+  }
 
   /**
    * رفع صورة واحدة
@@ -31,6 +47,8 @@ export class ImageService {
     userId: string,
     folder: string = 'uploads'
   ): Promise<Image> {
+    await this.assertTotalImagesLimitNotReached(userId);
+
     // رفع الملف إلى S3
     const uploadResult = await this.s3Service.uploadFile(file, folder);
 

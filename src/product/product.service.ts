@@ -101,6 +101,21 @@ export class ProductService {
     }
   }
 
+  // ─── helper: قراءة الحد من features.productImagesNumber ────────────────────
+  private async getProductImagesLimit(userId: string): Promise<number> {
+    const sub = await this.subscriptionService.findSub(userId);
+    return sub?.plan?.features?.productImagesNumber ?? 1;
+  }
+
+  private async assertProductImagesLimitNotReached(userId: string, imageCount: number): Promise<void> {
+    const limit = await this.getProductImagesLimit(userId);
+    if (imageCount > limit) {
+      throw new BadRequestException(
+        `الحد الأقصى لصور المنتج في خطتك هو ${limit} صورة.`
+      );
+    }
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // CREATE
   // ══════════════════════════════════════════════════════════════════════════
@@ -113,6 +128,7 @@ export class ProductService {
 
     // ← فحص الحد قبل فتح transaction
     await this.assertProductLimitNotReached(userId);
+    if (dto.images?.length) await this.assertProductImagesLimitNotReached(userId, dto.images.length);
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -193,9 +209,15 @@ export class ProductService {
   async createMulti(storeId: string, userId: string, dtos: CreateProductDto[]): Promise<Product[]> {
   // 1. التحقق من ملكية المتجر وفحص الحد (مرة واحدة قبل البدء)
   await this.storeService.verifyOwnership(storeId, userId);
-  
+
   // يفضل هنا فحص ما إذا كان عدد المنتجات الجديدة سيتجاوز الحد المسموح به
   // مثلاً: await this.assertProductLimitNotReached(userId, dtos.length);
+
+  const maxImages = await this.getProductImagesLimit(userId);
+  const tooManyImages = dtos.find(dto => (dto.images?.length ?? 0) > maxImages);
+  if (tooManyImages) {
+    throw new BadRequestException(`الحد الأقصى لصور المنتج في خطتك هو ${maxImages} صورة.`);
+  }
 
   const queryRunner = this.dataSource.createQueryRunner();
   await queryRunner.connect();
@@ -373,6 +395,7 @@ export class ProductService {
     if (product.isActive === false && dto.isActive === true) {
       await this.assertProductLimitNotReached(userId);
     }
+    if (dto.images?.length) await this.assertProductImagesLimitNotReached(userId, dto.images.length);
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();

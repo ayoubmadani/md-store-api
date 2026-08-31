@@ -3,12 +3,13 @@ import {
   IsNotEmpty, 
   IsNumber, 
   IsOptional, 
-  IsArray, 
-  ValidateNested, 
+  IsArray,
+  ValidateNested,
   IsUUID,
   IsBoolean,
   Min,
   MaxLength,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AttributeDto } from './sub-dtos/attribute.dto';
@@ -86,5 +87,8 @@ export class CreateProductDto {
   @IsArray()
   @IsOptional()
   @IsString({ each: true, message: 'يجب أن تكون جميع الروابط صالحة' })
+  // سقف مطلق للحماية من إساءة الاستخدام فقط — الحد الفعلي حسب الخطة
+  // يُفرض في ProductService.assertProductImagesLimitNotReached
+  @ArrayMaxSize(50, { message: 'عدد الصور كبير جداً' })
   images?: string[];
 }

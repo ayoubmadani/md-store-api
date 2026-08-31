@@ -85,6 +85,14 @@ export class ImageController {
     return this.imageService.search(userId, searchTerm.trim(), folder);
   }
 
+  // نفس السبب أعلاه: يجب أن يسبق @Get(':id') وإلا فلن يُنفَّذ أبداً
+  @Get('image-admine')
+  getAllImagesAdmin(
+    @Query('take') take?: string
+  ) {
+    return this.imageService.getAllImagesAdmin(take)
+  }
+
   @Get(':id')
   @UseGuards(AuthGuard) // أو AuthGuard حسب استراتيجيتك
 
@@ -99,20 +107,9 @@ export class ImageController {
     return this.imageService.findOne(id, userId);
   }
 
-  @Delete(':id')
-  @UseGuards(AuthGuard) // أو AuthGuard حسب استراتيجيتك
-
-  remove(
-    @Param('id', ParseUUIDPipe) id: string,
-    @GetUser() user: any
-  ) {
-    const userId = user.id || user.sub || user.userId;
-    if (!userId) {
-      throw new BadRequestException('معرف المستخدم غير موجود في التوكن');
-    }
-    return this.imageService.remove(id, userId);
-  }
-
+  // يجب أن يسبق @Delete(':id') — وإلا فإن ':id' ستلتقط 'batch' كقيمة لها
+  // (سلسلة نصية عادية بالنسبة لـ Express) قبل وصول الطلب لهذا المسار،
+  // فيفشل التحقق من UUID دائماً ولا يُنفَّذ الحذف الجماعي أبداً
   @Delete('batch')
   @UseGuards(AuthGuard) // أو AuthGuard حسب استراتيجيتك
 
@@ -128,6 +125,20 @@ export class ImageController {
       throw new BadRequestException('يجب توفير مصفوفة من المعرفات');
     }
     return this.imageService.removeMultiple(ids, userId);
+  }
+
+  @Delete(':id')
+  @UseGuards(AuthGuard) // أو AuthGuard حسب استراتيجيتك
+
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @GetUser() user: any
+  ) {
+    const userId = user.id || user.sub || user.userId;
+    if (!userId) {
+      throw new BadRequestException('معرف المستخدم غير موجود في التوكن');
+    }
+    return this.imageService.remove(id, userId);
   }
 
   @Post('upload')
@@ -174,13 +185,6 @@ export class ImageController {
     files: Express.Multer.File[],
   ) {
     return await this.imageService.uploadImageAdmin(files);
-  }
-
-  @Get('image-admine')
-  getAllImagesAdmin(
-    @Query('take') take?: string
-  ) {
-    return this.imageService.getAllImagesAdmin(take)
   }
 
 }
