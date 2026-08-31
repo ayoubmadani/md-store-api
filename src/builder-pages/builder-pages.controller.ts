@@ -34,6 +34,14 @@ export class BuilderPagesController {
     return this.builderPagesService.findByDomain(domain);
   }
 
+  // Public — same shape as `find`, but keyed by id instead of the page's
+  // own `domain` column. Used when a page is reached via a dedicated
+  // Domain row (domains.scope = 'landing_page') pointing at it by id.
+  @Get('public/:id')
+  findPublicById(@Param('id') id: string) {
+    return this.builderPagesService.findPublicById(id);
+  }
+
   @Post('generate-trial')
   @UseGuards(AuthGuard)
   generateTrial(@Body() dto: GenerateBuilderPageDto) {

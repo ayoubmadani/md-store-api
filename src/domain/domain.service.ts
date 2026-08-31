@@ -7,6 +7,7 @@ import axios from 'axios';
 import { CreateDomainDto } from './dto/create-domain.dto';
 import { Domain } from './entities/domain.entity';
 import { Store } from '../store/entities/store.entity';
+import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
 
 @Injectable()
 export class DomainService {
@@ -17,6 +18,7 @@ export class DomainService {
   constructor(
     @InjectRepository(Domain) private readonly domainRepo: Repository<Domain>,
     @InjectRepository(Store) private readonly storeRepo: Repository<Store>,
+    @InjectRepository(BuilderPage) private readonly builderPageRepo: Repository<BuilderPage>,
     private readonly configService: ConfigService,
   ) { }
 
@@ -52,6 +54,14 @@ export class DomainService {
     const store = await this.storeRepo.findOne({ where: { id: dto.storeId } });
     if (!store) throw new NotFoundException(`المتجر غير موجود`);
 
+    // 2.ب التحقق أن صفحة المحرر (عند تخصيص الدومين لصفحة هبوط) تعود لنفس المتجر
+    if (dto.scope === 'landing_page') {
+      const page = await this.builderPageRepo.findOne({ where: { id: dto.builderPageId } });
+      if (!page || page.storeId !== dto.storeId) {
+        throw new NotFoundException('الصفحة المحددة غير موجودة أو لا تنتمي لهذا المتجر');
+      }
+    }
+
     // 3. التحقق من تكرار الدومين (استخدام الاسم النظيف)
     const existing = await this.domainRepo.findOne({ where: { domain: cleanDomain } });
     if (existing) throw new BadRequestException('هذا الدومين مسجل مسبقاً');
@@ -73,7 +83,9 @@ export class DomainService {
       domain: cleanDomain,
       storeId: dto.storeId,
       isActive: isActive,
-      isSub: domainSplit.length === 3
+      isSub: domainSplit.length === 3,
+      scope: dto.scope ?? 'store',
+      builderPageId: dto.scope === 'landing_page' ? dto.builderPageId : undefined,
     });
 
     return await this.domainRepo.save(newDomain);
@@ -242,5 +254,34 @@ export class DomainService {
 
   async findAllWithStore(storeId: string) {
     return await this.domainRepo.find({ where: { storeId } });
+  }
+
+  // 8. تخصيص دومين موجود (أُنشئ من صفحة الدومين العادية) لصفحة هبوط واحدة —
+  // يُستدعى من داخل المحرر بعد اختيار الدومين من قائمة دومينات المتجر.
+  async assignToBuilderPage(id: string, builderPageId: string, storeId: string) {
+    const domainRecord = await this.domainRepo.findOne({ where: { id, storeId } });
+    if (!domainRecord) throw new NotFoundException('الدومين غير موجود أو لا ينتمي لهذا المتجر');
+
+    const page = await this.builderPageRepo.findOne({ where: { id: builderPageId } });
+    if (!page || page.storeId !== storeId) {
+      throw new NotFoundException('الصفحة المحددة غير موجودة أو لا تنتمي لهذا المتجر');
+    }
+
+    domainRecord.scope = 'landing_page';
+    domainRecord.builderPageId = builderPageId;
+    return this.domainRepo.save(domainRecord);
+  }
+
+  // 9. فك الربط — يعيد الدومين ليصبح دومين متجر عادي بدل حذفه، فيمكن إعادة
+  // استخدامه لاحقاً أو تخصيصه لصفحة أخرى.
+  async unassignFromBuilderPage(id: string, storeId: string) {
+    const domainRecord = await this.domainRepo.findOne({ where: { id, storeId } });
+    if (!domainRecord) throw new NotFoundException('الدومين غير موجود أو لا ينتمي لهذا المتجر');
+
+    // .update() (not .save()) so builderPageId is explicitly NULLed in SQL —
+    // an entity property set to `undefined` isn't guaranteed to clear an
+    // existing DB value the way a real SQL NULL does.
+    await this.domainRepo.update(id, { scope: 'store', builderPageId: null as unknown as undefined });
+    return { ...domainRecord, scope: 'store' as const, builderPageId: null };
   }
 }

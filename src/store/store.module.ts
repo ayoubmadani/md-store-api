@@ -21,6 +21,8 @@ import { PublicStoreService } from './public-store.service';
 import { Product } from '../product/entities/product.entity';
 import { CategoryNiche } from '../niche/entities/category-niche.entity';
 import { ImageProduct } from '../image-product/entities/image-product.entity';
+import { LandingPage } from '../landing-page/entities/landing-page.entity';
+import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { ImageProduct } from '../image-product/entities/image-product.entity';
       Product,
       CategoryNiche,
       ImageProduct,
+      LandingPage, // للتحقق من ملكية صفحة الهبوط عند ربط بكسل بها
+      BuilderPage, // للتحقق من ملكية صفحة المحرر عند ربط بكسل بها
     ]),
     SubscriptionModule,
     UserModule,

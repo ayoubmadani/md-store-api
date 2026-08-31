@@ -4,12 +4,13 @@ import { DomainController } from './domain.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Domain } from './entities/domain.entity';
 import { Store } from '../store/entities/store.entity';
+import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
 
 @Module({
   controllers: [DomainController],
   providers: [DomainService],
   imports:[
-    TypeOrmModule.forFeature([Domain , Store])
+    TypeOrmModule.forFeature([Domain , Store, BuilderPage])
   ]
 })
 export class DomainModule {}

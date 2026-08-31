@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, TreeRepository } from 'typeorm';
+import { Repository, DataSource, TreeRepository, IsNull } from 'typeorm';
 import { Store } from './entities/store.entity';
 import { StorePixel } from './entities/store-pixel.entity';
 import { StoreDesign } from './entities/store-design.entity';
@@ -19,6 +19,8 @@ import { Product } from '../product/entities/product.entity';
 import { Domain } from '../domain/entities/domain.entity';
 import { CategoryNiche } from '../niche/entities/category-niche.entity';
 import { ImageProduct } from '../image-product/entities/image-product.entity';
+import { LandingPage } from '../landing-page/entities/landing-page.entity';
+import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
 
 @Injectable()
 export class StoreService {
@@ -44,6 +46,8 @@ export class StoreService {
         @InjectRepository(CategoryNiche) private cateNicheRepo: Repository<CategoryNiche>,
         @InjectRepository(Product) private productRepo: Repository<Product>,
         @InjectRepository(ImageProduct) private imageProductRepository: Repository<ImageProduct>,
+        @InjectRepository(LandingPage) private landingPageRepository: Repository<LandingPage>,
+        @InjectRepository(BuilderPage) private builderPageRepository: Repository<BuilderPage>,
 
 
         private readonly subscriptionService: SubscriptionService,
@@ -85,16 +89,58 @@ export class StoreService {
 
     // ==================== PIXELS ====================
 
+    // يتحقق أن صفحة الهبوط تعود لمنتج تابع لنفس المتجر — يمنع ربط بكسل
+    // بصفحة هبوط تخص متجراً آخر (سواء عن خطأ في الواجهة أو طلب مُعدَّل يدوياً)
+    private async assertLandingPageBelongsToStore(landingPageId: string, storeId: string): Promise<void> {
+        const lp = await this.landingPageRepository.findOne({
+            where: { id: landingPageId },
+            relations: ['product', 'product.store'],
+        });
+        if (!lp || lp.product?.store?.id !== storeId) {
+            throw new BadRequestException('صفحة الهبوط المحددة غير موجودة أو لا تنتمي لهذا المتجر.');
+        }
+    }
+
+    // يتحقق أن صفحة المحرر (BuilderPage) تعود لنفس المتجر — نفس فكرة
+    // assertLandingPageBelongsToStore أعلاه، لكن BuilderPage تحمل storeId
+    // مباشرة فلا حاجة لعلاقة product.store.
+    private async assertBuilderPageBelongsToStore(builderPageId: string, storeId: string): Promise<void> {
+        const page = await this.builderPageRepository.findOne({ where: { id: builderPageId } });
+        if (!page || page.storeId !== storeId) {
+            throw new BadRequestException('الصفحة المحددة غير موجودة أو لا تنتمي لهذا المتجر.');
+        }
+    }
+
     async addPixel(storeId: string, dto: CreatePixelDto, userId: string) {
         const store = await this.storeRepository.findOne({ where: { id: storeId, user: { id: userId } } });
         if (!store) throw new NotFoundException('Store not found or you do not have permission');
 
         await this.assertPixelLimitNotReached(userId, dto.type as 'facebook' | 'tiktok');
 
+        if (dto.landingPageId) {
+            await this.assertLandingPageBelongsToStore(dto.landingPageId, storeId);
+        }
+        if (dto.builderPageId) {
+            await this.assertBuilderPageBelongsToStore(dto.builderPageId, storeId);
+        }
+
+        // نفس pixelId يمكن أن يتكرر بشرط اختلاف النطاق الذي يُطبَّق عليه —
+        // هذا يسمح بإنشاء بكسلين بنفس المعرف: واحد للمتجر وواحد لصفحة هبوط
+        // محددة (من داخل المحرر)، لكن يمنع التكرار الحقيقي (نفس pixelId
+        // ونفس النطاق بالضبط).
+        const scope = dto.scope ?? 'store';
         const duplicatePixelId = await this.pixelRepository.findOne({
-            where: { storeId, pixelId: dto.pixelId, type: dto.type, isActive: true },
+            where: {
+                storeId,
+                pixelId: dto.pixelId,
+                type: dto.type,
+                isActive: true,
+                scope,
+                landingPageId: scope === 'landing_page' && dto.landingPageId ? dto.landingPageId : IsNull(),
+                builderPageId: scope === 'landing_page' && dto.builderPageId ? dto.builderPageId : IsNull(),
+            },
         });
-        if (duplicatePixelId) throw new BadRequestException(`هذا البكسل (ID: ${dto.pixelId}) مضاف بالفعل لهذا المتجر.`);
+        if (duplicatePixelId) throw new BadRequestException(`هذا البكسل (ID: ${dto.pixelId}) مضاف بالفعل لهذا النطاق.`);
 
         const pixel = this.pixelRepository.create({ ...dto, storeId });
         const result = await this.pixelRepository.save(pixel);
@@ -105,6 +151,12 @@ export class StoreService {
     async updatePixel(pixelId: string, dto: UpdatePixelDto, userId: string) {
         const pixel = await this.pixelRepository.findOne({ where: { id: pixelId }, relations: ['store', 'store.user'] });
         if (!pixel || pixel.store.user.id !== userId) throw new NotFoundException('Pixel not found or you do not have permission');
+        if (dto.landingPageId) {
+            await this.assertLandingPageBelongsToStore(dto.landingPageId, pixel.store.id);
+        }
+        if (dto.builderPageId) {
+            await this.assertBuilderPageBelongsToStore(dto.builderPageId, pixel.store.id);
+        }
         Object.assign(pixel, dto);
         return this.pixelRepository.save(pixel);
     }

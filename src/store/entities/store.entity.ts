@@ -90,7 +90,7 @@ export class Store {
   contact: StoreContact;
 
   @OneToMany(() => StorePixel, (pixels) => pixels.store, { cascade: true })
-  pixels: StorePixel
+  pixels: StorePixel[]
 
   @OneToOne(() => StoreHeroSection, (hero) => hero.store, { cascade: true })
   hero: StoreHeroSection;

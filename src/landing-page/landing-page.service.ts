@@ -47,7 +47,7 @@ export class LandingPageService {
     const landingpage = await this.landingPageRope.findOne({
       where: { domain },
       relations: [
-        'product', 'product.store', 'product.store.user',
+        'product', 'product.store', 'product.store.user', 'product.store.pixels',
         'product.category', 'product.attributes', 'product.attributes.variants',
         'product.variantDetails', 'product.offers',
       ],
@@ -63,6 +63,8 @@ export class LandingPageService {
           name: landingpage.product.store.name,
           subdomain: landingpage.product.store.subdomain,
           userId: landingpage.product.store.user?.id || null,
+          // تُصفَّى حسب scope/landingPageId في الواجهة (CustomerTracker)
+          pixels: (landingpage.product.store.pixels ?? []).filter(p => p.isActive),
         } : null,
         category: landingpage.product.category ? {
           id: landingpage.product.category.id,

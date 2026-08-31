@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, IsUUID, Matches, IsBoolean, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, Matches, IsBoolean, IsOptional, IsEnum, ValidateIf } from 'class-validator';
+import { DomainScope } from '../entities/domain.entity';
 
 export class CreateDomainDto {
   @IsString()
@@ -16,4 +17,14 @@ export class CreateDomainDto {
   @IsBoolean()
   @IsOptional()
   isActive?:boolean
+
+  @IsEnum(['store', 'landing_page'])
+  @IsOptional()
+  scope?: DomainScope;
+
+  // مطلوب فقط عندما scope = landing_page — يُنشأ الدومين من داخل المحرر
+  // مخصصاً حصرياً لتلك الصفحة.
+  @ValidateIf((dto) => dto.scope === 'landing_page')
+  @IsUUID()
+  builderPageId?: string;
 }

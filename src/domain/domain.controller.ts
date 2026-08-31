@@ -43,7 +43,20 @@ export class DomainController {
   @Post('delete/:id')
   remove(@Param('id') id: string , @Body('storeId') storeId:string) {
     console.log(id);
-    
+
     return this.domainService.remove(id,storeId);
+  }
+
+  // 7. تخصيص دومين موجود (تم إنشاؤه من صفحة الدومين) لصفحة هبوط واحدة — يُستدعى
+  // من داخل المحرر بعد اختيار الدومين من القائمة.
+  @Patch(':id/assign-page')
+  assignToBuilderPage(@Param('id') id: string, @Body() dto: { builderPageId: string; storeId: string }) {
+    return this.domainService.assignToBuilderPage(id, dto.builderPageId, dto.storeId);
+  }
+
+  // 8. فك الربط — يُعيد الدومين ليصبح دومين متجر عادي (scope: store) بدل حذفه.
+  @Patch(':id/unassign-page')
+  unassignFromBuilderPage(@Param('id') id: string, @Body('storeId') storeId: string) {
+    return this.domainService.unassignFromBuilderPage(id, storeId);
   }
 }

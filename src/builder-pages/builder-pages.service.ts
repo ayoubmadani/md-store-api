@@ -13,6 +13,8 @@ import { PollinationsImageService } from '../ai/pollinations-image.service';
 import { BuilderBlock, sanitizeGeneratedBlocks } from '../ai/block-schema';
 import { S3Service } from '../image/s3.service';
 import { Product } from '../product/entities/product.entity';
+import { StorePixel } from '../store/entities/store-pixel.entity';
+import { Domain } from '../domain/entities/domain.entity';
 
 @Injectable()
 export class BuilderPagesService {
@@ -21,6 +23,10 @@ export class BuilderPagesService {
     private readonly builderPageRepo: Repository<BuilderPage>,
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
+    @InjectRepository(StorePixel)
+    private readonly pixelRepo: Repository<StorePixel>,
+    @InjectRepository(Domain)
+    private readonly domainRepo: Repository<Domain>,
     private readonly anthropicService: AnthropicService,
     private readonly geminiService: GeminiService,
     private readonly pollinationsImageService: PollinationsImageService,
@@ -137,8 +143,32 @@ export class BuilderPagesService {
   async findByDomain(domain: string) {
     const page = await this.builderPageRepo.findOne({ where: { domain } });
     if (!page || !page.publishedUrl) throw new NotFoundException('الصفحة غير موجودة');
+    return this.buildPublicPayload(page);
+  }
+
+  // Public lookup by id — used when a page is reached via a dedicated
+  // domain (domains.scope = 'landing_page'): the storefront only knows the
+  // page's id from that Domain row, not this page's own `domain` column
+  // (which may be unset, or a completely different "/lp/slug" value).
+  async findPublicById(id: string) {
+    const page = await this.builderPageRepo.findOne({ where: { id } });
+    if (!page || !page.publishedUrl) throw new NotFoundException('الصفحة غير موجودة');
+    return this.buildPublicPayload(page);
+  }
+
+  private async buildPublicPayload(page: BuilderPage) {
     const { data } = await axios.get(page.publishedUrl);
-    return data;
+
+    // Pixels are looked up live rather than baked into the R2 snapshot, so
+    // toggling/adding a pixel takes effect immediately without a republish.
+    const pixels = await this.pixelRepo.find({
+      where: [
+        { storeId: page.storeId, scope: 'store', isActive: true },
+        { storeId: page.storeId, scope: 'landing_page', builderPageId: page.id, isActive: true },
+      ],
+    });
+
+    return { ...data, pixels };
   }
 
   // Silently drops any entry that isn't a real block object (e.g. a stray
@@ -157,6 +187,11 @@ export class BuilderPagesService {
 
   async remove(id: string) {
     const page = await this.findOne(id);
+    // دومين مخصص لهذه الصفحة (scope: landing_page) لا معنى له بدونها —
+    // ON DELETE SET NULL على builderPageId فقط يفرغ العمود، ويترك الصف
+    // عالقاً بـ scope='landing_page' بدون صفحة، فنحذفه صراحةً هنا بدلاً
+    // من ذلك.
+    await this.domainRepo.delete({ builderPageId: id });
     await this.builderPageRepo.remove(page);
     return { success: true };
   }
