@@ -118,6 +118,7 @@ export class BuilderPagesService {
       attributes: product.attributes,
       variantDetails: product.variantDetails,
       offers: product.offers,
+      isDigital: product.isDigital,
     };
   }
 

@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsEnum, IsUUID, IsInt, Min } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsEnum, IsUUID, IsInt, Min, IsEmail } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum StatusEnum {
@@ -27,6 +27,14 @@ export class UpdateOrderDto {
   @IsOptional()
   @IsString()
   customerPhone?: string;
+
+  @IsOptional()
+  @IsEmail({}, { message: 'يرجى إدخال بريد إلكتروني صحيح' })
+  customerEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  customerWhatsapp?: string;
 
   @IsOptional()
   @Type(() => Number)

@@ -56,19 +56,31 @@ export class Order {
   @Column()
   customerPhone: string;
 
-  @Column()
-  customerWilayaId: number;
+  @Column({ nullable: true })
+  customerEmail?: string;
 
-  @ManyToOne(() => Wilaya, wilaya => wilaya.orders)
+  @Column({ nullable: true })
+  customerWhatsapp?: string;
+
+  @Column({ nullable: true })
+  customerWilayaId?: number;
+
+  @ManyToOne(() => Wilaya, wilaya => wilaya.orders, { nullable: true })
   @JoinColumn({ name: 'customerWilayaId' })
-  customerWilaya: Wilaya;
+  customerWilaya?: Wilaya;
 
-  @Column()
-  customerCommuneId: number;
+  @Column({ nullable: true })
+  customerCommuneId?: number;
 
-  @ManyToOne(() => Commune, commune => commune.orders)
+  @ManyToOne(() => Commune, commune => commune.orders, { nullable: true })
   @JoinColumn({ name: 'customerCommuneId' })
-  customerCommune: Commune;
+  customerCommune?: Commune;
+
+  // ── منتج رقمي ──────────────────────────────────────
+  // يُثبَّت وقت إنشاء الطلب من حالة المنتج آنذاك — لا يعتمد على المنتج
+  // الحالي لأن تعديل المنتج لاحقاً يجب ألا يغيّر شكل طلب قديم بأثر رجعي.
+  @Column({ default: false })
+  isDigital: boolean;
 
   // ── الشحن ──────────────────────────────────────────
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })

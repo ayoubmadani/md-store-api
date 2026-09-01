@@ -141,6 +141,7 @@ export class ProductService {
         sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
         isActive: dto.isActive ?? true,
         shippingFree: dto.shippingFree ?? false,
+        isDigital: dto.isDigital ?? false,
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
@@ -234,6 +235,7 @@ export class ProductService {
         sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
         isActive: dto.isActive ?? true,
         shippingFree: dto.shippingFree ?? false,
+        isDigital: dto.isDigital ?? false,
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
@@ -412,6 +414,7 @@ export class ProductService {
         stock: dto.stock !== undefined ? Number(dto.stock) : product.stock,
         isActive: dto.isActive ?? product.isActive,
         shippingFree: dto.shippingFree ?? product.shippingFree,
+        isDigital: dto.isDigital ?? product.isDigital,
         category: dto.categoryId ? { id: dto.categoryId } : product.category,
       });
       await queryRunner.manager.save(product);

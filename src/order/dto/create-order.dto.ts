@@ -6,7 +6,7 @@ import {
   IsString, IsUUID, IsNumber, IsEnum, IsOptional,
   Min, Max, IsPhoneNumber, Length, ValidateIf,
   IsNotEmpty,
-  Matches
+  Matches, IsEmail
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TypeShipEnum } from '../entities/order.entity';
@@ -119,6 +119,21 @@ export class CreateOrderDto {
     message: 'يرجى إدخال رقم هاتف جزائري صحيح (10 أرقام)',
   })
   customerPhone: string;
+
+  // منتج رقمي: يختار الزائر إحدى الطريقتين (بريد أو واتساب)، لا كلتيهما —
+  // كلا الحقلين اختياري هنا، والتحقق الفعلي (وجود واحد منهما على الأقل) في OrderService.create()
+  @ApiPropertyOptional({ description: 'البريد الإلكتروني — إحدى طريقتَي التواصل الممكنتين لمنتج رقمي' })
+  @IsOptional()
+  @IsEmail({}, { message: 'يرجى إدخال بريد إلكتروني صحيح' })
+  customerEmail?: string;
+
+  @ApiPropertyOptional({ description: 'رقم واتساب — إحدى طريقتَي التواصل الممكنتين لمنتج رقمي' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^(05|06|07)\d{8}$/, {
+    message: 'يرجى إدخال رقم واتساب جزائري صحيح (10 أرقام)',
+  })
+  customerWhatsapp?: string;
 
   @ApiPropertyOptional({ description: 'ملاحظات العميل' })
   @IsOptional()

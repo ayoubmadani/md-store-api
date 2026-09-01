@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { ILike, Like, Repository } from "typeorm";
+import { ILike, In, Like, Repository } from "typeorm";
 import { v4 as uuidv4 } from 'uuid';
 
 import { CreateOrderDto } from "./dto/create-order.dto";
@@ -48,8 +48,22 @@ export class OrdersService {
         if (!store) throw new BadRequestException('Store not found');
 
         const storeId = store.id;
-        const shipPrice = Number(first.priceShip ?? first.priceLivraison ?? 0);
-        
+
+        // منتج رقمي vs عادي — يُحدَّد من المنتجات الفعلية في قاعدة البيانات
+        // (لا يُوثَق بما يرسله العميل)، ولا يجوز خلط النوعين في طلب واحد
+        // لأن الطلب سجل واحد بعميل/شحن واحد فقط.
+        const products = await this.productsRepo.find({ where: { id: In(data.map(d => d.productId)) } });
+        const isDigital = products.some(p => p.isDigital);
+        if (products.some(p => p.isDigital) !== products.every(p => p.isDigital)) {
+            throw new BadRequestException('لا يمكن الجمع بين منتج رقمي ومنتج عادي في نفس الطلب');
+        }
+        // الزائر يختار طريقة تواصل واحدة (بريد أو واتساب) — إحداهما فقط مطلوبة
+        if (isDigital && !first.customerEmail?.trim() && !first.customerWhatsapp?.trim()) {
+            throw new BadRequestException('يجب إدخال البريد الإلكتروني أو رقم الواتساب لطلب منتج رقمي');
+        }
+
+        const shipPrice = isDigital ? 0 : Number(first.priceShip ?? first.priceLivraison ?? 0);
+
         // حساب إجمالي السعر من الـ dtos
         const totalItemsPrice = data.reduce((sum, d) => {
             const price = Number(d.finalPrice ?? d.totalPrice ?? 0);
@@ -63,8 +77,10 @@ export class OrdersService {
             customerId: first.customerId || uuidv4(),
             customerName: first.customerName,
             customerPhone: first.customerPhone,
-            customerWilayaId: first.customerWilayaId ?? first.customerWelaya,
-            customerCommuneId: first.customerCommuneId ?? first.customerCommune,
+            customerEmail: first.customerEmail,
+            customerWhatsapp: first.customerWhatsapp,
+            customerWilayaId: isDigital ? undefined : (first.customerWilayaId ?? first.customerWelaya),
+            customerCommuneId: isDigital ? undefined : (first.customerCommuneId ?? first.customerCommune),
             priceShip: shipPrice,
             priceLoss: Number(first.priceLoss ?? 0),
             typeShip: first.typeShip ?? first.typeLivraison ?? TypeShipEnum.HOME,
@@ -73,6 +89,7 @@ export class OrdersService {
             platform: first.platform ?? 'mdstore',
             lpId: first.lpId,
             builderPageId: first.builderPageId,
+            isDigital,
         });
 
         const savedOrder = await this.ordersRepo.save(order);
@@ -109,6 +126,7 @@ export class OrdersService {
         status?: StatusEnum,
         query?: string,
         page: number = 1,
+        isDigital?: boolean,
     ) {
         const limit = 50;
         const skip = (page - 1) * limit;
@@ -129,6 +147,7 @@ export class OrdersService {
             .skip(skip);
 
         if (status) qb.andWhere('o.status = :status', { status });
+        if (isDigital !== undefined) qb.andWhere('o.isDigital = :isDigital', { isDigital });
 
         if (query) {
             const s = `%${query}%`;
@@ -141,13 +160,14 @@ export class OrdersService {
         return qb.getMany();
     }
 
-    async getCountPageByStoreId(storeId: string, status?: StatusEnum, query?: string) {
+    async getCountPageByStoreId(storeId: string, status?: StatusEnum, query?: string, isDigital?: boolean) {
         const qb = this.ordersRepo
             .createQueryBuilder('o')
             .select('COUNT(o.id)', 'count')
             .where('o.storeId = :storeId', { storeId });
 
         if (status) qb.andWhere('o.status = :status', { status });
+        if (isDigital !== undefined) qb.andWhere('o.isDigital = :isDigital', { isDigital });
 
         if (query) {
             const s = `%${query}%`;
@@ -203,6 +223,8 @@ export class OrdersService {
     await this.ordersRepo.update(order.id, {
         customerName: first.customerName ?? order.customerName,
         customerPhone: first.customerPhone ?? order.customerPhone,
+        customerEmail: first.customerEmail ?? order.customerEmail,
+        customerWhatsapp: first.customerWhatsapp ?? order.customerWhatsapp,
         customerWilayaId: first.customerWilayaId ?? first.customerWelaya ?? order.customerWilayaId,
         customerCommuneId: first.customerCommuneId ?? first.customerCommune ?? order.customerCommuneId,
         typeShip: first.typeShip ?? first.typeLivraison ?? order.typeShip,

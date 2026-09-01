@@ -47,6 +47,9 @@ export class Product {
   @Column({ default: false })
   shippingFree: boolean;
 
+  @Column({ default: false })
+  isDigital: boolean;
+
   @Column({ default: 0 })
   stock: number;
 

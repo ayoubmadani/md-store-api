@@ -119,6 +119,9 @@ export class ShippingProviderService {
     });
 
     if (!order) throw new BadGatewayException('الطلب غير موجود');
+    if (!order.customerWilaya || !order.customerCommune) {
+      throw new BadGatewayException('لا يمكن شحن طلب رقمي — لا توجد بيانات ولاية/بلدية لهذا الطلب');
+    }
 
     const shippingOrderInput = {
       id: order.id,

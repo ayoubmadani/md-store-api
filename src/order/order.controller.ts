@@ -6,6 +6,14 @@ import { StatusEnum } from "./entities/order.entity";
 import { AuthGuard } from "../auth/guard/auth.guard";
 import { Throttle } from "@nestjs/throttler";
 
+// query params أرقام/strings دائماً هنا — نحوّل "true"/"false" فقط، أي شيء
+// آخر (بما فيه القيمة المفقودة) يبقى undefined فلا يُطبَّق أي فلتر.
+function parseIsDigital(value?: string): boolean | undefined {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return undefined;
+}
+
 @Controller('orders')
 export class OrdersController {
     constructor(private readonly ordersService: OrdersService) {}
@@ -30,8 +38,9 @@ export class OrdersController {
         @Query('status') status?: StatusEnum,
         @Query('query')  query?:  string,
         @Query('page')   page?:   number,
+        @Query('isDigital') isDigital?: string,
     ) {
-        return this.ordersService.getAllOrdersByStoreId(storeId, status, query, page);
+        return this.ordersService.getAllOrdersByStoreId(storeId, status, query, page, parseIsDigital(isDigital));
     }
 
     @Get('count/:storeId')
@@ -39,8 +48,9 @@ export class OrdersController {
         @Param('storeId') storeId: string,
         @Query('status') status?: StatusEnum,
         @Query('query')  query?:  string,
+        @Query('isDigital') isDigital?: string,
     ) {
-        return this.ordersService.getCountPageByStoreId(storeId, status, query);
+        return this.ordersService.getCountPageByStoreId(storeId, status, query, parseIsDigital(isDigital));
     }
 
     @Get('get-one/:orderId')

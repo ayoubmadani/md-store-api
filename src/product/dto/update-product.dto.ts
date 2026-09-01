@@ -59,6 +59,10 @@ export class UpdateProductDto {
   shippingFree?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isDigital?: boolean;
+
+  @IsOptional()
   @IsUUID('4', { message: 'معرف التصنيف غير صالح' })
   categoryId?: string | null; // يمكن إزالة التصنيف بـ null
 
