@@ -15,6 +15,7 @@ import { S3Service } from '../image/s3.service';
 import { Product } from '../product/entities/product.entity';
 import { StorePixel } from '../store/entities/store-pixel.entity';
 import { Domain } from '../domain/entities/domain.entity';
+import { Store } from '../store/entities/store.entity';
 
 @Injectable()
 export class BuilderPagesService {
@@ -27,13 +28,28 @@ export class BuilderPagesService {
     private readonly pixelRepo: Repository<StorePixel>,
     @InjectRepository(Domain)
     private readonly domainRepo: Repository<Domain>,
+    @InjectRepository(Store)
+    private readonly storeRepo: Repository<Store>,
     private readonly anthropicService: AnthropicService,
     private readonly geminiService: GeminiService,
     private readonly pollinationsImageService: PollinationsImageService,
     private readonly s3Service: S3Service,
   ) {}
 
-  async create(dto: CreateBuilderPageDto) {
+  // Every guarded route below funnels through here (directly or via findOne)
+  // to confirm the authenticated user actually owns the store a page belongs
+  // to — a valid JWT alone used to be enough to read/edit/publish/delete any
+  // store's page by guessing/copying its id. Same "not found" wording as
+  // StoreService's own ownership checks, so a probing request can't tell an
+  // owned-by-someone-else page apart from one that doesn't exist at all.
+  private async assertOwnsStore(storeId: string, userId: string): Promise<void> {
+    const store = await this.storeRepo.findOne({ where: { id: storeId, user: { id: userId } } });
+    if (!store) throw new NotFoundException('الصفحة غير موجودة');
+  }
+
+  async create(dto: CreateBuilderPageDto, userId: string) {
+    await this.assertOwnsStore(dto.storeId, userId);
+
     if (dto.domain) {
       const existing = await this.builderPageRepo.findOne({ where: { domain: dto.domain } });
       if (existing) throw new ConflictException('هذا الرابط مستخدم بالفعل، جرّب اسمًا آخر للصفحة');
@@ -54,7 +70,8 @@ export class BuilderPagesService {
   // shows/orders arrays) — mirrors LandingPageService.getByStoreId exactly,
   // so the dashboard list can compute the same Views/Orders/CR% stats for
   // both features with identical logic.
-  async getByStoreId(storeId: string) {
+  async getByStoreId(storeId: string, userId: string) {
+    await this.assertOwnsStore(storeId, userId);
     return this.builderPageRepo
       .createQueryBuilder('bp')
       .loadRelationCountAndMap('bp.showsCount', 'bp.shows')
@@ -64,21 +81,21 @@ export class BuilderPagesService {
       .getMany();
   }
 
-  async toggleStatus(id: string) {
-    const page = await this.findOne(id);
+  async toggleStatus(id: string, userId: string) {
+    const page = await this.findOne(id, userId);
     page.isActive = !page.isActive;
     await this.builderPageRepo.save(page);
     return { isActive: page.isActive };
   }
 
-  async updatePlatform(id: string, platform: string) {
-    const page = await this.findOne(id);
+  async updatePlatform(id: string, platform: string, userId: string) {
+    const page = await this.findOne(id, userId);
     page.platform = platform;
     return this.builderPageRepo.save(page);
   }
 
-  async duplicate(id: string) {
-    const page = await this.findOne(id);
+  async duplicate(id: string, userId: string) {
+    const page = await this.findOne(id, userId);
     const randomNumber = Math.floor(Math.random() * 1000) + 1;
     const copy = this.builderPageRepo.create({
       name: `${page.name} (نسخة)`,
@@ -119,12 +136,14 @@ export class BuilderPagesService {
       variantDetails: product.variantDetails,
       offers: product.offers,
       isDigital: product.isDigital,
+      supportQty: product.store?.supportQty,
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string) {
     const page = await this.builderPageRepo.findOne({ where: { id } });
     if (!page) throw new NotFoundException('الصفحة غير موجودة');
+    await this.assertOwnsStore(page.storeId, userId);
     return page;
   }
 
@@ -177,8 +196,8 @@ export class BuilderPagesService {
   // can otherwise keep re-saving corrupted data over a manual DB fix on
   // every autosave, since the client has no way to know its own in-memory
   // state is broken. This is the server-side backstop for that.
-  async updateTree(id: string, dto: UpdateTreeDto) {
-    const page = await this.findOne(id);
+  async updateTree(id: string, dto: UpdateTreeDto, userId: string) {
+    const page = await this.findOne(id, userId);
     page.tree = Array.isArray(dto.tree)
       ? dto.tree.filter((block) => block && typeof block === 'object' && typeof (block as { type?: unknown }).type === 'string')
       : [];
@@ -186,8 +205,8 @@ export class BuilderPagesService {
     return this.builderPageRepo.save(page);
   }
 
-  async remove(id: string) {
-    const page = await this.findOne(id);
+  async remove(id: string, userId: string) {
+    const page = await this.findOne(id, userId);
     // دومين مخصص لهذه الصفحة (scope: landing_page) لا معنى له بدونها —
     // ON DELETE SET NULL على builderPageId فقط يفرغ العمود، ويترك الصف
     // عالقاً بـ scope='landing_page' بدون صفحة، فنحذفه صراحةً هنا بدلاً
@@ -203,8 +222,8 @@ export class BuilderPagesService {
   // the store's theme bundles (see ThemeRunner.tsx), a builder-page isn't
   // tied to a theme at all, so the storefront just fetches and JSON.parse()s
   // this directly; no eval/sandboxing needed.
-  async publish(id: string) {
-    const page = await this.findOne(id);
+  async publish(id: string, userId: string) {
+    const page = await this.findOne(id, userId);
 
     if (!Array.isArray(page.tree) || page.tree.length === 0) {
       throw new BadRequestException('لا يمكن نشر صفحة فارغة');
@@ -234,8 +253,8 @@ export class BuilderPagesService {
     return { publishedUrl: page.publishedUrl };
   }
 
-  async generate(id: string, dto: GenerateBuilderPageDto) {
-    const page = await this.findOne(id);
+  async generate(id: string, dto: GenerateBuilderPageDto, userId: string) {
+    const page = await this.findOne(id, userId);
     const description = await this.resolveDescription(dto);
     let blocks = sanitizeGeneratedBlocks(await this.anthropicService.generatePageTree(description, dto.language));
     const { blocks: withPhotos, imageFailed } = await this.injectGeneratedPhotos(blocks, description, page.storeId);

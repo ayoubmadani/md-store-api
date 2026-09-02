@@ -1,9 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { BuilderPagesService } from './builder-pages.service';
 import { CreateBuilderPageDto } from './dto/create-builder-page.dto';
 import { UpdateTreeDto } from './dto/update-tree.dto';
 import { GenerateBuilderPageDto } from './dto/generate-builder-page.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
+import { GetUser } from '../user/decorator/get-user.decorator';
 
 // No class-level guard (unlike before) — mirrors LandingPageController's
 // pattern of guarding only the merchant-management routes individually,
@@ -13,16 +14,26 @@ import { AuthGuard } from '../auth/guard/auth.guard';
 export class BuilderPagesController {
   constructor(private readonly builderPagesService: BuilderPagesService) {}
 
+  // Every @UseGuards(AuthGuard) route below only proves the request carries
+  // *a* valid token — it says nothing about whether that user owns the page
+  // being touched. Each handler passes this id into the service, which
+  // re-checks it against the page's own store before doing anything.
+  private getUserId(user: any): string {
+    const userId = user?.id || user?.sub;
+    if (!userId) throw new BadRequestException('User ID not found in token');
+    return userId;
+  }
+
   @Post()
   @UseGuards(AuthGuard)
-  create(@Body() dto: CreateBuilderPageDto) {
-    return this.builderPagesService.create(dto);
+  create(@Body() dto: CreateBuilderPageDto, @GetUser() user: any) {
+    return this.builderPagesService.create(dto, this.getUserId(user));
   }
 
   @Get('store/:storeId')
   @UseGuards(AuthGuard)
-  getByStoreId(@Param('storeId') storeId: string) {
-    return this.builderPagesService.getByStoreId(storeId);
+  getByStoreId(@Param('storeId') storeId: string, @GetUser() user: any) {
+    return this.builderPagesService.getByStoreId(storeId, this.getUserId(user));
   }
 
   // Public — resolves a published page's own domain (the same
@@ -66,51 +77,51 @@ export class BuilderPagesController {
 
   @Get(':id')
   @UseGuards(AuthGuard)
-  findOne(@Param('id') id: string) {
-    return this.builderPagesService.findOne(id);
+  findOne(@Param('id') id: string, @GetUser() user: any) {
+    return this.builderPagesService.findOne(id, this.getUserId(user));
   }
 
   @Put(':id/tree')
   @UseGuards(AuthGuard)
-  updateTree(@Param('id') id: string, @Body() dto: UpdateTreeDto) {
-    return this.builderPagesService.updateTree(id, dto);
+  updateTree(@Param('id') id: string, @Body() dto: UpdateTreeDto, @GetUser() user: any) {
+    return this.builderPagesService.updateTree(id, dto, this.getUserId(user));
   }
 
   @Post(':id/publish')
   @UseGuards(AuthGuard)
-  publish(@Param('id') id: string) {
-    return this.builderPagesService.publish(id);
+  publish(@Param('id') id: string, @GetUser() user: any) {
+    return this.builderPagesService.publish(id, this.getUserId(user));
   }
 
   @Post(':id/generate')
   @UseGuards(AuthGuard)
-  generate(@Param('id') id: string, @Body() dto: GenerateBuilderPageDto) {
-    return this.builderPagesService.generate(id, dto);
+  generate(@Param('id') id: string, @Body() dto: GenerateBuilderPageDto, @GetUser() user: any) {
+    return this.builderPagesService.generate(id, dto, this.getUserId(user));
   }
 
   // POST, not GET like the older landing-page module's equivalent route —
   // this one actually mutates state, so it shouldn't be a GET.
   @Post(':id/toggle-status')
   @UseGuards(AuthGuard)
-  toggleStatus(@Param('id') id: string) {
-    return this.builderPagesService.toggleStatus(id);
+  toggleStatus(@Param('id') id: string, @GetUser() user: any) {
+    return this.builderPagesService.toggleStatus(id, this.getUserId(user));
   }
 
   @Patch(':id/platform')
   @UseGuards(AuthGuard)
-  updatePlatform(@Param('id') id: string, @Body('platform') platform: string) {
-    return this.builderPagesService.updatePlatform(id, platform);
+  updatePlatform(@Param('id') id: string, @Body('platform') platform: string, @GetUser() user: any) {
+    return this.builderPagesService.updatePlatform(id, platform, this.getUserId(user));
   }
 
   @Post(':id/duplicate')
   @UseGuards(AuthGuard)
-  duplicate(@Param('id') id: string) {
-    return this.builderPagesService.duplicate(id);
+  duplicate(@Param('id') id: string, @GetUser() user: any) {
+    return this.builderPagesService.duplicate(id, this.getUserId(user));
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard)
-  remove(@Param('id') id: string) {
-    return this.builderPagesService.remove(id);
+  remove(@Param('id') id: string, @GetUser() user: any) {
+    return this.builderPagesService.remove(id, this.getUserId(user));
   }
 }
