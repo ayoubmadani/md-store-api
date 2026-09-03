@@ -129,6 +129,7 @@ export class BuilderPagesService {
       name: product.name,
       price: product.price,
       productImage: product.imagesProduct?.[0]?.imageUrl,
+      images: product.imagesProduct?.map((img) => img.imageUrl).filter(Boolean) ?? [],
       storeId: product.store?.id,
       userId: product.store?.user?.id,
       domain: product.store?.subdomain,
