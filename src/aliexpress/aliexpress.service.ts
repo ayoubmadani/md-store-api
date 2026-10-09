@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { AliexpressAccount } from './entities/aliexpress-account.entity';
+import { UserRole } from '../user/entities/user.entity';
 
 const SYNC_URL = 'https://api-sg.aliexpress.com/sync';
 const REST_URL = 'https://api-sg.aliexpress.com/rest';
@@ -131,12 +132,29 @@ export class AliexpressService {
     });
   }
 
+  // حساب المنصة: حساب AliExpress الذي ربطه مدير المنصة (ADMIN) — يستعمله كل التجار
+  // للجلب بدون أن يربط كل تاجر حسابه
+  private platformAccount() {
+    return this.accounts
+      .createQueryBuilder('a')
+      .innerJoin('a.user', 'u')
+      .where('u.role = :role', { role: UserRole.ADMIN })
+      .orderBy('a.updatedAt', 'DESC')
+      .getOne();
+  }
+
+  private async accountFor(userId: string) {
+    return (await this.accounts.findOne({ where: { userId } })) ?? (await this.platformAccount());
+  }
+
   async status(userId: string) {
-    const acc = await this.accounts.findOne({ where: { userId } });
+    const own = await this.accounts.findOne({ where: { userId } });
+    const acc = own ?? (await this.platformAccount());
     return {
       configured: !!(this.appKey && this.appSecret && this.callbackUrl),
       connected: !!acc,
-      account: acc?.account ?? null,
+      shared: !own && !!acc, // يستعمل حساب المنصة — لا حاجة للربط ولا لإلغائه
+      account: own?.account ?? null,
       expiresAt: acc?.expiresAt ?? null,
     };
   }
@@ -147,16 +165,16 @@ export class AliexpressService {
   }
 
   private async sessionFor(userId: string) {
-    const acc = await this.accounts.findOne({ where: { userId } });
-    if (!acc) throw new NotFoundException('اربط حساب AliExpress أولاً');
+    const acc = await this.accountFor(userId);
+    if (!acc) throw new NotFoundException('جلب AliExpress غير مفعّل بعد — يجب على إدارة المنصة ربط حساب AliExpress');
     // تجديد الرمز قبل انتهائه بيوم
     if (acc.expiresAt && acc.expiresAt.getTime() - Date.now() < 24 * 3600 * 1000 && acc.refreshToken) {
       try {
         const t = await this.call('/auth/token/refresh', { refresh_token: acc.refreshToken });
-        await this.saveToken(userId, t);
+        await this.saveToken(acc.userId, t);
         return t.access_token as string;
       } catch (e) {
-        this.logger.warn(`AliExpress token refresh failed for ${userId}`);
+        this.logger.warn(`AliExpress token refresh failed for ${acc.userId}`);
       }
     }
     return acc.accessToken;
