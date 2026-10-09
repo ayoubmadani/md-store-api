@@ -33,8 +33,12 @@ export class VariantAttributeEntryDto {
 
 // ─── The main DTO ────────────────────────────────────────────────────────────
 export class VariantDetailDto {
-  // ✅ removed: id – front-end sends "vd-1234" which is not a valid UUID.
-  //    Postgres auto-generates the UUID; service already strips non-UUID ids.
+  // front-end sends "vd-1234" for new rows and the real UUID for existing
+  // ones — the service keeps rows whose UUID matches, so their order
+  // history (stats) and isActive survive a product edit.
+  @IsOptional()
+  @IsString()
+  id?: string;
 
   /**
    * Each entry describes one attribute of this combination.
@@ -79,4 +83,8 @@ export class VariantDetailDto {
   })
   @IsBoolean()
   autoGenerate?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

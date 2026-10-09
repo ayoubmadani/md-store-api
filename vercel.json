@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "src/main.ts"
     }
+  ],
+  "crons": [
+    {
+      "path": "/internal/cron/shipping-sync",
+      "schedule": "0 3 * * *"
+    }
   ]
 }

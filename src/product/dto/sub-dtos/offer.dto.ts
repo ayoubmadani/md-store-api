@@ -22,4 +22,8 @@ export class OfferDto {
   @IsOptional()
   @IsBoolean()
   shippingFree?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

@@ -2,18 +2,24 @@ import {
   BadRequestException,
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { API_KEY_PREFIX, ApiKeyService } from '../../api-key/api-key.service';
+import { ALLOW_API_KEY } from '../decorator/allow-api-key.decorator';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly reflector: Reflector,
+    private readonly apiKeyService: ApiKeyService,
   ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -35,6 +41,20 @@ export class AuthGuard implements CanActivate {
 
     if (!token) {
       throw new UnauthorizedException('Token is missing');
+    }
+
+    // مفتاح API (mdk_...) — مقبول فقط على المسارات التي عليها @AllowApiKey
+    if (token.startsWith(API_KEY_PREFIX)) {
+      const allowed = this.reflector.getAllAndOverride<boolean>(ALLOW_API_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (!allowed) {
+        throw new ForbiddenException('API keys are not allowed on this route');
+      }
+
+      request['user'] = await this.apiKeyService.verify(token);
+      return true;
     }
 
     try {

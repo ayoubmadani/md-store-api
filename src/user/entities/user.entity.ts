@@ -13,6 +13,14 @@ export enum AuthProvider {
     CREDENTIALS_GOOGLE = 'CREDENTIALS_GOOGLE'
 }
 
+/** صلاحية العمل كمؤكّد طلبيات (تطبيق التأكيد) — يمنحها الأدمن */
+export enum ConfirmationAccess {
+    NONE = 'none',
+    REQUESTED = 'requested',
+    GRANTED = 'granted',
+    REVOKED = 'revoked',
+}
+
 export enum UserRole {
     NORMAL_USER = 'NORMAL_USER',
     ADMIN = 'ADMIN',
@@ -46,6 +54,9 @@ export class User {
         default: UserRole.NORMAL_USER,
     })
     role: UserRole;
+
+    @Column({ type: 'enum', enum: ConfirmationAccess, default: ConfirmationAccess.NONE })
+    confirmationAccess: ConfirmationAccess;
 
     @Column({ nullable: true, unique: true })
     topic?: string

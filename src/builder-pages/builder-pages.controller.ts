@@ -5,6 +5,7 @@ import { UpdateTreeDto } from './dto/update-tree.dto';
 import { GenerateBuilderPageDto } from './dto/generate-builder-page.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 
 // No class-level guard (unlike before) — mirrors LandingPageController's
 // pattern of guarding only the merchant-management routes individually,
@@ -26,6 +27,7 @@ export class BuilderPagesController {
 
   @Post()
   @UseGuards(AuthGuard)
+  @AllowApiKey()
   create(@Body() dto: CreateBuilderPageDto, @GetUser() user: any) {
     return this.builderPagesService.create(dto, this.getUserId(user));
   }
@@ -83,6 +85,7 @@ export class BuilderPagesController {
 
   @Put(':id/tree')
   @UseGuards(AuthGuard)
+  @AllowApiKey()
   updateTree(@Param('id') id: string, @Body() dto: UpdateTreeDto, @GetUser() user: any) {
     return this.builderPagesService.updateTree(id, dto, this.getUserId(user));
   }

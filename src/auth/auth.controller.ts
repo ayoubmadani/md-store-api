@@ -7,6 +7,8 @@ import { AuthGuard } from "@nestjs/passport";
 import type { Response } from 'express';
 import { ConfigService } from "@nestjs/config";
 import { CredentialLoginDto } from "./dto/credentialLogin.dto";
+import { ChangeEmailDto } from "./dto/changeEmail.dto";
+import { GoogleConfirmGuard } from "./guard/google-confirm.guard";
 
 @Controller('auth')
 export class AuthController {
@@ -21,6 +23,14 @@ export class AuthController {
         return this.authService.credentialLogin(dto)
     }
 
+    // لوحة الأدمن: Google ID token ← توكن API لحساب ADMIN فقط
+    @Post('admin/google')
+    @HttpCode(HttpStatus.OK)
+    adminGoogleLogin(@Body('credential') credential: string) {
+        if (!credential) throw new BadRequestException('credential is required');
+        return this.authService.adminGoogleLogin(credential)
+    }
+
     @Post('register')
     @HttpCode(HttpStatus.OK)
     register(@Body() dto: CreateUserDto) {
@@ -31,6 +41,12 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     resendOtp(@Body('email') email: string) {
         return this.authService.resendOtp(email)
+    }
+
+    @Post('change-email')
+    @HttpCode(HttpStatus.OK)
+    changeEmail(@Body() dto: ChangeEmailDto) {
+        return this.authService.changeUnverifiedEmail(dto)
     }
 
     @Post('verify-email')
@@ -64,6 +80,19 @@ export class AuthController {
     @Get('google/callback')
     @UseGuards(AuthGuard('google' ))
     async googleAuthRedirect(@Req() req, @Res() res: Response) {
+        // state=confirm → جاء من تطبيق التأكيد، فيُعاد إليه بدل لوحة التحكم
+        if (req.query?.state === 'confirm') {
+            const confirmUrl = this.config.get<string>('CONFIRM_URL') ?? 'http://localhost:3176';
+            try {
+                const result = await this.authService.GoogleLogin(req.user);
+                if (result && result.access_token) {
+                    return (res as any).redirect(`${confirmUrl}/auth/callback?token=${result.access_token}`);
+                }
+                return (res as any).redirect(`${confirmUrl}/login?error=auth_failed`);
+            } catch (error) {
+                return (res as any).redirect(`${confirmUrl}/login?error=google_auth_error`);
+            }
+        }
         try {
             const result = await this.authService.GoogleLogin(req.user);
 
@@ -77,6 +106,11 @@ export class AuthController {
             return (res as any).redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=google_auth_error`);
         }
     }
+
+    // ── تطبيق التأكيد (confirm-app): نفس استراتيجية google، والرجوع إلى google/callback ──
+    @Get('confirm/google')
+    @UseGuards(GoogleConfirmGuard)
+    async googleConfirmAuth(@Req() req) { }
 
     @Get('support/google')
     @UseGuards(AuthGuard('google-support'))

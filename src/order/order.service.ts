@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ILike, In, Like, Repository } from "typeorm";
 import { v4 as uuidv4 } from 'uuid';
@@ -11,6 +11,7 @@ import { Product } from "../product/entities/product.entity";
 import { Store } from "../store/entities/store.entity";
 import { NtfyService } from "../ntfy/ntfy.service";
 import { Shipping } from "../shipping/entity/shipping.entity";
+import { ConfirmationBillingService } from "../confirmation/confirmation-billing.service";
 
 @Injectable()
 export class OrdersService {
@@ -22,6 +23,7 @@ export class OrdersService {
         @InjectRepository(Shipping) private readonly shippingRepo: Repository<Shipping>,
 
         private readonly ntfyService: NtfyService,
+        private readonly confirmationBilling: ConfirmationBillingService,
     ) { }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
@@ -52,7 +54,24 @@ export class OrdersService {
         // منتج رقمي vs عادي — يُحدَّد من المنتجات الفعلية في قاعدة البيانات
         // (لا يُوثَق بما يرسله العميل)، ولا يجوز خلط النوعين في طلب واحد
         // لأن الطلب سجل واحد بعميل/شحن واحد فقط.
-        const products = await this.productsRepo.find({ where: { id: In(data.map(d => d.productId)) } });
+        const products = await this.productsRepo.find({
+            where: { id: In(data.map(d => d.productId)) },
+            relations: ['offers', 'variantDetails'],
+        });
+
+        // عرض أو متغير عطّله التاجر من صفحة المنتج لا يُقبل في طلب جديد
+        // (قد يبقى ظاهراً في صفحة مفتوحة قديماً لدى الزائر)
+        for (const d of data) {
+            const product = products.find(p => p.id === d.productId);
+            const offerId = d.offerId ?? d.selectedOffer;
+            if (offerId && product?.offers.some(o => o.id === offerId && !o.isActive)) {
+                throw new BadRequestException('هذا العرض لم يعد متاحاً');
+            }
+            if (d.variantDetailId && product?.variantDetails.some(v => v.id === d.variantDetailId && !v.isActive)) {
+                throw new BadRequestException('هذا الاختيار لم يعد متاحاً');
+            }
+        }
+
         const isDigital = products.some(p => p.isDigital);
         if (products.some(p => p.isDigital) !== products.every(p => p.isDigital)) {
             throw new BadRequestException('لا يمكن الجمع بين منتج رقمي ومنتج عادي في نفس الطلب');
@@ -140,6 +159,9 @@ export class OrdersService {
             .leftJoinAndSelect('item.offer', 'offer')
             .leftJoinAndSelect('o.customerWilaya', 'wilaya')
             .leftJoinAndSelect('o.customerCommune', 'commune')
+            // اسم شركة التأكيد التي أُرسل لها الطلب (إن وُجدت) — للعرض في القائمة
+            .leftJoin('o.confirmationCompany', 'cc')
+            .addSelect(['cc.id', 'cc.name'])
             .where('o.storeId = :storeId', { storeId })
             .orderBy('o.createdAt', 'DESC')
             .addOrderBy('img.order', 'ASC')
@@ -189,7 +211,7 @@ export class OrdersService {
             relations: [
                 'items', 'items.product', 'items.product.imagesProduct',
                 'items.variantDetail', 'items.offer',
-                'customerWilaya', 'customerCommune', 'store.user',
+                'customerWilaya', 'customerCommune', 'store.user', 'confirmationCompany',
             ],
             order: { items: { product: { imagesProduct: { order: 'ASC' } } } },
         });
@@ -207,6 +229,27 @@ export class OrdersService {
      * البيانات المشتركة (customer/ship/status) تُؤخذ من أول عنصر.
      * البيانات الخاصة بكل item (qty/offer/variant/price) تُؤخذ حسب الـ index.
      */
+    /**
+     * طلبية أُرسلت لشركة تأكيد:
+     * - قبل أن تؤكدها الشركة (أو إذا ألغتها): مقفلة — التاجر يسترجعها أولاً.
+     * - بعد التأكيد: لا استرجاع، والتاجر يستطيع فقط وضعها "قيد الشحن".
+     *   "مسلّم" و"مرتجع" (اللذان يحددان العمولة) يأتيان من شركة التوصيل عبر
+     *   رقم التتبع — فلا يستطيع التاجر التهرب من العمولة أو أخذها خطأً.
+     * يرجع 'free' (بلا قيود) أو 'shippingOnly'.
+     */
+    private merchantEditMode(order: Order, newStatus?: StatusEnum): 'free' | 'shippingOnly' {
+        if (!order.confirmationCompanyId) return 'free';
+        const afterConfirmation = [StatusEnum.CONFIRMED, StatusEnum.SHIPPING, StatusEnum.DELIVERED, StatusEnum.RETURNED];
+        const shippingPhase = [StatusEnum.SHIPPING];
+        if (!afterConfirmation.includes(order.status)) {
+            throw new ForbiddenException('الطلبية عند شركة التأكيد — استرجعها أولاً لتعديلها');
+        }
+        if (!newStatus || newStatus === order.status || !shippingPhase.includes(newStatus)) {
+            throw new ForbiddenException('أكدتها شركة التأكيد — يمكن فقط وضعها "قيد الشحن"؛ التسليم والإرجاع يأتيان من شركة التوصيل');
+        }
+        return 'shippingOnly';
+    }
+
     async updateInfoUser(orderId: string, dto: CreateOrderDto | CreateOrderDto[]) {
     // التأكد من التعامل مع مصفوفة حتى لو أرسل المستخدم كائناً واحداً
     const dtos = Array.isArray(dto) ? dto : [dto];
@@ -218,6 +261,13 @@ export class OrdersService {
         relations: ['items'],
     });
     if (!order) throw new NotFoundException('Order not found');
+
+    // طلبية أكدتها شركة تأكيد: الحالة فقط، بدون أي تعديل آخر
+    if (this.merchantEditMode(order, first['status'] as StatusEnum) === 'shippingOnly') {
+        await this.ordersRepo.update(order.id, { status: first['status'] as StatusEnum });
+        await this.confirmationBilling.settleIfDelivered(order.id);
+        return this.getOne(order.id);
+    }
 
     // 1. تحديث بيانات الطلب الأساسية (من الحقول الموجودة في أول عنصر في المصفوفة)
     await this.ordersRepo.update(order.id, {
@@ -266,9 +316,88 @@ export class OrdersService {
         totalPrice: totalCartPrice + currentPriceShip 
     });
 
+    // طلب أُرسل لشركة تأكيد وأصبح مسلَّماً → دفع عمولتها (لا يدفع مرتين)
+    await this.confirmationBilling.settleIfDelivered(order.id);
+
     // إرجاع الطلب المحدث بالكامل
     return this.getOne(order.id);
 }
+
+    // ─── GOOGLE SHEETS SYNC ───────────────────────────────────────────────────
+
+    /**
+     * طلبات المتجر المُنشأة منذ `since` (شاملة — السكربت يتجاهل المكرر بالمعرّف)،
+     * مسطّحة إلى حقول جاهزة لسطر في الجدول.
+     */
+    async getOrdersForSheet(storeId: string, since?: Date, limit = 200) {
+        const take = Math.min(Math.max(limit || 200, 1), 500);
+        const qb = this.ordersRepo
+            .createQueryBuilder('o')
+            .leftJoinAndSelect('o.items', 'item')
+            .leftJoinAndSelect('item.product', 'product')
+            .leftJoinAndSelect('item.variantDetail', 'vd')
+            .leftJoinAndSelect('item.offer', 'offer')
+            .leftJoinAndSelect('o.customerWilaya', 'wilaya')
+            .leftJoinAndSelect('o.customerCommune', 'commune')
+            .leftJoinAndSelect('o.lp', 'lp')
+            .leftJoinAndSelect('o.builderPage', 'bp')
+            .where('o.storeId = :storeId', { storeId })
+            .orderBy('o.createdAt', 'ASC')
+            .take(take);
+        // تداخل ساعة إلى الوراء: طلب أُنشئ قبل آخر مزامنة لكن لم يُثبَّت (commit)
+        // إلا بعدها لن يضيع، وكذلك أي فرق توقيت بين الخادم وقاعدة البيانات.
+        // السكربت يتجاهل الطلبات التي عنده بالمعرّف.
+        if (since) qb.andWhere('o.createdAt >= :since', { since: new Date(since.getTime() - 60 * 60 * 1000) });
+
+        const orders = await qb.getMany();
+
+        const describeItem = (item: OrderItem) => {
+            const options = Array.isArray(item.variantDetail?.name)
+                ? item.variantDetail.name
+                    .map((e: any) => (e.displayMode === 'image' ? e.attrName : `${e.attrName}: ${e.value}`))
+                    .join(' / ')
+                : '';
+            return [
+                `${item.quantity}× ${item.product?.name ?? ''}`,
+                options && `(${options})`,
+                item.offer?.name && `[${item.offer.name}]`,
+            ].filter(Boolean).join(' ');
+        };
+
+        return {
+            limit: take,
+            orders: orders.map((o) => {
+                const itemsTotal = (o.items ?? []).reduce((s, it) => s + Number(it.totalPrice || 0), 0);
+                return {
+                    id: o.id,
+                    createdAt: o.createdAt,
+                    status: o.status,
+                    customerName: o.customerName,
+                    customerPhone: o.customerPhone,
+                    customerWhatsapp: o.customerWhatsapp ?? null,
+                    customerEmail: o.customerEmail ?? null,
+                    wilaya: o.customerWilaya?.ar_name ?? null,
+                    commune: o.customerCommune?.ar_name ?? null,
+                    typeShip: o.isDigital ? null : o.typeShip,
+                    isDigital: o.isDigital,
+                    products: (o.items ?? []).map(describeItem).join(' + '),
+                    itemsTotal,
+                    priceShip: Number(o.priceShip || 0),
+                    total: itemsTotal + Number(o.priceShip || 0),
+                    source: o.lp ? String(o.lp.domain) : o.builderPage ? (o.builderPage.domain || o.builderPage.name) : (o.platform ?? null),
+                };
+            }),
+        };
+    }
+
+    async setStatusFromSheet(storeId: string, orderId: string, status: StatusEnum) {
+        const order = await this.ordersRepo.findOne({ where: { id: orderId, storeId } });
+        if (!order) throw new NotFoundException('Order not found');
+        this.merchantEditMode(order, status);
+        await this.ordersRepo.update(order.id, { status });
+        await this.confirmationBilling.settleIfDelivered(order.id);
+        return { id: order.id, status };
+    }
 
     // ─── STATUS COUNTS ────────────────────────────────────────────────────────
 
@@ -287,6 +416,9 @@ export class OrdersService {
     async delete(orderId: string) {
         const order = await this.ordersRepo.findOne({ where: { id: orderId } });
         if (!order) throw new NotFoundException('Order not found');
+        if (order.confirmationCompanyId) {
+            throw new ForbiddenException('لا يمكن حذف طلبية أُرسلت لشركة تأكيد');
+        }
         // الـ items تُحذف تلقائياً بسبب onDelete: CASCADE على الـ entity
         return this.ordersRepo.remove(order);
     }

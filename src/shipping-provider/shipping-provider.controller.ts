@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { SetShippingProviderDto, UpdateShippingProviderDto, CreateShippingOrderDto } from './dto/shipping.dto';
 import { ShippingProviderService } from './shipping-provider.service';
+import { StoreService } from '../store/store.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
 // قم بتفعيل الحراس (Guards) الخاصة بنظامك هنا
@@ -20,7 +21,10 @@ import { GetUser } from '../user/decorator/get-user.decorator';
 @Controller('stores/:storeId/shipping')
 @UseGuards(AuthGuard)
 export class ShippingProviderController {
-  constructor(private readonly shippingService: ShippingProviderService) {}
+  constructor(
+    private readonly shippingService: ShippingProviderService,
+    private readonly storeService: StoreService,
+  ) {}
 
   // ─── مزودي الخدمة (العامة) ───
   @Get('providers')
@@ -108,13 +112,27 @@ export class ShippingProviderController {
   }
 
   @Post('orders')
-  createOrder(
+  async createOrder(
     @Param('storeId') storeId: string,
     @Body() dto: CreateShippingOrderDto,
     @GetUser() user: any,
   ) {
     const userId = user.id || user.sub;
-    return this.shippingService.createOrder(storeId, userId, dto.orderData);
+    // الداشبورد يرسل orderData.orderId — كان يُقرأ id فيصل فارغاً
+    const orderId = (dto.orderData?.orderId ?? dto.orderData?.id) as string;
+    await this.storeService.verifyOwnership(storeId, userId);
+    return this.shippingService.uploadOrder(storeId, userId, orderId);
+  }
+
+  @Patch('orders/:orderId/tracking')
+  async setTracking(
+    @Param('storeId') storeId: string,
+    @Param('orderId') orderId: string,
+    @Body('trackingId') trackingId: string,
+    @GetUser() user: any,
+  ) {
+    await this.storeService.verifyOwnership(storeId, user.id || user.sub);
+    return this.shippingService.setTracking(storeId, orderId, trackingId);
   }
 
   @Get('orders/:trackingId')

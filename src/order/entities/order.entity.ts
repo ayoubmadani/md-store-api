@@ -6,9 +6,10 @@ import { Store } from "../../store/entities/store.entity";
 import {
   Entity, PrimaryGeneratedColumn, Column,
   CreateDateColumn, UpdateDateColumn,
-  ManyToOne, OneToMany, JoinColumn
+  ManyToOne, OneToMany, JoinColumn, Index
 } from "typeorm";
 import { OrderItem } from "./order-item.entity";
+import { ConfirmationCompany } from "../../confirmation/entities/confirmation-company.entity";
 
 export enum TypeShipEnum {
   HOME = "home",
@@ -29,6 +30,7 @@ export enum StatusEnum {
 }
 
 @Entity({ name: 'orders' })
+@Index(['confirmationCompanyId', 'status'])
 export class Order {
 
   @PrimaryGeneratedColumn('uuid')
@@ -143,4 +145,47 @@ export class Order {
 
   @Column({ default: false })
   isUploadedShipping: boolean;
+
+  // ── شحن: رقم التتبع وآخر حالة عند شركة التوصيل ───────
+  @Column({ nullable: true })
+  shippingTrackingId?: string;
+
+  @Column({ nullable: true })
+  shippingProviderStatus?: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  shippingCheckedAt?: Date;
+
+  // ── التأكيد عبر شركة تأكيد خارجية ──────────────────
+  @Column({ type: 'uuid', nullable: true })
+  confirmationCompanyId?: string | null;
+
+  @ManyToOne(() => ConfirmationCompany, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'confirmationCompanyId' })
+  confirmationCompany?: ConfirmationCompany;
+
+  /** الموظف الذي أخذ الطلب حالياً (أو آخر من عمل عليه) */
+  @Column({ type: 'uuid', nullable: true })
+  confirmationAgentId?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  confirmationSentAt?: Date | null;
+
+  /** الطلب محجوز للموظف حتى هذا الوقت — بعده يرجع للقائمة المشتركة */
+  @Column({ type: 'timestamp', nullable: true })
+  confirmationLockedUntil?: Date | null;
+
+  /** لا يظهر في القائمة قبل هذا الوقت (محاولة فاشلة أو مؤجل) */
+  @Column({ type: 'timestamp', nullable: true })
+  confirmationNextAttemptAt?: Date | null;
+
+  /** عمولة الشركة وقت الإرسال (د.ج) ونسبة المنصة منها — ثابتتان حتى لو تغيّرت الأسعار لاحقاً */
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  confirmationCommission?: number | null;
+
+  @Column({ type: 'decimal', precision: 5, scale: 4, nullable: true })
+  confirmationPlatformRate?: number | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  confirmationPaidAt?: Date | null;
 }

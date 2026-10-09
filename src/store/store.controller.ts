@@ -17,6 +17,7 @@ import { CreateFullStoreDto } from './dto/create-full-store.dto';
 import { UpdateFullStoreDto } from './dto/update-store.dto';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { AuthGuard } from '../auth/guard/auth.guard';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
@@ -37,6 +38,7 @@ export class StoreController {
 
   @Post('create-full')
   @UseGuards(AuthGuard)
+  @AllowApiKey()
   async createFullStore(@Body() dto: CreateFullStoreDto, @GetUser() user: any) {
     const store = await this.storeService.createFullStore(dto, this.getUserId(user));
     return { success: true, data: store };
@@ -67,6 +69,7 @@ export class StoreController {
 
   @Get('user/me')
   @UseGuards(AuthGuard)
+  @AllowApiKey()
   async getMyStores(@GetUser() user: any) {
     const stores = await this.storeService.getAllStores(this.getUserId(user));
     return { success: true, data: stores };

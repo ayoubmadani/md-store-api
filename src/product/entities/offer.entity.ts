@@ -23,6 +23,10 @@ export class Offer {
   @Column({ default: false })
   shippingFree: boolean;
 
+  // معطّل = مخفي من المتجر وصفحات الهبوط، لكن يبقى في الإحصائيات
+  @Column({ default: true })
+  isActive: boolean;
+
   @ManyToOne(() => Product, (product) => product.offers, { onDelete: 'CASCADE' })
   product: Product;
 

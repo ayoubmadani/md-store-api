@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { Attribute } from './entities/attribute.entity';
 import { Variant } from './entities/variant.entity';
@@ -17,6 +17,11 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { AttributeDto } from './dto/sub-dtos/attribute.dto';
 import { StoreService } from '../store/store.service';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { OrderItem } from '../order/entities/order-item.entity';
+import { StatusEnum } from '../order/entities/order.entity';
+import { LandingPage } from '../landing-page/entities/landing-page.entity';
+import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
+import { Show } from '../show/entity/show.entity';
 
 export interface VariantAttributeEntry {
   attrId: string;
@@ -37,6 +42,42 @@ function normaliseVDName(raw: unknown): VariantAttributeEntry[] {
     }));
   }
   return [];
+}
+
+// مفتاح ثابت لتركيبة المتغير (مستقل عن ترتيب الخصائص وعن attrId المؤقت)
+// — يُستخدم لمطابقة المتغيرات المولّدة تلقائياً التي لا تحمل id من الواجهة.
+const vdKey = (entries: VariantAttributeEntry[]): string =>
+  entries
+    .map((e) => `${e.attrName}=${e.value}`)
+    .sort()
+    .join('|');
+
+/**
+ * يحذف العروض والمتغيرات المعطّلة من منتج قبل إرساله للواجهة العامة،
+ * وكذلك قيم الخصائص (مثل اللون الأحمر) التي لم يبقَ لها أي متغير مفعّل،
+ * حتى لا يظهر للزائر خيار لا يمكن طلبه.
+ */
+export function stripInactiveOptions<
+  T extends { offers?: Offer[]; variantDetails?: VariantDetail[]; attributes?: Attribute[] },
+>(product: T): T {
+  if (!product) return product;
+  if (Array.isArray(product.offers)) product.offers = product.offers.filter((o) => o.isActive !== false);
+  if (!Array.isArray(product.variantDetails)) return product;
+
+  const allEntries = product.variantDetails.flatMap((v) => normaliseVDName(v.name));
+  product.variantDetails = product.variantDetails.filter((v) => v.isActive !== false);
+  const activeEntries = product.variantDetails.flatMap((v) => normaliseVDName(v.name));
+
+  if (Array.isArray(product.attributes)) {
+    for (const attr of product.attributes) {
+      // خاصية لا تظهر في أي تركيبة (بيانات قديمة) تُترك كما هي
+      if (!Array.isArray(attr.variants) || !allEntries.some((e) => e.attrName === attr.name)) continue;
+      attr.variants = attr.variants.filter((val) =>
+        activeEntries.some((e) => e.attrName === attr.name && e.value === val.value),
+      );
+    }
+  }
+  return product;
 }
 
 const isUuid = (val: unknown): val is string =>
@@ -445,49 +486,73 @@ export class ProductService {
         }
       }
 
+      // المتغيرات والعروض تُحدَّث في مكانها (upsert) بدل الحذف وإعادة الإنشاء،
+      // حتى لا تفقد الطلبات القديمة ربطها بها (إحصائيات صفحة المنتج) ولا
+      // تضيع حالة التفعيل/التعطيل عند كل تعديل للمنتج.
       if (dto.variantDetails !== undefined) {
-        // التعديل هنا: تغيير اسم الجدول من orders إلى order_items
-        await queryRunner.query(
-          `UPDATE "order_items" SET "variantDetailId" = NULL WHERE "variantDetailId" IN (SELECT id FROM variant_details WHERE "productId" = $1)`,
-          [id],
-        );
-
-        await queryRunner.manager.delete(VariantDetail, { product: { id } });
         let vdList: any[] = dto.variantDetails;
         if (vdList.length === 0 && dto.attributes?.length) {
           vdList = generateCombinationsFromDto(dto.attributes, dto.price ?? product.price);
         }
 
+        const existing = await queryRunner.manager.find(VariantDetail, { where: { product: { id } } });
+        const byId = new Map(existing.map((v) => [v.id, v]));
+        const byKey = new Map(existing.map((v) => [vdKey(normaliseVDName(v.name)), v]));
+        const kept = new Set<string>();
+
         for (const vdDto of vdList) {
-          await queryRunner.manager.save(
-            queryRunner.manager.create(VariantDetail, {
-              name: normaliseVDName(vdDto.attributes ?? vdDto.name ?? null),
-              price: Number(vdDto.price) || product.price,
-              stock: Number(vdDto.stock) || 0,
-              autoGenerate: vdDto.autoGenerate ?? false,
-              product,
-            } as any),
+          const name = normaliseVDName(vdDto.attributes ?? vdDto.name ?? null);
+          const match = (isUuid(vdDto.id) && byId.get(vdDto.id)) || byKey.get(vdKey(name));
+          const row = match && !kept.has(match.id)
+            ? match
+            : queryRunner.manager.create(VariantDetail, { product } as any);
+          Object.assign(row, {
+            name,
+            price: Number(vdDto.price) || product.price,
+            stock: Number(vdDto.stock) || 0,
+            autoGenerate: vdDto.autoGenerate ?? false,
+            isActive: vdDto.isActive ?? row.isActive ?? true,
+          });
+          const saved = await queryRunner.manager.save(row);
+          kept.add(saved.id);
+        }
+
+        const removedIds = existing.filter((v) => !kept.has(v.id)).map((v) => v.id);
+        if (removedIds.length) {
+          await queryRunner.query(
+            `UPDATE "order_items" SET "variantDetailId" = NULL WHERE "variantDetailId" = ANY($1)`,
+            [removedIds],
           );
+          await queryRunner.manager.delete(VariantDetail, removedIds);
         }
       }
 
       if (dto.offers) {
-        await queryRunner.query(
-          `UPDATE "order_items" SET "offerId" = NULL WHERE "offerId" IN (SELECT id FROM product_offers WHERE "productId" = $1)`,
-          [id],
-        );
-        await queryRunner.manager.delete(Offer, { product: { id } });
+        const existing = await queryRunner.manager.find(Offer, { where: { product: { id } } });
+        const byId = new Map(existing.map((o) => [o.id, o]));
+        const kept = new Set<string>();
+
         for (const offerDto of dto.offers) {
-          await queryRunner.manager.save(
-            this.offerRepository.create({
-              id: isUuid(offerDto.id) ? offerDto.id : undefined,
-              name: offerDto.name, subTitle: offerDto.subTitle,
-              quantity: Number(offerDto.quantity),
-              price: Number(offerDto.price),
-              shippingFree: offerDto.shippingFree ?? false,
-              product,
-            }),
+          const match = isUuid(offerDto.id) ? byId.get(offerDto.id) : undefined;
+          const row = match ?? this.offerRepository.create({ product });
+          Object.assign(row, {
+            name: offerDto.name, subTitle: offerDto.subTitle,
+            quantity: Number(offerDto.quantity),
+            price: Number(offerDto.price),
+            shippingFree: offerDto.shippingFree ?? false,
+            isActive: offerDto.isActive ?? row.isActive ?? true,
+          });
+          const saved = await queryRunner.manager.save(row);
+          kept.add(saved.id);
+        }
+
+        const removedIds = existing.filter((o) => !kept.has(o.id)).map((o) => o.id);
+        if (removedIds.length) {
+          await queryRunner.query(
+            `UPDATE "order_items" SET "offerId" = NULL WHERE "offerId" = ANY($1)`,
+            [removedIds],
           );
+          await queryRunner.manager.delete(Offer, removedIds);
         }
       }
 
@@ -598,6 +663,269 @@ export class ProductService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // PRODUCT ANALYTICS (صفحة عرض المنتج)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * إحصائيات منتج واحد: ملخص المبيعات، أكثر العروض والمتغيرات مبيعاً،
+   * وصفحات الهبوط الأكثر جلباً للطلبات، مع منحنى يومي.
+   * الإيراد والوحدات تستثني الطلبات الملغاة والمرتجعة.
+   * @param days نافذة زمنية بالأيام (بدونها = كل الفترة)
+   */
+  async getProductAnalytics(id: string, storeId: string, userId: string, days?: number) {
+    const product = await this.findOne(id, storeId, userId);
+    const since = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : null;
+
+    const params = {
+      id, storeId, since,
+      confirmed: [StatusEnum.CONFIRMED, StatusEnum.SHIPPING, StatusEnum.DELIVERED],
+      lost: [StatusEnum.CANCELLED, StatusEnum.RETURNED],
+    };
+
+    // عناصر الطلبات الخاصة بهذا المنتج + أعمدة المبيعات المشتركة
+    const itemsQuery = () => {
+      const qb = this.dataSource
+        .createQueryBuilder(OrderItem, 'item')
+        .innerJoin('item.order', 'o')
+        .select('COUNT(DISTINCT "o"."id")', 'orders')
+        .addSelect('COUNT(DISTINCT "o"."id") FILTER (WHERE "o"."status" IN (:...confirmed))', 'confirmed')
+        .addSelect('COALESCE(SUM("item"."quantity") FILTER (WHERE "o"."status" NOT IN (:...lost)), 0)', 'units')
+        .addSelect('COALESCE(SUM("item"."totalPrice") FILTER (WHERE "o"."status" NOT IN (:...lost)), 0)', 'revenue')
+        .where('"item"."productId" = :id')
+        .andWhere('"o"."storeId" = :storeId');
+      if (since) qb.andWhere('"o"."createdAt" >= :since');
+      return qb.setParameters(params);
+    };
+
+    const showsQuery = (where: string, whereParams: Record<string, any>) => {
+      const qb = this.dataSource
+        .createQueryBuilder(Show, 's')
+        .select('COUNT(*)', 'views')
+        .where(where, whereParams);
+      if (since) qb.andWhere('"s"."createdAt" >= :since', { since });
+      return qb;
+    };
+
+    const [summaryRow, statusRows, offerRows, variantRows, pageRows, dailyRows, productViews, landingPages, builderPages] =
+      await Promise.all([
+        itemsQuery()
+          .addSelect('COUNT(DISTINCT "o"."id") FILTER (WHERE "o"."status" = :delivered)', 'delivered')
+          .setParameter('delivered', StatusEnum.DELIVERED)
+          .getRawOne(),
+        itemsQuery().addSelect('"o"."status"', 'status').groupBy('"o"."status"').getRawMany(),
+        itemsQuery().addSelect('"item"."offerId"', 'offerId').groupBy('"item"."offerId"').getRawMany(),
+        itemsQuery().addSelect('"item"."variantDetailId"', 'variantDetailId').groupBy('"item"."variantDetailId"').getRawMany(),
+        itemsQuery()
+          .addSelect('"o"."lpId"', 'lpId')
+          .addSelect('"o"."builderPageId"', 'builderPageId')
+          .groupBy('"o"."lpId"')
+          .addGroupBy('"o"."builderPageId"')
+          .getRawMany(),
+        itemsQuery()
+          .addSelect(`to_char(date_trunc('day', "o"."createdAt"), 'YYYY-MM-DD')`, 'day')
+          .groupBy('day')
+          .orderBy('day', 'ASC')
+          .getRawMany(),
+        showsQuery('"s"."productId" = :id', { id }).getRawOne(),
+        this.dataSource.getRepository(LandingPage).find({ where: { productId: id } }),
+        this.dataSource.getRepository(BuilderPage).find({ where: { productId: id, storeId } }),
+      ]);
+
+    const toStats = (row?: any) => ({
+      orders: Number(row?.orders ?? 0),
+      confirmed: Number(row?.confirmed ?? 0),
+      units: Number(row?.units ?? 0),
+      revenue: Number(row?.revenue ?? 0),
+    });
+    const bySales = (a: { units: number; orders: number }, b: { units: number; orders: number }) =>
+      b.units - a.units || b.orders - a.orders;
+
+    // ── العروض والمتغيرات (تشمل التي لم تُبع بعد) ─────────────────────────
+    const offerStats = new Map(offerRows.map((r) => [r.offerId, r]));
+    const offers = product.offers
+      .map((o) => ({
+        id: o.id, name: o.name, subTitle: o.subTitle, quantity: o.quantity, price: o.price,
+        shippingFree: o.shippingFree, isActive: o.isActive,
+        ...toStats(offerStats.get(o.id)),
+      }))
+      .sort(bySales);
+
+    const variantStats = new Map(variantRows.map((r) => [r.variantDetailId, r]));
+    const variants = product.variantDetails
+      .map((v) => ({
+        id: v.id,
+        name: normaliseVDName(v.name),
+        label: normaliseVDName(v.name).map((e) => e.value).join(' / '),
+        price: v.price, stock: v.stock, isActive: v.isActive,
+        ...toStats(variantStats.get(v.id)),
+      }))
+      .sort(bySales);
+
+    // ── صفحات الهبوط (القديمة + المبنية بالمحرر + الطلبات من المتجر مباشرة) ─
+    const lpIds = new Set([...landingPages.map((lp) => lp.id), ...pageRows.map((r) => r.lpId).filter(Boolean)]);
+    const bpIds = new Set([...builderPages.map((bp) => bp.id), ...pageRows.map((r) => r.builderPageId).filter(Boolean)]);
+
+    // صفحات وصلت منها طلبات لهذا المنتج لكنها غير مربوطة به مباشرة
+    const missingLp = [...lpIds].filter((lid) => !landingPages.some((lp) => lp.id === lid));
+    const missingBp = [...bpIds].filter((bid) => !builderPages.some((bp) => bp.id === bid));
+    const [extraLp, extraBp, lpViews, bpViews] = await Promise.all([
+      missingLp.length ? this.dataSource.getRepository(LandingPage).find({ where: { id: In(missingLp) } }) : [],
+      missingBp.length ? this.dataSource.getRepository(BuilderPage).find({ where: { id: In(missingBp), storeId } }) : [],
+      lpIds.size
+        ? showsQuery('"s"."lpId" IN (:...ids)', { ids: [...lpIds] }).addSelect('"s"."lpId"', 'pageId').groupBy('"s"."lpId"').getRawMany()
+        : [],
+      bpIds.size
+        ? showsQuery('"s"."builderPageId" IN (:...ids)', { ids: [...bpIds] }).addSelect('"s"."builderPageId"', 'pageId').groupBy('"s"."builderPageId"').getRawMany()
+        : [],
+    ]);
+
+    const viewsOf = (rows: any[], pageId: string) => Number(rows.find((r) => r.pageId === pageId)?.views ?? 0);
+    const withConversion = <T extends { orders: number; views: number }>(row: T) => ({
+      ...row,
+      conversionRate: row.views ? Number(((row.orders / row.views) * 100).toFixed(2)) : null,
+    });
+
+    type PageStats = ReturnType<typeof toStats> & {
+      id: string | null; type: 'landing' | 'builder' | 'store'; name: string | null; domain: string | null;
+      platform: string | null; isActive: boolean; views: number; conversionRate: number | null;
+    };
+    const pages: PageStats[] = [
+      ...[...landingPages, ...extraLp].map((lp) => withConversion({
+        id: lp.id, type: 'landing' as const, name: String(lp.domain), domain: String(lp.domain),
+        platform: lp.platform, isActive: lp.isActive,
+        views: viewsOf(lpViews, lp.id),
+        ...toStats(pageRows.find((r) => r.lpId === lp.id)),
+      })),
+      ...[...builderPages, ...extraBp].map((bp) => withConversion({
+        id: bp.id, type: 'builder' as const, name: bp.name, domain: bp.domain,
+        platform: bp.platform, isActive: bp.isActive,
+        views: viewsOf(bpViews, bp.id),
+        ...toStats(pageRows.find((r) => r.builderPageId === bp.id)),
+      })),
+    ];
+    const direct = pageRows.find((r) => !r.lpId && !r.builderPageId);
+    if (direct) {
+      pages.push(withConversion({
+        id: null, type: 'store', name: null, domain: null, platform: null, isActive: true,
+        views: 0, ...toStats(direct),
+      }));
+    }
+    pages.sort((a, b) => b.orders - a.orders || b.revenue - a.revenue);
+
+    const summary = toStats(summaryRow);
+    const views = Number(productViews?.views ?? 0);
+
+    return {
+      product: {
+        id: product.id, name: product.name, price: product.price, stock: product.stock,
+        isActive: product.isActive, isDigital: product.isDigital,
+        image: product.imagesProduct?.[0]?.imageUrl ?? null,
+        category: product.category ? { id: product.category.id, name: product.category.name } : null,
+      },
+      range: { days: days ?? null, since },
+      summary: {
+        ...summary,
+        delivered: Number(summaryRow?.delivered ?? 0),
+        views,
+        conversionRate: views ? Number(((summary.orders / views) * 100).toFixed(2)) : null,
+        averageOrderValue: summary.orders ? Number((summary.revenue / summary.orders).toFixed(2)) : 0,
+      },
+      statuses: statusRows.map((r) => ({ status: r.status, orders: Number(r.orders) })),
+      daily: dailyRows.map((r) => ({ day: r.day, ...toStats(r) })),
+      offers,
+      variants,
+      pages,
+    };
+  }
+
+  async toggleOfferActive(productId: string, offerId: string, storeId: string, userId: string): Promise<Offer> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const offer = await this.offerRepository.findOne({
+      where: { id: offerId, product: { id: productId, store: { id: storeId } } },
+    });
+    if (!offer) throw new NotFoundException('العرض غير موجود');
+    offer.isActive = !offer.isActive;
+    return this.offerRepository.save(offer);
+  }
+
+  async toggleVariantActive(productId: string, variantId: string, storeId: string, userId: string): Promise<VariantDetail> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const variant = await this.variantDetailRepository.findOne({
+      where: { id: variantId, product: { id: productId, store: { id: storeId } } },
+    });
+    if (!variant) throw new NotFoundException('المتغير غير موجود');
+    variant.isActive = !variant.isActive;
+    return this.variantDetailRepository.save(variant);
+  }
+
+  async updateOffer(
+    productId: string, offerId: string, storeId: string, userId: string,
+    dto: { price?: number; quantity?: number },
+  ): Promise<Offer> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const offer = await this.offerRepository.findOne({
+      where: { id: offerId, product: { id: productId, store: { id: storeId } } },
+    });
+    if (!offer) throw new NotFoundException('العرض غير موجود');
+    if (dto.price !== undefined) offer.price = Number(dto.price);
+    if (dto.quantity !== undefined) offer.quantity = Number(dto.quantity);
+    return this.offerRepository.save(offer);
+  }
+
+  async updateVariant(
+    productId: string, variantId: string, storeId: string, userId: string,
+    dto: { price?: number; stock?: number },
+  ): Promise<VariantDetail> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const variant = await this.variantDetailRepository.findOne({
+      where: { id: variantId, product: { id: productId, store: { id: storeId } } },
+    });
+    if (!variant) throw new NotFoundException('المتغير غير موجود');
+    if (dto.price !== undefined) variant.price = Number(dto.price);
+    if (dto.stock !== undefined) variant.stock = Number(dto.stock);
+    return this.variantDetailRepository.save(variant);
+  }
+
+  /**
+   * تفعيل/تعطيل قيمة خاصية كاملة (مثلاً اللون الأحمر) = كل التركيبات التي تحتويها.
+   */
+  async setAttributeValueActive(
+    productId: string, storeId: string, userId: string,
+    attrName: string, value: string, isActive: boolean,
+  ): Promise<{ attrName: string; value: string; isActive: boolean; variantIds: string[] }> {
+    await this.storeService.verifyOwnership(storeId, userId);
+    const variants = await this.variantDetailRepository.find({
+      where: { product: { id: productId, store: { id: storeId } } },
+    });
+    const isTarget = (e: VariantAttributeEntry) => e.attrName === attrName && e.value === value;
+    const targets = variants.filter((v) => normaliseVDName(v.name).some(isTarget));
+    if (!targets.length) throw new NotFoundException('لا توجد تركيبات بهذه القيمة');
+
+    // عند إعادة التفعيل: لا نفعّل تركيبة تحتوي قيمة أخرى معطّلة بالكامل
+    // (مثلاً تفعيل الأحمر لا يعيد "أحمر / M" إذا كان المقاس M معطّلاً)
+    const fullyDisabled = new Set<string>();
+    if (isActive) {
+      const states = new Map<string, boolean[]>();
+      for (const v of variants) {
+        for (const e of normaliseVDName(v.name)) {
+          const k = `${e.attrName}=${e.value}`;
+          states.set(k, [...(states.get(k) ?? []), v.isActive]);
+        }
+      }
+      for (const [k, list] of states) if (list.every((a) => !a)) fullyDisabled.add(k);
+    }
+    const variantIds = targets
+      .filter((v) => !isActive || !normaliseVDName(v.name).some(
+        (e) => !isTarget(e) && fullyDisabled.has(`${e.attrName}=${e.value}`),
+      ))
+      .map((v) => v.id);
+    if (!variantIds.length) return { attrName, value, isActive, variantIds };
+
+    await this.variantDetailRepository.update({ id: In(variantIds) }, { isActive });
+    return { attrName, value, isActive, variantIds };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // PUBLIC (Domain-based)
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -661,6 +989,7 @@ export class ProductService {
     });
 
     if (!product) throw new NotFoundException('المنتج غير موجود في هذا المتجر');
+    stripInactiveOptions(product);
 
     console.log({
       ...product,
@@ -703,11 +1032,11 @@ export class ProductService {
   }
 
   async getVariants(productId: string) {
-    return this.variantDetailRepository.find({ where: { product: { id: productId } } });
+    return this.variantDetailRepository.find({ where: { product: { id: productId }, isActive: true } });
   }
 
   async getOffers(productId: string) {
-    return this.offerRepository.find({ where: { product: { id: productId } } });
+    return this.offerRepository.find({ where: { product: { id: productId }, isActive: true } });
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -768,6 +1097,7 @@ export class ProductService {
     });
 
     if (!product) throw new NotFoundException('المنتج غير موجود في هذا المتجر');
+    stripInactiveOptions(product);
 
     const payload = {
       ...product,

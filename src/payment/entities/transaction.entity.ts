@@ -15,6 +15,8 @@ export enum TransactionType {
     REFUND = 'refund',                        // استرجاع
     SELL_THEME = "sell_theme",
     TOP_UP = 'top_up',
+    CONFIRMATION_FEE = 'confirmation_fee',         // التاجر يدفع عمولة شركة التأكيد (طلب مسلَّم)
+    CONFIRMATION_EARNING = 'confirmation_earning', // شركة التأكيد تقبض عمولتها بعد خصم نسبة المنصة
 }
 
 @Entity('transactions')

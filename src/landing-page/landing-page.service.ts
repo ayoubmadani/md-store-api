@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LandingPage } from './entities/landing-page.entity';
+import { stripInactiveOptions } from '../product/product.service';
 import { Repository } from 'typeorm';
 import { AiService } from '../ai/ai.service';
 import { SubscriptionService } from '../subscription/subscription.service';
@@ -57,7 +58,7 @@ export class LandingPageService {
     return {
       ...landingpage,
       product: landingpage.product ? {
-        ...landingpage.product,
+        ...stripInactiveOptions(landingpage.product),
         store: landingpage.product.store ? {
           id: landingpage.product.store.id,
           name: landingpage.product.store.name,

@@ -16,6 +16,7 @@ import { Product } from '../product/entities/product.entity';
 import { StorePixel } from '../store/entities/store-pixel.entity';
 import { Domain } from '../domain/entities/domain.entity';
 import { Store } from '../store/entities/store.entity';
+import { stripInactiveOptions } from '../product/product.service';
 
 @Injectable()
 export class BuilderPagesService {
@@ -124,6 +125,7 @@ export class BuilderPagesService {
       order: { attributes: { id: 'ASC' }, imagesProduct: { order: 'ASC' } },
     });
     if (!product) throw new NotFoundException('المنتج غير موجود');
+    stripInactiveOptions(product);
     return {
       id: product.id,
       name: product.name,

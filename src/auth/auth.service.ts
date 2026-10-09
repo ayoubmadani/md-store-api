@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { UserService } from "../user/user.service";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
-import { AuthProvider } from "../user/entities/user.entity";
+import { AuthProvider, UserRole } from "../user/entities/user.entity";
+import { OAuth2Client } from "google-auth-library";
 import { CreateUserDto } from "../user/dto/create-user.dto";
 import { MailService } from "../mail/mail.service";
 import { UpdateUserDto } from "../user/dto/update-user.dto";
@@ -11,6 +12,7 @@ import { VerifyEmailDto } from "./dto/verifyEmail.dto";
 import { ResetPasswordDto } from "./dto/resetPassword";
 import { CredentialLoginDto } from "./dto/credentialLogin.dto";
 import { GoogleLoginDto } from "./dto/googleLogin.dto";
+import { ChangeEmailDto } from "./dto/changeEmail.dto";
 import { access } from "fs";
 
 @Injectable()
@@ -19,6 +21,7 @@ export class AuthService {
         private readonly userService: UserService,
         private readonly jwtService: JwtService,
         private readonly mailService: MailService,
+        private readonly config: ConfigService,
     ) { }
 
     async credentialLogin(dto: CredentialLoginDto) {
@@ -26,6 +29,19 @@ export class AuthService {
 
         if (!user) {
             throw new NotFoundException('User not found');
+        }
+
+        // منع الدخول التقليدي فقط لحساب جوجل "النقي" الذي لم يضف كلمة مرور بعد
+        // CREDENTIALS_GOOGLE لديه كلمة مرور فعلية، فيُسمح له بالدخول بها
+        if (!user.password) {
+            throw new BadRequestException('Please login with Google');
+        }
+
+        // كلمة المرور أولاً: بدونها كان أي شخص يعرف بريد حساب غير مفعّل
+        // يستطيع إرسال رموز تفعيل إليه والوصول لصفحة التفعيل
+        const isMatch = await bcrypt.compare(dto.password, user.password);
+        if (!isMatch) {
+            throw new BadRequestException('Password does not match');
         }
 
         // التحقق من تفعيل الحساب
@@ -36,17 +52,6 @@ export class AuthService {
                 message: 'ACCOUNT_NOT_VERIFIED', // إضافة رسالة ليعرف الـ Frontend ماذا يفعل
                 access_token: ""
             };
-        }
-
-        // منع الدخول التقليدي فقط لحساب جوجل "النقي" الذي لم يضف كلمة مرور بعد
-        // CREDENTIALS_GOOGLE لديه كلمة مرور فعلية، فيُسمح له بالدخول بها
-        if (!user.password) {
-            throw new BadRequestException('Please login with Google');
-        }
-
-        const isMatch = await bcrypt.compare(dto.password, user.password);
-        if (!isMatch) {
-            throw new BadRequestException('Password does not match');
         }
 
         const payload = { sub: user.id, role: user.role };
@@ -79,6 +84,57 @@ export class AuthService {
 
     async register(dto: CreateUserDto) {
         return this.userService.create(dto)
+    }
+
+    /**
+     * تغيير البريد قبل التفعيل (المستخدم أخطأ في كتابته). كلمة المرور مطلوبة
+     * حتى لا يستطيع أحد تحويل حساب غيره إلى بريده، والحساب المفعّل لا يُغيَّر هنا.
+     */
+    async changeUnverifiedEmail(dto: ChangeEmailDto) {
+        const user = await this.userService.findUserByEmail(dto.email);
+        if (user.isVerified) {
+            throw new BadRequestException('Account already verified');
+        }
+        if (!user.password || !(await bcrypt.compare(dto.password, user.password))) {
+            throw new BadRequestException('Password does not match');
+        }
+
+        const newEmail = dto.newEmail.trim();
+        const taken = await this.userService.findUserByEmail(newEmail).catch(() => null);
+        if (taken) {
+            throw new ConflictException('Email already in use');
+        }
+
+        // UpdateUserDto لا يحتوي email — نفس أسلوب verifyEmail
+        await this.userService.updateUser({ email: newEmail } as any, user.id);
+        return this.resendOtp(newEmail);
+    }
+
+    /**
+     * دخول لوحة الأدمن (md-store-admin): الواجهة ترسل Google ID token، نتحقق منه
+     * هنا (التوقيع + الجمهور = GOOGLE_CLIENT_ID)، ونصدر توكن الـ API فقط لحساب
+     * دوره ADMIN في قاعدة البيانات. لا نثق بأي فحص يتم في المتصفح.
+     */
+    async adminGoogleLogin(credential: string) {
+        const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+        let payload: any;
+        try {
+            const ticket = await new OAuth2Client(clientId).verifyIdToken({ idToken: credential, audience: clientId });
+            payload = ticket.getPayload();
+        } catch {
+            throw new UnauthorizedException('Invalid Google token');
+        }
+        if (!payload?.email || !payload.email_verified) {
+            throw new UnauthorizedException('Google email not verified');
+        }
+
+        const user = await this.userService.findUserByEmail(payload.email).catch(() => null);
+        if (!user || user.role !== UserRole.ADMIN) {
+            throw new ForbiddenException('هذا الحساب غير مصرح له بالدخول');
+        }
+
+        const access_token = await this.generateToken({ sub: user.id, role: user.role });
+        return { access_token, email: user.email, name: user.username };
     }
 
     async resendOtp(email: string) {
@@ -210,11 +266,13 @@ export class AuthService {
         }
 
         // 4. تحديث كلمة المرور ومسح الـ OTP
+        // الرمز وصل إلى بريده → البريد مُثبت، فيُفعَّل الحساب إن لم يكن مفعّلاً
         await this.userService.updateUser(
             {
                 password: dto.password,
                 otp: null,         // مسح الرمز لضمان الأمان
                 otpExpires: null,   // مسح وقت الانتهاء
+                isVerified: true,
             } as any,
             user.id
         );

@@ -25,10 +25,12 @@ import { PaymentModule } from './payment/payment.module';
 import { ShippingProviderModule } from './shipping-provider/shipping-provider.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronJobModule } from './cron-job/cron-job.module';
+import { ShippingSyncModule } from './shipping-sync/shipping-sync.module';
 import { ShowModule } from './show/show.module';
 import { DomainModule } from './domain/domain.module';
 import { SupportModule } from './support/support.module';
 import { CouponModule } from './coupon/coupon.module';
+import { ApiKeyModule } from './api-key/api-key.module';
 
 @Module({
   imports: [
@@ -78,10 +80,12 @@ import { CouponModule } from './coupon/coupon.module';
     PaymentModule,
     ShippingProviderModule,
     CronJobModule,
+    ShippingSyncModule,
     ShowModule,
     DomainModule,
     SupportModule,
     CouponModule,
+    ApiKeyModule,
   ],
   controllers: [AppController]
 })

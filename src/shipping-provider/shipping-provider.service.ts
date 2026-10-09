@@ -1,4 +1,4 @@
-import { BadGatewayException, HttpException, Injectable } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,8 +6,23 @@ import { Repository } from 'typeorm';
 import { firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 
-import { Order } from '../order/entities/order.entity';
+import { Order, StatusEnum } from '../order/entities/order.entity';
 import { SetShippingProviderDto, UpdateShippingProviderDto } from './dto/shipping.dto';
+
+/** رقم التتبع من رد شركة التوصيل — كل شركة تضعه في مكان/اسم مختلف */
+export function extractTracking(res: unknown, depth = 0): string | null {
+  if (!res || typeof res !== 'object' || depth > 3) return null;
+  for (const [key, value] of Object.entries(res as Record<string, unknown>)) {
+    if (/^tracking(_?id|_?number)?$/i.test(key) && (typeof value === 'string' || typeof value === 'number') && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+  for (const value of Object.values(res as Record<string, unknown>)) {
+    const found = extractTracking(value, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
 
 @Injectable()
 export class ShippingProviderService {
@@ -111,18 +126,26 @@ export class ShippingProviderService {
     return this.forward('get', `/stores/${storeId}/shipping/validation-rules`, userId);
   }
 
-  async createOrder(storeId: string, userId: string, orderData: Record<string, unknown>) {
+  /**
+   * رفع طلب إلى شركة التوصيل بحساب التاجر، ثم حفظ رقم التتبع وتحويل الحالة
+   * إلى "قيد الشحن". يُستعمل من زر الشحن في الداشبورد ومن التأكيد التلقائي.
+   */
+  async uploadOrder(storeId: string, userId: string, orderId: string) {
+    if (!orderId) throw new BadRequestException('orderId مطلوب');
+
+    // storeId في الشرط: لا يمكن شحن طلب متجر آخر
     const order = await this.orderRepo.findOne({
-      where: { id: orderData.id as string },
-      // يجب إضافة items و items.product لكي تستخدمها شركات الشحن
+      where: { id: orderId, storeId },
       relations: ['customerWilaya', 'customerCommune', 'items', 'items.product'],
     });
 
-    if (!order) throw new BadGatewayException('الطلب غير موجود');
+    if (!order) throw new NotFoundException('الطلب غير موجود');
+    if (order.shippingTrackingId) throw new BadRequestException('هذا الطلب مرفوع لشركة التوصيل مسبقاً');
     if (!order.customerWilaya || !order.customerCommune) {
-      throw new BadGatewayException('لا يمكن شحن طلب رقمي — لا توجد بيانات ولاية/بلدية لهذا الطلب');
+      throw new BadRequestException('لا يمكن شحن طلب رقمي — لا توجد بيانات ولاية/بلدية لهذا الطلب');
     }
 
+    const itemsTotal = order.items.reduce((sum, item) => sum + Number(item.totalPrice || 0), 0);
     const shippingOrderInput = {
       id: order.id,
       typeShip: order.typeShip,
@@ -132,16 +155,51 @@ export class ShippingProviderService {
       customerCommuneId: order.customerCommuneId,
       customerWilaya: { name: order.customerWilaya.name, ar_name: order.customerWilaya.ar_name },
       customerCommune: { name: order.customerCommune.name, ar_name: order.customerCommune.ar_name },
-      totalPrice: order.totalPrice,
+      // المبلغ الذي يحصّله الموزّع من الزبون: المنتجات + التوصيل
+      totalPrice: itemsTotal + Number(order.priceShip || 0),
       items: order.items.map((item) => ({
         quantity: item.quantity,
         product: item.product ? { name: item.product.name } : undefined,
       })),
     };
 
-    return this.forward('post', `/stores/${storeId}/shipping/orders`, userId, {
+    const result = await this.forward<Record<string, unknown>>('post', `/stores/${storeId}/shipping/orders`, userId, {
       data: { order: shippingOrderInput },
     });
+
+    const trackingId = extractTracking(result);
+    await this.orderRepo.update(order.id, {
+      shippingTrackingId: trackingId ?? undefined,
+      isUploadedShipping: true,
+      status: StatusEnum.SHIPPING,
+      shippingAt: new Date(),
+    });
+
+    return { ...result, tracking: trackingId };
+  }
+
+  /**
+   * رقم تتبع يُدخله التاجر يدوياً (طرد رُفع خارج المنصة، أو قبل حفظ الأرقام تلقائياً).
+   * الطلبية تصبح "قيد الشحن" وتدخل مزامنة الحالة مع شركة التوصيل في الدورة القادمة.
+   */
+  async setTracking(storeId: string, orderId: string, trackingId: string) {
+    const tracking = trackingId?.trim();
+    if (!tracking) throw new BadRequestException('رقم التتبع مطلوب');
+    const order = await this.orderRepo.findOne({ where: { id: orderId, storeId } });
+    if (!order) throw new NotFoundException('الطلب غير موجود');
+    if (order.isDigital) throw new BadRequestException('الطلبية الرقمية لا تُشحن');
+    if (![StatusEnum.CONFIRMED, StatusEnum.SHIPPING].includes(order.status)) {
+      throw new BadRequestException('رقم التتبع يُضاف لطلبية مؤكدة أو قيد الشحن فقط');
+    }
+    await this.orderRepo.update(order.id, {
+      shippingTrackingId: tracking,
+      isUploadedShipping: true,
+      status: StatusEnum.SHIPPING,
+      shippingAt: order.shippingAt ?? new Date(),
+      shippingCheckedAt: null as any, // تُفحص في أول دورة مزامنة
+      shippingProviderStatus: null as any,
+    });
+    return { id: order.id, status: StatusEnum.SHIPPING, shippingTrackingId: tracking };
   }
 
   getOrder(storeId: string, userId: string, trackingId: string) {

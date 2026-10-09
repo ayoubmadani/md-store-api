@@ -19,8 +19,11 @@ import {
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { SetAttributeValueActiveDto } from './dto/set-attribute-value-active.dto';
+import { UpdateOfferQuickDto, UpdateVariantQuickDto } from './dto/update-product-option.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 
 // ... (الاستيرادات تبقى كما هي)
 
@@ -38,6 +41,7 @@ export class ProductController {
   }
 
   @Post()
+  @AllowApiKey()
   @HttpCode(HttpStatus.CREATED)
   create(
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -90,6 +94,79 @@ export class ProductController {
     @GetUser() user: any,
   ) {
     return this.productService.getStoreStats(storeId, this.getUserId(user),);
+  }
+
+  // ==================== إحصائيات منتج واحد ====================
+
+  @Get(':id/analytics')
+  getAnalytics(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @GetUser() user: any,
+    @Query('days', new ParseIntPipe({ optional: true })) days?: number,
+  ) {
+    return this.productService.getProductAnalytics(id, storeId, this.getUserId(user), days || undefined);
+  }
+
+  // ==================== تفعيل/تعطيل عرض أو متغير ====================
+
+  @Patch(':id/offers/:offerId/toggle-active')
+  toggleOfferActive(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('offerId', ParseUUIDPipe) offerId: string,
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @GetUser() user: any,
+  ) {
+    return this.productService.toggleOfferActive(id, offerId, storeId, this.getUserId(user));
+  }
+
+  // تعطيل/تفعيل قيمة كاملة (مثل اللون الأحمر) في كل تركيباتها
+  // — مسار ثابت قبل :variantId حتى لا يُلتقط كمعرّف
+  @Patch(':id/variants/attribute-value')
+  setAttributeValueActive(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @Body() dto: SetAttributeValueActiveDto,
+    @GetUser() user: any,
+  ) {
+    return this.productService.setAttributeValueActive(
+      id, storeId, this.getUserId(user), dto.attrName, dto.value, dto.isActive,
+    );
+  }
+
+  @Patch(':id/variants/:variantId/toggle-active')
+  toggleVariantActive(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @GetUser() user: any,
+  ) {
+    return this.productService.toggleVariantActive(id, variantId, storeId, this.getUserId(user));
+  }
+
+  // ==================== تعديل سعر/كمية عرض أو متغير ====================
+  // بعد مسار variants/attribute-value حتى لا يُلتقط "attribute-value" كمعرّف
+
+  @Patch(':id/offers/:offerId')
+  updateOffer(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('offerId', ParseUUIDPipe) offerId: string,
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @Body() dto: UpdateOfferQuickDto,
+    @GetUser() user: any,
+  ) {
+    return this.productService.updateOffer(id, offerId, storeId, this.getUserId(user), dto);
+  }
+
+  @Patch(':id/variants/:variantId')
+  updateVariant(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @Body() dto: UpdateVariantQuickDto,
+    @GetUser() user: any,
+  ) {
+    return this.productService.updateVariant(id, variantId, storeId, this.getUserId(user), dto);
   }
 
   // ==================== جلب منتج واحد ====================
