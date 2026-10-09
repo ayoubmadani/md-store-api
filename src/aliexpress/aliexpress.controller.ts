@@ -36,7 +36,7 @@ export class AliexpressController {
   // يعود إليه AliExpress بعد الموافقة (Callback URL المسجّل في App Console)
   @Get('callback')
   async callback(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
-    const back = `${this.config.get<string>('FRONT_URL')}/dashboard/products/create`;
+    const back = `${(this.config.get<string>('FRONT_URL') || '').replace(/\/+$/, '')}/dashboard/products/create`;
     try {
       await this.ali.handleCallback(code, state);
       return res.redirect(`${back}?aliexpress=connected`);
