@@ -31,6 +31,7 @@ import { DomainModule } from './domain/domain.module';
 import { SupportModule } from './support/support.module';
 import { CouponModule } from './coupon/coupon.module';
 import { ApiKeyModule } from './api-key/api-key.module';
+import { AliexpressModule } from './aliexpress/aliexpress.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { ApiKeyModule } from './api-key/api-key.module';
     SupportModule,
     CouponModule,
     ApiKeyModule,
+    AliexpressModule,
   ],
   controllers: [AppController]
 })
