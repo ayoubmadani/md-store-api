@@ -60,3 +60,14 @@ export class DomainController {
     return this.domainService.unassignFromBuilderPage(id, storeId);
   }
 }
+
+// عام (بدون تسجيل دخول) — يستعمله المتجر لمعرفة ما يعرضه على الدومين
+@Controller('domain')
+export class PublicDomainController {
+  constructor(private readonly domainService: DomainService) {}
+
+  @Get('resolve/:domain')
+  resolve(@Param('domain') domain: string) {
+    return this.domainService.resolve(domain);
+  }
+}

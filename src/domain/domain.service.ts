@@ -22,6 +22,21 @@ export class DomainService {
     private readonly configService: ConfigService,
   ) { }
 
+  /**
+   * عام — للمتجر: هل هذا الدومين للمتجر كله أم لصفحة محرر واحدة؟
+   * لا يكشف إلا النوع ومعرّف الصفحة (لا بيانات المتجر أو المالك).
+   */
+  async resolve(domain: string) {
+    const clean = (domain || '').toLowerCase().replace(/^www\./, '').split(':')[0];
+    const row = clean
+      ? await this.domainRepo.findOne({ where: { domain: clean, isActive: true }, select: ['id', 'scope', 'builderPageId'] })
+      : null;
+    if (row?.scope === 'landing_page' && row.builderPageId) {
+      return { scope: 'landing_page' as const, builderPageId: row.builderPageId };
+    }
+    return { scope: 'store' as const, builderPageId: null };
+  }
+
   // 1. إضافة دومين جديد
 
   async create(dto: CreateDomainDto) {
