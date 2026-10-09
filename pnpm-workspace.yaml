@@ -1,3 +1,6 @@
+# pnpm 9 (المستعمل على Vercel) يرفض الملف بدون packages
+packages:
+  - '.'
 allowBuilds:
   '@nestjs/core': false
   '@scarf/scarf': false
