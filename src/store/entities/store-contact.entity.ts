@@ -13,6 +13,10 @@ export class StoreContact {
   @Column({ nullable: true })
   phone?: string;
 
+  // رقم واتساب المتجر (زر واتساب العائم في واجهة المتجر)
+  @Column({ nullable: true })
+  whatsapp?: string;
+
   @Column({ nullable: true })
   wilaya?: string;
 

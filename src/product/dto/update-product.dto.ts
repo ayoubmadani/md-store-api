@@ -63,6 +63,14 @@ export class UpdateProductDto {
   isDigital?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  whatsappEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  whatsappNumber?: string;
+
+  @IsOptional()
   @IsUUID('4', { message: 'معرف التصنيف غير صالح' })
   categoryId?: string | null; // يمكن إزالة التصنيف بـ null
 

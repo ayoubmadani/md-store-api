@@ -50,6 +50,14 @@ export class Product {
   @Column({ default: false })
   isDigital: boolean;
 
+  // زر "اطلب عبر واتساب" في صفحة المنتج بالمتجر (برقم واتساب المتجر)
+  @Column({ default: false })
+  whatsappEnabled: boolean;
+
+  // رقم واتساب خاص بالمنتج (يُملأ افتراضياً من رقم واتساب المتجر في لوحة التحكم)
+  @Column({ type: 'varchar', nullable: true })
+  whatsappNumber?: string | null;
+
   @Column({ default: 0 })
   stock: number;
 

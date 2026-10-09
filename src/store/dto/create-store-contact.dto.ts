@@ -4,6 +4,7 @@ import { IsOptional, IsEmail, IsString } from 'class-validator';
 export class CreateStoreContactDto {
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() whatsapp?: string;
   @IsOptional() @IsString() wilaya?: string; 
   @IsOptional() @IsString() address?: string;
 }

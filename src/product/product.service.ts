@@ -183,6 +183,8 @@ export class ProductService {
         isActive: dto.isActive ?? true,
         shippingFree: dto.shippingFree ?? false,
         isDigital: dto.isDigital ?? false,
+        whatsappEnabled: dto.whatsappEnabled ?? false,
+        whatsappNumber: dto.whatsappNumber?.trim() || null,
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
@@ -277,6 +279,8 @@ export class ProductService {
         isActive: dto.isActive ?? true,
         shippingFree: dto.shippingFree ?? false,
         isDigital: dto.isDigital ?? false,
+        whatsappEnabled: dto.whatsappEnabled ?? false,
+        whatsappNumber: dto.whatsappNumber?.trim() || null,
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
@@ -456,6 +460,8 @@ export class ProductService {
         isActive: dto.isActive ?? product.isActive,
         shippingFree: dto.shippingFree ?? product.shippingFree,
         isDigital: dto.isDigital ?? product.isDigital,
+        whatsappEnabled: dto.whatsappEnabled ?? product.whatsappEnabled,
+        whatsappNumber: dto.whatsappNumber !== undefined ? dto.whatsappNumber.trim() || null : product.whatsappNumber,
         category: dto.categoryId ? { id: dto.categoryId } : product.category,
       });
       await queryRunner.manager.save(product);
