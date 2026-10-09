@@ -497,8 +497,10 @@ export class ProductService {
       // تضيع حالة التفعيل/التعطيل عند كل تعديل للمنتج.
       if (dto.variantDetails !== undefined) {
         let vdList: any[] = dto.variantDetails;
-        if (vdList.length === 0 && dto.attributes?.length) {
-          vdList = generateCombinationsFromDto(dto.attributes, dto.price ?? product.price);
+        // توليد تلقائي من الخصائص (لوحة التحكم لم تعد ترسل المتغيرات — تُدار من صفحة show)
+        const generated = vdList.length === 0 && !!dto.attributes?.length;
+        if (generated) {
+          vdList = generateCombinationsFromDto(dto.attributes!, dto.price ?? product.price);
         }
 
         const existing = await queryRunner.manager.find(VariantDetail, { where: { product: { id } } });
@@ -512,13 +514,18 @@ export class ProductService {
           const row = match && !kept.has(match.id)
             ? match
             : queryRunner.manager.create(VariantDetail, { product } as any);
-          Object.assign(row, {
-            name,
-            price: Number(vdDto.price) || product.price,
-            stock: Number(vdDto.stock) || 0,
-            autoGenerate: vdDto.autoGenerate ?? false,
-            isActive: vdDto.isActive ?? row.isActive ?? true,
-          });
+          if (generated && match && !kept.has(match.id)) {
+            // تركيبة موجودة: نحافظ على سعرها وكميتها وحالتها كما عُدّلت في صفحة show
+            row.name = name;
+          } else {
+            Object.assign(row, {
+              name,
+              price: Number(vdDto.price) || product.price,
+              stock: Number(vdDto.stock) || 0,
+              autoGenerate: vdDto.autoGenerate ?? false,
+              isActive: vdDto.isActive ?? row.isActive ?? true,
+            });
+          }
           const saved = await queryRunner.manager.save(row);
           kept.add(saved.id);
         }
