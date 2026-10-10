@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { lookup } from 'dns/promises';
 import { Image } from './entities/image.entity';
 import { S3Service } from './s3.service';
 import { count } from 'console';
@@ -318,4 +319,40 @@ export class ImageService {
     return { success: true }
   }
 
+
+  /**
+   * تنزيل صورة من رابط خارجي وحفظها في تخزين المنصة (مكتبة صور المستخدم) — يستعمله إنشاء
+   * المتجر عبر Claude/MCP لصورة الهيرو، حتى لا تختفي الصورة إذا حذفها الموقع الأصلي.
+   * حماية SSRF: https فقط، لا عناوين داخلية/خاصة، صور فقط، حجم أقصى 8MB، مهلة 15 ثانية.
+   */
+  async importFromUrl(url: string, userId: string, folder = 'uploads'): Promise<Image> {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') throw new BadRequestException('رابط الصورة يجب أن يبدأ بـ https');
+    const { address } = await lookup(parsed.hostname);
+    if (isPrivateAddress(address)) throw new BadRequestException('رابط الصورة غير مسموح');
+
+    const res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15000) });
+    const type = (res.headers.get('content-type') || '').split(';')[0].trim();
+    if (!res.ok || !type.startsWith('image/')) throw new BadRequestException('تعذر تنزيل الصورة من الرابط');
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length > 8 * 1024 * 1024) throw new BadRequestException('حجم الصورة أكبر من 8MB');
+
+    const ext = (type.split('/')[1] || 'jpg').replace('jpeg', 'jpg').replace(/[^a-z0-9]/g, '') || 'jpg';
+    const file = {
+      buffer,
+      originalname: `remote.${ext}`,
+      mimetype: type,
+      size: buffer.length,
+    } as Express.Multer.File;
+    return this.uploadSingle(file, userId, folder);
+  }
+}
+
+// عناوين IP محلية/خاصة لا يجوز للخادم الاتصال بها
+function isPrivateAddress(ip: string): boolean {
+  if (ip === '::1' || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80')) return true;
+  const v4 = ip.replace(/^::ffff:/, '');
+  const [a, b] = v4.split('.').map(Number);
+  if ([a, b].some((n) => Number.isNaN(n))) return false;
+  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
 }

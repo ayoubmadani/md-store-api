@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ImageModule } from '../image/image.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { StoreService } from './store.service';
@@ -44,6 +45,7 @@ import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
     ]),
     SubscriptionModule,
     UserModule,
+    ImageModule,
   ],
   controllers: [StoreController , PublicStoreController],
   providers: [StoreService , PublicStoreService],

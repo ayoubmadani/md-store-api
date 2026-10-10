@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { AliexpressAccount } from './entities/aliexpress-account.entity';
 import { UserRole } from '../user/entities/user.entity';
+import { ProductService } from '../product/product.service';
 
 const SYNC_URL = 'https://api-sg.aliexpress.com/sync';
 const REST_URL = 'https://api-sg.aliexpress.com/rest';
@@ -34,6 +35,7 @@ export class AliexpressService {
   constructor(
     private readonly config: ConfigService,
     @InjectRepository(AliexpressAccount) private readonly accounts: Repository<AliexpressAccount>,
+    private readonly products: ProductService,
   ) {}
 
   private get appKey() { return this.config.get<string>('ALIEXPRESS_APP_KEY'); }
@@ -238,6 +240,49 @@ export class AliexpressService {
       originalPrice: origs.length ? Math.min(...origs) : null,
       currency: base.currency_code || 'USD',
       attributes: [...attrs.values()].filter((a) => a.values.length > 0),
+    };
+  }
+
+  // ── إنشاء منتج مباشرة من رابط (يستعمله Claude عبر MCP بمفتاح API) ─────────
+  // يجلب المنتج من AliExpress ثم ينشئه في المتجر بسعر البيع الذي يحدده التاجر
+  async createProductFromUrl(
+    userId: string,
+    storeId: string,
+    input: { url: string; price: number; stock?: number; name?: string; language?: string },
+  ) {
+    if (!(Number(input.price) > 0)) throw new BadRequestException('سعر البيع مطلوب');
+    const p = await this.importProduct(userId, input.url, input.language);
+    const maxImages = await this.products.getProductImagesLimit(userId);
+    const now = Date.now();
+    const attributes = p.attributes.map((a, ai) => {
+      const withImages = a.type === 'color' && a.values.every((v) => v.image);
+      return {
+        id: `att-${now}-${ai}`,
+        name: a.name,
+        type: withImages ? 'color' : 'text',
+        ...(withImages ? { displayMode: 'image' } : {}),
+        variants: a.values.map((v, vi) => {
+          const value = withImages ? v.image! : v.value;
+          return { id: `var-${now}-${ai}-${vi}`, name: value, value };
+        }),
+      };
+    });
+    const product = await this.products.create(storeId, userId, {
+      name: (input.name || p.name).slice(0, 250),
+      desc: p.desc,
+      price: Number(input.price),
+      stock: input.stock ?? 0,
+      images: p.images.slice(0, Math.max(1, maxImages)),
+      attributes,
+      variantDetails: [], // تُولَّد التركيبات تلقائياً من الخصائص
+    } as any);
+    return {
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      images: Math.min(p.images.length, Math.max(1, maxImages)),
+      attributes: attributes.map((a) => `${a.name} (${a.variants.length})`),
+      aliexpressPrice: p.price ? `${p.price} ${p.currency}` : null,
     };
   }
 }

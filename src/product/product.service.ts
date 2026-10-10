@@ -143,7 +143,7 @@ export class ProductService {
   }
 
   // ─── helper: قراءة الحد من features.productImagesNumber ────────────────────
-  private async getProductImagesLimit(userId: string): Promise<number> {
+  async getProductImagesLimit(userId: string): Promise<number> {
     const sub = await this.subscriptionService.findSub(userId);
     return sub?.plan?.features?.productImagesNumber ?? 1;
   }

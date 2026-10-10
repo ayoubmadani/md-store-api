@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
@@ -49,5 +50,31 @@ export class AliexpressController {
   @UseGuards(AuthGuard)
   importProduct(@GetUser() user: any, @Body() body: { url?: string; language?: string }) {
     return this.ali.importProduct(this.getUserId(user), body?.url || '', body?.language);
+  }
+}
+
+// إنشاء منتج من رابط AliExpress في خطوة واحدة — متاح بمفتاح API (Claude عبر MCP)
+@Controller('stores/:storeId/products')
+@UseGuards(AuthGuard)
+export class AliexpressStoreProductsController {
+  constructor(private readonly ali: AliexpressService) {}
+
+  @Post('import-aliexpress')
+  @AllowApiKey()
+  importToStore(
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @GetUser() user: any,
+    @Body() body: { url?: string; price?: number; stock?: number; name?: string; language?: string },
+  ) {
+    const userId = user?.id || user?.sub;
+    if (!userId) throw new BadRequestException('User ID not found in token');
+    if (!body?.url) throw new BadRequestException('رابط المنتج مطلوب');
+    return this.ali.createProductFromUrl(userId, storeId, {
+      url: body.url,
+      price: Number(body.price),
+      stock: body.stock !== undefined ? Number(body.stock) : undefined,
+      name: body.name,
+      language: body.language,
+    });
   }
 }

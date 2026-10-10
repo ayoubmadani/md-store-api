@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ImageService } from '../image/image.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, TreeRepository, IsNull } from 'typeorm';
 import { Store } from './entities/store.entity';
@@ -48,6 +49,7 @@ export class StoreService {
         @InjectRepository(ImageProduct) private imageProductRepository: Repository<ImageProduct>,
         @InjectRepository(LandingPage) private landingPageRepository: Repository<LandingPage>,
         @InjectRepository(BuilderPage) private builderPageRepository: Repository<BuilderPage>,
+        private readonly imageService: ImageService,
 
 
         private readonly subscriptionService: SubscriptionService,
@@ -205,6 +207,17 @@ export class StoreService {
 
         if (store) {
             throw new BadRequestException('DOMAIN_ALREADY_EXISTS');
+        }
+
+        // صورة هيرو من رابط خارجي (مثلاً اختارها Claude): نحفظ نسخة في تخزين المنصة.
+        // عند الفشل نبقي الرابط الأصلي — لا نوقف إنشاء المتجر بسبب الصورة.
+        const heroUrl = dto.hero?.imageUrl;
+        const ownPublic = process.env.AWS_PUBLIC_URL || '';
+        if (heroUrl && /^https:\/\//.test(heroUrl) && !(ownPublic && heroUrl.startsWith(ownPublic))) {
+            try {
+                const img = await this.imageService.importFromUrl(heroUrl, userId);
+                dto.hero = { ...dto.hero, imageUrl: img.url };
+            } catch { /* نبقي الرابط الأصلي */ }
         }
 
         const queryRunner = this.dataSource.createQueryRunner();
