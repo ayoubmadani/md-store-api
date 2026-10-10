@@ -66,6 +66,7 @@ export class ProductController {
   }
 
   @Get()
+  @AllowApiKey()
   findAll(
     @GetUser() user: any,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -172,6 +173,7 @@ export class ProductController {
   // ==================== جلب منتج واحد ====================
 
   @Get(':id')
+  @AllowApiKey()
   findOne(
     @Param('id') id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -183,6 +185,7 @@ export class ProductController {
   // ==================== تحديث منتج ====================
 
   @Patch(':id')
+  @AllowApiKey()
   update(
     @Param('id') id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -197,6 +200,7 @@ export class ProductController {
   // ==================== تغيير حالة المنتج ====================
 
   @Patch(':id/toggle-active')
+  @AllowApiKey()
   toggleActive(
     @Param('id') id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -208,6 +212,7 @@ export class ProductController {
   // ==================== تحديث المخزون ====================
 
   @Patch(':id/stock')
+  @AllowApiKey()
   updateStock(
     @Param('id') id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -221,6 +226,7 @@ export class ProductController {
   // ==================== حذف منتج (Soft Delete) ====================
 
   @Delete(':id')
+  @AllowApiKey()
   @HttpCode(HttpStatus.OK)
   remove(
     @Param('id') id: string,

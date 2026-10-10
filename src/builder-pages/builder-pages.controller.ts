@@ -33,6 +33,7 @@ export class BuilderPagesController {
   }
 
   @Get('store/:storeId')
+  @AllowApiKey()
   @UseGuards(AuthGuard)
   getByStoreId(@Param('storeId') storeId: string, @GetUser() user: any) {
     return this.builderPagesService.getByStoreId(storeId, this.getUserId(user));
@@ -78,6 +79,7 @@ export class BuilderPagesController {
   }
 
   @Get(':id')
+  @AllowApiKey()
   @UseGuards(AuthGuard)
   findOne(@Param('id') id: string, @GetUser() user: any) {
     return this.builderPagesService.findOne(id, this.getUserId(user));
@@ -91,6 +93,7 @@ export class BuilderPagesController {
   }
 
   @Post(':id/publish')
+  @AllowApiKey()
   @UseGuards(AuthGuard)
   publish(@Param('id') id: string, @GetUser() user: any) {
     return this.builderPagesService.publish(id, this.getUserId(user));

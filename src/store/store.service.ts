@@ -209,16 +209,7 @@ export class StoreService {
             throw new BadRequestException('DOMAIN_ALREADY_EXISTS');
         }
 
-        // صورة هيرو من رابط خارجي (مثلاً اختارها Claude): نحفظ نسخة في تخزين المنصة.
-        // عند الفشل نبقي الرابط الأصلي — لا نوقف إنشاء المتجر بسبب الصورة.
-        const heroUrl = dto.hero?.imageUrl;
-        const ownPublic = process.env.AWS_PUBLIC_URL || '';
-        if (heroUrl && /^https:\/\//.test(heroUrl) && !(ownPublic && heroUrl.startsWith(ownPublic))) {
-            try {
-                const img = await this.imageService.importFromUrl(heroUrl, userId);
-                dto.hero = { ...dto.hero, imageUrl: img.url };
-            } catch { /* نبقي الرابط الأصلي */ }
-        }
+        await this.importExternalHero(dto, userId);
 
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
@@ -290,7 +281,20 @@ export class StoreService {
         }
     }
 
+    // صورة هيرو من رابط خارجي (مثلاً اختارها Claude): نحفظ نسخة في تخزين المنصة.
+    // عند الفشل نبقي الرابط الأصلي — لا نوقف إنشاء/تعديل المتجر بسبب الصورة.
+    private async importExternalHero(dto: { hero?: { imageUrl?: string } & Record<string, any> }, userId?: string) {
+        const heroUrl = dto.hero?.imageUrl;
+        const ownPublic = process.env.AWS_PUBLIC_URL || '';
+        if (!userId || !heroUrl || !/^https:\/\//.test(heroUrl) || (ownPublic && heroUrl.startsWith(ownPublic))) return;
+        try {
+            const img = await this.imageService.importFromUrl(heroUrl, userId);
+            dto.hero = { ...dto.hero, imageUrl: img.url };
+        } catch { /* نبقي الرابط الأصلي */ }
+    }
+
     async updateFullStore(storeId: string, dto: UpdateFullStoreDto, userId?: string) {
+        await this.importExternalHero(dto as any, userId);
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();

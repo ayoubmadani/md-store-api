@@ -76,6 +76,7 @@ export class StoreController {
   }
 
   @Get(':storeId')
+  @AllowApiKey()
   @UseGuards(AuthGuard)
   async getStore(@Param('storeId') storeId: string, @GetUser() user: any) {
     const store = await this.storeService.getStore(storeId, this.getUserId(user));
@@ -83,6 +84,7 @@ export class StoreController {
   }
 
   @Patch(':storeId')
+  @AllowApiKey()
   @UseGuards(AuthGuard)
   async updateStore(
     @Param('storeId') storeId: string,
