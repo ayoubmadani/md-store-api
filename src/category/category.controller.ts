@@ -19,6 +19,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { GetUser } from '../user/decorator/get-user.decorator';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 
 @Controller('stores/:storeId/categories')
 @UseGuards(AuthGuard)
@@ -32,6 +33,7 @@ export class CategoryController {
   }
 
   @Post()
+  @AllowApiKey()
   @HttpCode(HttpStatus.CREATED)
   create(
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -42,6 +44,7 @@ export class CategoryController {
   }
 
   @Get()
+  @AllowApiKey()
   findAll(
     @Param('storeId', ParseUUIDPipe) storeId: string,
     @GetUser() user: any,
@@ -59,6 +62,7 @@ export class CategoryController {
   }
 
   @Get(':id')
+  @AllowApiKey()
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -89,6 +93,7 @@ export class CategoryController {
   }
 
   @Patch(':id')
+  @AllowApiKey()
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -120,6 +125,7 @@ export class CategoryController {
   }
 
   @Delete(':id')
+  @AllowApiKey()
   @HttpCode(HttpStatus.OK)
   remove(
     @Param('id', ParseUUIDPipe) id: string,
