@@ -32,6 +32,13 @@ export class ApiKey {
   @Column({ type: 'timestamp', nullable: true })
   lastUsedAt: Date | null;
 
+  // الذكاء الاصطناعي الذي ارتبط بهذا المفتاح عبر MCP (مثل «claude-ai») ووقت آخر ربط
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  connectedClient: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  connectedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

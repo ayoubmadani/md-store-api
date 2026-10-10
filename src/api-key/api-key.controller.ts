@@ -1,11 +1,12 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/guard/auth.guard';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { ApiKeyService } from './api-key.service';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
-// بدون @AllowApiKey عمداً — إدارة المفاتيح بالـ JWT فقط، فلا يستطيع
-// مفتاح أن ينشئ مفتاحاً آخر أو يلغيه.
+// إدارة المفاتيح بالـ JWT فقط، فلا يستطيع مفتاح أن ينشئ مفتاحاً آخر أو يلغيه —
+// الاستثناء الوحيد: POST /connection يسجّل الربط على المفتاح المستعمل نفسه.
 @Controller('api-keys')
 @UseGuards(AuthGuard)
 export class ApiKeyController {
@@ -25,6 +26,14 @@ export class ApiKeyController {
   @Get()
   findAll(@GetUser() user: any) {
     return this.apiKeyService.findAll(this.getUserId(user));
+  }
+
+  // يُستدعى بالمفتاح نفسه من خادم MCP عند ربط ذكاء اصطناعي (Claude / ChatGPT…)
+  @Post('connection')
+  @AllowApiKey()
+  markConnected(@Body() body: { client?: string }, @GetUser() user: any) {
+    if (!user?.apiKeyId) throw new BadRequestException('هذا المسار يُستدعى بمفتاح API فقط');
+    return this.apiKeyService.markConnected(user.apiKeyId, body?.client || '');
   }
 
   @Delete(':id')

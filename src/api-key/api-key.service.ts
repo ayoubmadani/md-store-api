@@ -53,6 +53,8 @@ export class ApiKeyService {
       prefix: k.prefix,
       status: statusOf(k),
       lastUsedAt: k.lastUsedAt,
+      connectedClient: k.connectedClient,
+      connectedAt: k.connectedAt,
       expiresAt: k.expiresAt,
       createdAt: k.createdAt,
     }));
@@ -70,7 +72,7 @@ export class ApiKeyService {
 
   // يرجع نفس شكل payload الـ JWT ({ sub, role }) حتى تعمل المسارات
   // الحالية (getUserId، GetUser...) بدون أي تعديل.
-  async verify(key: string): Promise<{ sub: string; role: string }> {
+  async verify(key: string): Promise<{ sub: string; role: string; apiKeyId: string }> {
     const apiKey = await this.apiKeyRepo.findOne({
       where: { keyHash: hashKey(key) },
       relations: ['user'],
@@ -83,6 +85,13 @@ export class ApiKeyService {
 
     await this.apiKeyRepo.update(apiKey.id, { lastUsedAt: new Date() });
 
-    return { sub: apiKey.userId, role: apiKey.user.role };
+    return { sub: apiKey.userId, role: apiKey.user.role, apiKeyId: apiKey.id };
+  }
+
+  // يسجّله خادم MCP عند بداية الربط (initialize) — على المفتاح المستعمل نفسه فقط
+  async markConnected(apiKeyId: string, client: string) {
+    const name = (client || '').trim().slice(0, 100) || 'mcp';
+    await this.apiKeyRepo.update(apiKeyId, { connectedClient: name, connectedAt: new Date() });
+    return { success: true };
   }
 }
