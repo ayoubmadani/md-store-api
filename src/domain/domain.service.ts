@@ -37,6 +37,12 @@ export class DomainService {
     return { scope: 'store' as const, builderPageId: null };
   }
 
+  // التحقق أن المتجر يعود للمستخدم (JWT أو مفتاح API) قبل أي عملية على دوميناته
+  async verifyStoreOwner(storeId: string, userId: string) {
+    const store = await this.storeRepo.findOne({ where: { id: storeId, user: { id: userId } }, select: ['id'] });
+    if (!store) throw new NotFoundException('المتجر غير موجود أو ليس لديك صلاحية الوصول إليه');
+  }
+
   // 1. إضافة دومين جديد
 
   async create(dto: CreateDomainDto) {
@@ -140,8 +146,8 @@ export class DomainService {
 
   // 3. تحديث يدوي للحالة (يستدعيه الـ Controller)
 
-  async syncDomainStatus(id: string) {
-    const domainRecord = await this.domainRepo.findOne({ where: { id } });
+  async syncDomainStatus(id: string, userId: string) {
+    const domainRecord = await this.domainRepo.findOne({ where: { id, store: { user: { id: userId } } } });
     if (!domainRecord) throw new NotFoundException('الدومين غير موجود');
 
     const status = await this.getVercelDomainStatus(domainRecord.domain);

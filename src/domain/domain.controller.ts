@@ -1,7 +1,11 @@
-import { Controller, Get, Post, Body, Param, Delete, UseGuards, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Patch, ParseUUIDPipe } from '@nestjs/common';
 import { DomainService } from './domain.service';
 import { CreateDomainDto } from './dto/create-domain.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
+import { GetUser } from '../user/decorator/get-user.decorator';
+
+const userIdOf = (user: any): string => user.id || user.sub || user.userId;
 
 @Controller('domain')
 @UseGuards(AuthGuard)
@@ -10,26 +14,32 @@ export class DomainController {
 
   // 1. إضافة دومين جديد لمتجر التاجر (يربطه بـ Vercel ويحفظه في DB)
   @Post()
-  create(@Body() createDomainDto: CreateDomainDto) {
+  @AllowApiKey()
+  async create(@Body() createDomainDto: CreateDomainDto, @GetUser() user: any) {
+    await this.domainService.verifyStoreOwner(createDomainDto.storeId, userIdOf(user));
     return this.domainService.create(createDomainDto);
   }
 
   // 2. جلب جميع الدومينات المربوطة بمتجر معين (لعرضها في الجدول)
   @Get('store/:storeId')
-  findAllWithStore(@Param('storeId') storeId: string) {
+  @AllowApiKey()
+  async findAllWithStore(@Param('storeId', ParseUUIDPipe) storeId: string, @GetUser() user: any) {
+    await this.domainService.verifyStoreOwner(storeId, userIdOf(user));
     return this.domainService.findAllWithStore(storeId);
   }
 
   // 3. جلب بيانات الـ DNS (A Record و CNAME) ليقوم العميل بوضعها في Namecheap
   @Get('setup-instructions/:domain')
+  @AllowApiKey()
   getConnectionInstructions(@Param('domain') domain: string) {
     return this.domainService.getConnectionInstructions(domain);
   }
 
   // 4. زر "تحديث الحالة" - يفحص Vercel الآن ويحدث isActive إذا اكتمل الربط
   @Patch('sync/:id')
-  syncStatus(@Param('id') id: string) {
-    return this.domainService.syncDomainStatus(id);
+  @AllowApiKey()
+  syncStatus(@Param('id', ParseUUIDPipe) id: string, @GetUser() user: any) {
+    return this.domainService.syncDomainStatus(id, userIdOf(user));
   }
 
   // 5. فحص الحالة التقنية مباشرة من Vercel (للتحقق من الـ SSL والـ DNS)
@@ -41,22 +51,34 @@ export class DomainController {
 
   // 6. حذف الدومين نهائياً (من قاعدة بياناتك ومن مشروع Vercel)
   @Post('delete/:id')
-  remove(@Param('id') id: string , @Body('storeId') storeId:string) {
-    console.log(id);
-
-    return this.domainService.remove(id,storeId);
+  @AllowApiKey()
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Body('storeId', ParseUUIDPipe) storeId: string, @GetUser() user: any) {
+    await this.domainService.verifyStoreOwner(storeId, userIdOf(user));
+    return this.domainService.remove(id, storeId);
   }
 
   // 7. تخصيص دومين موجود (تم إنشاؤه من صفحة الدومين) لصفحة هبوط واحدة — يُستدعى
   // من داخل المحرر بعد اختيار الدومين من القائمة.
   @Patch(':id/assign-page')
-  assignToBuilderPage(@Param('id') id: string, @Body() dto: { builderPageId: string; storeId: string }) {
+  @AllowApiKey()
+  async assignToBuilderPage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { builderPageId: string; storeId: string },
+    @GetUser() user: any,
+  ) {
+    await this.domainService.verifyStoreOwner(dto.storeId, userIdOf(user));
     return this.domainService.assignToBuilderPage(id, dto.builderPageId, dto.storeId);
   }
 
   // 8. فك الربط — يُعيد الدومين ليصبح دومين متجر عادي (scope: store) بدل حذفه.
   @Patch(':id/unassign-page')
-  unassignFromBuilderPage(@Param('id') id: string, @Body('storeId') storeId: string) {
+  @AllowApiKey()
+  async unassignFromBuilderPage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('storeId', ParseUUIDPipe) storeId: string,
+    @GetUser() user: any,
+  ) {
+    await this.domainService.verifyStoreOwner(storeId, userIdOf(user));
     return this.domainService.unassignFromBuilderPage(id, storeId);
   }
 }
