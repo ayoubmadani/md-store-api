@@ -80,6 +80,14 @@ export function stripInactiveOptions<
   return product;
 }
 
+// ترتيب الصور في الذاكرة بدل ORDER BY images.order في SQL:
+// الترتيب بعمود من علاقة مع skip/take يجعل TypeORM يطبّق LIMIT على أزواج (منتج، صورة)
+// فتختفي منتجات من القائمة عندما تكون للمنتجات الأحدث صور كثيرة
+function sortProductImages(products: Product[]): Product[] {
+  for (const p of products) p.imagesProduct?.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  return products;
+}
+
 const isUuid = (val: unknown): val is string =>
   typeof val === 'string' &&
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
@@ -401,14 +409,13 @@ export class ProductService {
 
     // الترتيب والترقيم الصفحي
     qb.orderBy('product.createdAt', 'DESC')
-      .addOrderBy('images.order', 'ASC')
       .skip((page - 1) * limit)
       .take(limit);
 
     const [products, total] = await qb.getManyAndCount();
 
     return {
-      products,
+      products: sortProductImages(products),
       total,
       page,
       totalPages: Math.ceil(total / limit)
@@ -971,10 +978,10 @@ export class ProductService {
     if (categoryId) qb.andWhere('product.categoryId = :categoryId', { categoryId });
     if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
 
-    qb.orderBy('product.createdAt', 'DESC').addOrderBy('images.order', 'ASC').skip((page - 1) * limit).take(limit);
+    qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
     const [products, total] = await qb.getManyAndCount();
 
-    return { products, total, page, totalPages: Math.ceil(total / limit) };
+    return { products: sortProductImages(products), total, page, totalPages: Math.ceil(total / limit) };
   }
 
 
@@ -1082,10 +1089,10 @@ export class ProductService {
     if (categoryId) qb.andWhere('product.categoryId = :categoryId', { categoryId });
     if (search) qb.andWhere('(product.name ILIKE :search OR product.desc ILIKE :search)', { search: `%${search}%` });
 
-    qb.orderBy('product.createdAt', 'DESC').addOrderBy('images.order', 'ASC').skip((page - 1) * limit).take(limit);
+    qb.orderBy('product.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
     const [products, total] = await qb.getManyAndCount();
 
-    return { products, total, page, totalPages: Math.ceil(total / limit) };
+    return { products: sortProductImages(products), total, page, totalPages: Math.ceil(total / limit) };
   }
 
   async findOneById(productId: string): Promise<any> {
