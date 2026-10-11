@@ -1,5 +1,6 @@
 // image-admin.controller.ts
-import { Controller, Get, Post, Query, UseInterceptors, UploadedFiles, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator, Delete, Param } from '@nestjs/common';
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
+import { Controller, Get, Post, Query, UseInterceptors, UploadedFiles, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator, Delete, Param, UseGuards } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ImageService } from './image.service';
 
@@ -8,6 +9,7 @@ export class ImageAdminController {
   constructor(private readonly imageService: ImageService) {}
 
   @Post()
+  @UseGuards(SuperAdminGuard)
   @UseInterceptors(FilesInterceptor('files', 10))
   async upload(@UploadedFiles(new ParseFilePipe({
     validators: [
@@ -19,11 +21,13 @@ export class ImageAdminController {
   }
 
   @Get()
+  @UseGuards(SuperAdminGuard)
   async findAll(@Query('take') page?: string) {
     return this.imageService.getAllImagesAdmin(page);
   }
 
   @Delete(':id')
+  @UseGuards(SuperAdminGuard)
   deleteImageAdmin(
     @Param('id') id:string
   ){

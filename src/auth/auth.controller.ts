@@ -23,14 +23,6 @@ export class AuthController {
         return this.authService.credentialLogin(dto)
     }
 
-    // لوحة الأدمن: Google ID token ← توكن API لحساب ADMIN فقط
-    @Post('admin/google')
-    @HttpCode(HttpStatus.OK)
-    adminGoogleLogin(@Body('credential') credential: string) {
-        if (!credential) throw new BadRequestException('credential is required');
-        return this.authService.adminGoogleLogin(credential)
-    }
-
     @Post('register')
     @HttpCode(HttpStatus.OK)
     register(@Body() dto: CreateUserDto) {

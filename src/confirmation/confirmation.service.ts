@@ -467,16 +467,10 @@ export class ConfirmationService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // الأدمن
+  // مدير المنصة (SuperAdminGuard في الـ controller)
   // ══════════════════════════════════════════════════════════════════════════
 
-  async assertAdmin(userId: string) {
-    const user = await this.userRepo.findOne({ where: { id: userId }, select: ['id', 'role'] });
-    if (user?.role !== UserRole.ADMIN) throw new ForbiddenException('للأدمن فقط');
-  }
-
-  async adminAccessList(userId: string, access?: ConfirmationAccess) {
-    await this.assertAdmin(userId);
+  async adminAccessList(access?: ConfirmationAccess) {
     const users = await this.userRepo.find({
       where: { confirmationAccess: access ?? In([ConfirmationAccess.REQUESTED, ConfirmationAccess.GRANTED, ConfirmationAccess.REVOKED]) },
       select: ['id', 'username', 'email', 'phone', 'confirmationAccess', 'createdAt'],
@@ -496,8 +490,7 @@ export class ConfirmationService {
     });
   }
 
-  async adminSetAccess(userId: string, targetId: string, access: ConfirmationAccess) {
-    await this.assertAdmin(userId);
+  async adminSetAccess(targetId: string, access: ConfirmationAccess) {
     const target = await this.userRepo.findOne({ where: { id: targetId }, select: ['id'] });
     if (!target) throw new NotFoundException('المستخدم غير موجود');
     await this.userRepo.update(targetId, { confirmationAccess: access });
@@ -508,8 +501,7 @@ export class ConfirmationService {
     return { id: targetId, access };
   }
 
-  async adminList(userId: string, status?: ConfirmationCompanyStatus) {
-    await this.assertAdmin(userId);
+  async adminList(status?: ConfirmationCompanyStatus) {
     const companies = await this.companyRepo.find({
       where: status ? { status } : {},
       relations: ['wilaya', 'owner'],
@@ -522,8 +514,7 @@ export class ConfirmationService {
     }));
   }
 
-  async adminSetStatus(userId: string, companyId: string, status: ConfirmationCompanyStatus) {
-    await this.assertAdmin(userId);
+  async adminSetStatus(companyId: string, status: ConfirmationCompanyStatus) {
     const company = await this.companyRepo.findOne({ where: { id: companyId } });
     if (!company) throw new NotFoundException('شركة التأكيد غير موجودة');
     company.status = status;

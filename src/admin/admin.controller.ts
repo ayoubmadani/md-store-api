@@ -16,8 +16,7 @@ import {
 import { UserRole } from '../user/entities/user.entity';
 import { StatusEnum } from '../order/entities/order.entity';
 import { AdminService } from './admine.service';
-import { AuthGuard } from '../auth/guard/auth.guard';
-import { AdminGuard } from './guard/admin.guard';
+import { SuperAdminGuard } from './guard/super-admin.guard';
 import { CreateMessageAdminDto } from './dto/message-admine.dto';
 import { CreateCategoryNicheDto } from '../niche/dto/create-cat-niche.dto';
 import { IsNumber, IsPositive, IsString, IsNotEmpty, IsEnum, IsOptional, IsIn } from 'class-validator';
@@ -169,7 +168,7 @@ export class UpdateThemeDto {
 @Controller('admin')
 // دخول (JWT) ثم التحقق من دور ADMIN في قاعدة البيانات — بدونها كانت كل
 // مسارات الأدمن (شحن المحافظ، تغيير الأدوار...) مفتوحة لأي شخص
-@UseGuards(AuthGuard, AdminGuard)
+@UseGuards(SuperAdminGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) { }
 

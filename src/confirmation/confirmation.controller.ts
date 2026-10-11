@@ -2,6 +2,7 @@ import {
   BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/guard/auth.guard';
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { ConfirmationService } from './confirmation.service';
 import { ConfirmationAgentService } from './confirmation-agent.service';
@@ -18,7 +19,7 @@ const userIdOf = (user: any): string => {
   return id;
 };
 
-/** تطبيق المؤكّد + البحث العام + الأدمن */
+/** تطبيق المؤكّد + البحث العام */
 @Controller('confirmation')
 @UseGuards(AuthGuard)
 export class ConfirmationController {
@@ -131,26 +132,6 @@ export class ConfirmationController {
     return this.confirmation.directory(search, wilayaId, storeId, userIdOf(user));
   }
 
-  // ── الأدمن ──
-  @Get('admin/access')
-  adminAccess(@GetUser() user: any, @Query('access') access?: ConfirmationAccess) {
-    return this.confirmation.adminAccessList(userIdOf(user), access);
-  }
-
-  @Patch('admin/access/:userId')
-  adminSetAccess(@Param('userId', ParseUUIDPipe) target: string, @Body() dto: SetAccessDto, @GetUser() user: any) {
-    return this.confirmation.adminSetAccess(userIdOf(user), target, dto.access);
-  }
-
-  @Get('admin/companies')
-  adminList(@GetUser() user: any, @Query('status') status?: ConfirmationCompanyStatus) {
-    return this.confirmation.adminList(userIdOf(user), status);
-  }
-
-  @Patch('admin/companies/:id/status')
-  adminSetStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetCompanyStatusDto, @GetUser() user: any) {
-    return this.confirmation.adminSetStatus(userIdOf(user), id, dto.status);
-  }
 }
 
 /** لوحة التاجر: قائمته من الشركات، وإرسال/سحب الطلبات */
@@ -199,5 +180,32 @@ export class StoreConfirmationController {
     @GetUser() user: any,
   ) {
     return this.confirmation.orderLog(storeId, userIdOf(user), orderId);
+  }
+}
+
+/** مدير المنصة: صلاحيات المؤكّدين وقبول شركات التأكيد */
+@Controller('confirmation/admin')
+@UseGuards(SuperAdminGuard)
+export class ConfirmationAdminController {
+  constructor(private readonly confirmation: ConfirmationService) {}
+
+  @Get('access')
+  adminAccess(@Query('access') access?: ConfirmationAccess) {
+    return this.confirmation.adminAccessList(access);
+  }
+
+  @Patch('access/:userId')
+  adminSetAccess(@Param('userId', ParseUUIDPipe) target: string, @Body() dto: SetAccessDto) {
+    return this.confirmation.adminSetAccess(target, dto.access);
+  }
+
+  @Get('companies')
+  adminList(@Query('status') status?: ConfirmationCompanyStatus) {
+    return this.confirmation.adminList(status);
+  }
+
+  @Patch('companies/:id/status')
+  adminSetStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetCompanyStatusDto) {
+    return this.confirmation.adminSetStatus(id, dto.status);
   }
 }

@@ -110,33 +110,6 @@ export class AuthService {
         return this.resendOtp(newEmail);
     }
 
-    /**
-     * دخول لوحة الأدمن (md-store-admin): الواجهة ترسل Google ID token، نتحقق منه
-     * هنا (التوقيع + الجمهور = GOOGLE_CLIENT_ID)، ونصدر توكن الـ API فقط لحساب
-     * دوره ADMIN في قاعدة البيانات. لا نثق بأي فحص يتم في المتصفح.
-     */
-    async adminGoogleLogin(credential: string) {
-        const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
-        let payload: any;
-        try {
-            const ticket = await new OAuth2Client(clientId).verifyIdToken({ idToken: credential, audience: clientId });
-            payload = ticket.getPayload();
-        } catch {
-            throw new UnauthorizedException('Invalid Google token');
-        }
-        if (!payload?.email || !payload.email_verified) {
-            throw new UnauthorizedException('Google email not verified');
-        }
-
-        const user = await this.userService.findUserByEmail(payload.email).catch(() => null);
-        if (!user || user.role !== UserRole.ADMIN) {
-            throw new ForbiddenException('هذا الحساب غير مصرح له بالدخول');
-        }
-
-        const access_token = await this.generateToken({ sub: user.id, role: user.role });
-        return { access_token, email: user.email, name: user.username };
-    }
-
     async resendOtp(email: string) {
         // 1. البحث عن المستخدم
         const user = await this.userService.findUserByEmail(email);

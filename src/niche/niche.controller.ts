@@ -1,5 +1,6 @@
 // niche.controller.ts
-import { Controller, Get, Post, Body, Param, Patch, Delete } from '@nestjs/common';
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
+import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards } from '@nestjs/common';
 import { NicheService } from './niche.service';
 import { CreateNicheDto } from './dto/create-niche.dto';
 import { UpdateNicheDto } from './dto/update-niche.dto';
@@ -10,6 +11,7 @@ export class NicheController {
 
   // إنشاء Niche جديد
   @Post()
+  @UseGuards(SuperAdminGuard)
   async create(@Body() createNicheDto: CreateNicheDto[]) {
     const niche = await this.nicheService.create(createNicheDto);
     return {
@@ -46,6 +48,7 @@ export class NicheController {
 
   // تحديث Niche
   @Patch(':id')
+  @UseGuards(SuperAdminGuard)
   async update(@Param('id') id: string, @Body() updateNicheDto: UpdateNicheDto) {
     const niche = await this.nicheService.update(id, updateNicheDto);
     return {
@@ -56,6 +59,7 @@ export class NicheController {
 
   // حذف Niche
   @Delete(':id')
+  @UseGuards(SuperAdminGuard)
   async remove(@Param('id') id: string) {
     await this.nicheService.remove(id);
     return {

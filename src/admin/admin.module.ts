@@ -27,6 +27,9 @@ import { User } from '../user/entities/user.entity';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admine.service';
 import { MessageAdmine } from './entity/message-admin.entity';
+import { SuperAdmin } from './entity/super-admin.entity';
+import { SuperAdminAuthController } from './super-admin-auth.controller';
+import { SuperAdminAuthService } from './super-admin-auth.service';
 import { CategoryNiche } from '../niche/entities/category-niche.entity';
 import { ThemePlan } from '../theme/entities/theme-plan.entity';
 import { Plan } from '../subscription/entities/plan.entity';
@@ -67,9 +70,10 @@ import { SubscriptionModule } from '../subscription/subscription.module';
             CategoryNiche,
             ThemePlan,
             Plan,
+            SuperAdmin,
         ]),
     ],
-    controllers: [AdminController],
-    providers: [AdminService],
+    controllers: [AdminController, SuperAdminAuthController],
+    providers: [AdminService, SuperAdminAuthService],
 })
 export class AdminModule { }

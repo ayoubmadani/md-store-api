@@ -63,6 +63,11 @@ export class AuthGuard implements CanActivate {
         secret: this.config.get<string>('JWT_SECRET'),
       });
 
+      // توكنات مدير المنصة (sa_*) ليست حساب مستخدم — مكانها SuperAdminGuard فقط
+      if (typeof payload?.typ === 'string' && payload.typ.startsWith('sa_')) {
+        throw new UnauthorizedException('Invalid token');
+      }
+
       // إضافة بيانات المستخدم إلى الـ request
       request['user'] = payload;
 

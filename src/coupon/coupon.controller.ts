@@ -1,3 +1,4 @@
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { CouponService } from './coupon.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
@@ -12,11 +13,13 @@ export class CouponController {
 
   // ─── Admin CRUD ───────────────────────────────────────────────────────────
   @Post()
+  @UseGuards(SuperAdminGuard)
   create(@Body() dto: CreateCouponDto) {
     return this.couponService.create(dto);
   }
 
   @Get()
+  @UseGuards(SuperAdminGuard)
   findAll(@Query('active') active?: string, @Query('scope') scope?: string) {
     return this.couponService.findAll({
       active: active === undefined ? undefined : active === 'true',
@@ -25,21 +28,25 @@ export class CouponController {
   }
 
   @Get(':id')
+  @UseGuards(SuperAdminGuard)
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.couponService.findOne(id);
   }
 
   @Patch(':id')
+  @UseGuards(SuperAdminGuard)
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCouponDto) {
     return this.couponService.update(id, dto);
   }
 
   @Patch(':id/toggle')
+  @UseGuards(SuperAdminGuard)
   toggleStatus(@Param('id', ParseUUIDPipe) id: string) {
     return this.couponService.toggleStatus(id);
   }
 
   @Delete(':id')
+  @UseGuards(SuperAdminGuard)
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.couponService.remove(id);
     return { message: `Coupon with ID ${id} deleted successfully` };

@@ -1,3 +1,4 @@
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import { 
   Controller, 
   Get, 
@@ -7,7 +8,7 @@ import {
   Param, 
   Delete, 
   ParseUUIDPipe, 
-  Query 
+  Query, UseGuards 
 } from '@nestjs/common';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
@@ -18,6 +19,7 @@ export class PlansController {
   constructor(private readonly plansService: PlansService) {}   
 
   @Post()
+  @UseGuards(SuperAdminGuard)
   async create(@Body() createPlanDto: CreatePlanDto) {
     return await this.plansService.create(createPlanDto);
   }
@@ -36,6 +38,7 @@ export class PlansController {
   }
 
   @Patch(':id')
+  @UseGuards(SuperAdminGuard)
   async update(
     @Param('id', ParseUUIDPipe) id: string, 
     @Body() updatePlanDto: UpdatePlanDto
@@ -44,12 +47,14 @@ export class PlansController {
   }
 
   @Delete(':id')
+  @UseGuards(SuperAdminGuard)
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.plansService.remove(id);
     return { message: `Plan with ID ${id} deleted successfully` };
   }
 
   @Patch(':id/toggle')
+  @UseGuards(SuperAdminGuard)
   async toggleStatus(@Param('id', ParseUUIDPipe) id: string) {
     return await this.plansService.toggleStatus(id);
   }

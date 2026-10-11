@@ -1,3 +1,4 @@
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { IsOptional, IsString } from 'class-validator';
 import { ThemeService } from './theme.service';
@@ -21,6 +22,7 @@ export class ThemeController {
   ) { }
 
   @Post()
+  @UseGuards(SuperAdminGuard)
   create(@Body() createThemeDto: CreateThemeDto[]) {
     return this.themeService.create(createThemeDto);
   }
@@ -103,17 +105,20 @@ export class ThemeController {
   }
 
   @Patch(':id')
+  @UseGuards(SuperAdminGuard)
   update(@Param('id') id: string, @Body() updateThemeDto: UpdateThemeDto) {
     return this.themeService.update(id, updateThemeDto);
   }
 
   @Delete(':id')
+  @UseGuards(SuperAdminGuard)
   remove(@Param('id') id: string) {
     return this.themeService.remove(+id);
   }
 
   // type
   @Post('type')
+  @UseGuards(SuperAdminGuard)
   createType(@Body('name') name: string) {
     return this.typeThemeService.create(name);
   }
@@ -124,6 +129,7 @@ export class ThemeController {
   }
 
   @Delete('type/:id')
+  @UseGuards(SuperAdminGuard)
   deleteType(@Param('id') id: string) {
     return this.typeThemeService.delete(id);
   }

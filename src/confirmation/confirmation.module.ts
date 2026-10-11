@@ -11,7 +11,7 @@ import { ConfirmationLog } from './entities/confirmation-log.entity';
 import { ConfirmationService } from './confirmation.service';
 import { ConfirmationAgentService } from './confirmation-agent.service';
 import { ConfirmationBillingService } from './confirmation-billing.service';
-import { ConfirmationController, StoreConfirmationController } from './confirmation.controller';
+import { ConfirmationAdminController, ConfirmationController, StoreConfirmationController } from './confirmation.controller';
 
 // لا يستورد OrderModule — OrderModule هو من يستورد هذا الموديول (لدفع العمولة عند التسليم)
 @Module({
@@ -22,7 +22,7 @@ import { ConfirmationController, StoreConfirmationController } from './confirmat
     StoreModule,
     ShippingProviderModule,
   ],
-  controllers: [ConfirmationController, StoreConfirmationController],
+  controllers: [ConfirmationController, StoreConfirmationController, ConfirmationAdminController],
   providers: [ConfirmationService, ConfirmationAgentService, ConfirmationBillingService],
   exports: [ConfirmationBillingService],
 })

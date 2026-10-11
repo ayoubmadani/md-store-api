@@ -1,3 +1,4 @@
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import {
     Body,
     Controller,
@@ -29,32 +30,27 @@ import { UserRole } from '../user/entities/user.entity';
 export class SupportController {
     constructor(private readonly supportService: SupportService) {}
 
-    private requireAdmin(req: any) {
-        if (req.user?.role !== UserRole.ADMIN) {
-            throw new ForbiddenException('Admin access required');
-        }
-    }
 
     // ── Admin endpoints ───────────────────────────────────────────────────────
 
     @Post('theme/grant')
+    @UseGuards(SuperAdminGuard)
     @HttpCode(HttpStatus.OK)
     grantTheme(@Request() req: any, @Body() dto: GrantThemeDto) {
-        this.requireAdmin(req);
         return this.supportService.grantTheme(dto.userId, dto.themeId);
     }
 
     @Post('wallet/topup')
+    @UseGuards(SuperAdminGuard)
     @HttpCode(HttpStatus.OK)
     topUpWallet(@Request() req: any, @Body() dto: TopUpWalletDto) {
-        this.requireAdmin(req);
         return this.supportService.topUpWallet(dto.userId, dto.amount);
     }
 
     @Post('plan/assign')
+    @UseGuards(SuperAdminGuard)
     @HttpCode(HttpStatus.OK)
     assignPlan(@Request() req: any, @Body() dto: AssignPlanDto) {
-        this.requireAdmin(req);
         return this.supportService.assignPlan(dto.userId, dto.planId, dto.interval, dto.days);
     }
 

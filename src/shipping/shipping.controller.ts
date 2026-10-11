@@ -1,3 +1,4 @@
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ShippingService } from "./shipping.service";
 import { WilayaDto } from "./dto/wilaya.dto";
@@ -15,6 +16,7 @@ export class ShippingController {
     ) { }
 
     @Post('add-wilayas')
+    @UseGuards(SuperAdminGuard)
     createWilaya(@Body() wilayas: WilayaDto[]) {
         return this.shippingService.createWilayas(wilayas)
     }
@@ -25,6 +27,7 @@ export class ShippingController {
     }
 
     @Post('add-communes')
+    @UseGuards(SuperAdminGuard)
     createCommune(@Body() communes: CommuneDto[]) {
         return this.shippingService.createCommunes(communes)
     }

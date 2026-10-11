@@ -1,3 +1,4 @@
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import {
   Controller,
   Get,
@@ -169,6 +170,7 @@ export class ImageController {
 
 
   @Post('admine/upload')
+  @UseGuards(SuperAdminGuard)
   @UseInterceptors(FilesInterceptor('files', 10))
   async uploadAdminImages(
     @UploadedFiles(
