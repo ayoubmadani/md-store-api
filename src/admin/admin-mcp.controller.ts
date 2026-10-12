@@ -7,6 +7,7 @@ import { SuperAdminApiKeyGuard } from './guard/super-admin-api-key.guard';
 import { SuperAdminGuard } from './guard/super-admin.guard';
 import { SuperAdminApiKeyService } from './super-admin-api-key.service';
 import { SuperAdminAuthService } from './super-admin-auth.service';
+import { ThemeCodeService } from './theme-code.service';
 
 class PinProofDto {
   @IsString()
@@ -28,6 +29,16 @@ class CreateThemeTypeWithPinDto extends PinProofDto {
   @IsNotEmpty()
   @MaxLength(100)
   name: string;
+}
+
+class PublishThemeCodeWithPinDto extends PinProofDto {
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, { message: 'slug غير صالح' })
+  slug: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(600 * 1024)
+  code: string;
 }
 
 class CreateAdminKeyDto {
@@ -53,6 +64,7 @@ export class AdminMcpController {
   constructor(
     private readonly keys: SuperAdminApiKeyService,
     private readonly auth: SuperAdminAuthService,
+    private readonly themeCode: ThemeCodeService,
   ) { }
 
   @Post('pin-challenge')
@@ -72,6 +84,14 @@ export class AdminMcpController {
   async createThemeType(@Req() req: any, @Body() dto: CreateThemeTypeWithPinDto) {
     await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
     return this.keys.createThemeType(dto.name);
+  }
+
+  // كود الثيم (TSX ملف واحد) ← فحص + بناء + رفع إلى themes/<slug>.js
+  @Post('theme-code')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async publishThemeCode(@Req() req: any, @Body() dto: PublishThemeCodeWithPinDto) {
+    await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
+    return this.themeCode.publish(dto.slug, dto.code);
   }
 
   @Post('themes')

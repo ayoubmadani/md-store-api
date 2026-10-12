@@ -33,6 +33,8 @@ import { SuperAdminAuthService } from './super-admin-auth.service';
 import { SuperAdminApiKey } from './entity/super-admin-api-key.entity';
 import { SuperAdminApiKeyService } from './super-admin-api-key.service';
 import { AdminMcpController, AdminMcpKeysController } from './admin-mcp.controller';
+import { ThemeCodeService } from './theme-code.service';
+import { ImageModule } from '../image/image.module';
 import { CategoryNiche } from '../niche/entities/category-niche.entity';
 import { ThemePlan } from '../theme/entities/theme-plan.entity';
 import { Plan } from '../subscription/entities/plan.entity';
@@ -44,6 +46,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     imports: [
         PaymentModule,
         SubscriptionModule,
+        ImageModule,
         TypeOrmModule.forFeature([
             User,
             Product,
@@ -78,6 +81,6 @@ import { SubscriptionModule } from '../subscription/subscription.module';
         ]),
     ],
     controllers: [AdminController, SuperAdminAuthController, AdminMcpController, AdminMcpKeysController],
-    providers: [AdminService, SuperAdminAuthService, SuperAdminApiKeyService],
+    providers: [AdminService, SuperAdminAuthService, SuperAdminApiKeyService, ThemeCodeService],
 })
 export class AdminModule { }
