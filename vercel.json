@@ -16,6 +16,10 @@
     {
       "path": "/internal/cron/shipping-sync",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/internal/cron/custom-themes",
+      "schedule": "0 4 * * *"
     }
   ]
 }

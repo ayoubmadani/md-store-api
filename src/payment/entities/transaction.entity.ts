@@ -17,6 +17,8 @@ export enum TransactionType {
     TOP_UP = 'top_up',
     CONFIRMATION_FEE = 'confirmation_fee',         // التاجر يدفع عمولة شركة التأكيد (طلب مسلَّم)
     CONFIRMATION_EARNING = 'confirmation_earning', // شركة التأكيد تقبض عمولتها بعد خصم نسبة المنصة
+    CUSTOM_THEME = 'custom_theme',                   // ثيم خاص يصنعه Claude للتاجر
+    CUSTOM_THEME_REVISIONS = 'custom_theme_revisions', // شراء مراجعات إضافية للثيم الخاص
 }
 
 @Entity('transactions')

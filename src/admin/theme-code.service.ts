@@ -42,8 +42,22 @@ export class ThemeCodeService {
   async publish(slug: string, code: string) {
     const theme = await this.themes.findOne({ where: { slug } });
     if (!theme) throw new NotFoundException(`لا يوجد ثيم بالـ slug «${slug}» — أنشئه أولاً`);
+    const { bundle, exports } = await this.build(slug, code);
+    const key = await this.upload(slug, code, bundle);
+    return { slug, themeId: theme.id, isActive: theme.isActive, bundleBytes: Buffer.byteLength(bundle), exports, key };
+  }
+
+  /**
+   * فحص + بناء بدون رفع. strict = كود لم يكتبه الأدمن (ثيم خاص لتاجر):
+   * يُمنع أيضاً ما يسمح بتنفيذ كود عشوائي أو قراءة بيانات حساسة في متصفح الزائر.
+   */
+  async build(slug: string, code: string, opts: { strict?: boolean } = {}): Promise<{ bundle: string; exports: string[] }> {
     if (!code?.trim()) throw new BadRequestException('الكود فارغ');
     if (Buffer.byteLength(code) > MAX_SOURCE_BYTES) throw new BadRequestException('الكود أكبر من 600KB');
+    if (opts.strict) {
+      const hits = STRICT_FORBIDDEN.filter(([re]) => re.test(code)).map(([, why]) => why);
+      if (hits.length) throw new BadRequestException(`كود غير مسموح: ${hits.join('، ')}`);
+    }
 
     const common = {
       stdin: { contents: code, loader: 'tsx' as const, sourcefile: `${slug}.tsx`, resolveDir: '/' },
@@ -75,20 +89,30 @@ export class ThemeCodeService {
     } catch (err: any) {
       throw new BadRequestException(formatBuildError(err));
     }
+    return { bundle, exports: exportsFound };
+  }
 
+  /** رفع إلى نفس الـ bucket الذي يقرأ منه المتجر (المصدر في theme-src للتعديل لاحقاً) */
+  async upload(slug: string, code: string, bundle: string) {
     await this.s3.uploadBuffer(Buffer.from(code), `theme-src/${slug}.tsx`, 'text/plain; charset=utf-8');
     const uploaded = await this.s3.uploadBuffer(Buffer.from(bundle), `themes/${slug}.js`, 'application/javascript');
-
-    return {
-      slug,
-      themeId: theme.id,
-      isActive: theme.isActive,
-      bundleBytes: Buffer.byteLength(bundle),
-      exports: exportsFound,
-      key: uploaded.key,
-    };
+    return uploaded.key;
   }
 }
+
+// كود الثيمات الخاصة (يكتبه Claude بطلب تاجر) — ممنوع إضافة لقائمة الاستيرادات المسموحة
+const STRICT_FORBIDDEN: [RegExp, string][] = [
+  [/\beval\s*\(/, 'eval'],
+  [/\bnew\s+Function\b|\bFunction\s*\(/, 'Function()'],
+  [/\bimport\s*\(/, 'import() ديناميكي'],
+  [/document\s*\.\s*cookie/, 'document.cookie'],
+  [/<script\b/i, 'وسم <script>'],
+  [/dangerouslySetInnerHTML\s*=\s*\{\s*\{\s*__html\s*:(?!\s*DOMPurify\.sanitize\()/, 'dangerouslySetInnerHTML بدون DOMPurify.sanitize'],
+  [/\b(globalThis|window\.top|window\.parent|window\.opener)\b/, 'الوصول للنافذة العامة'],
+  [/process\s*\.\s*env\s*\.\s*(?!NEXT_PUBLIC_)/, 'متغيرات بيئة غير عامة'],
+  [/\b(sessionStorage|indexedDB)\b/, 'تخزين غير مسموح'],
+  [/\bconstructor\s*\.\s*constructor\b/, 'constructor.constructor'],
+];
 
 function formatBuildError(err: any): string {
   const errors: any[] = err?.errors ?? [];

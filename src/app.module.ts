@@ -34,6 +34,7 @@ import { ApiKeyModule } from './api-key/api-key.module';
 import { AliexpressModule } from './aliexpress/aliexpress.module';
 import { HiggsfieldModule } from './higgsfield/higgsfield.module';
 import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
+import { CustomThemeModule } from './custom-theme/custom-theme.module';
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { PlatformSettingsModule } from './platform-settings/platform-settings.mo
     AliexpressModule,
     HiggsfieldModule,
     PlatformSettingsModule,
+    CustomThemeModule,
   ],
   controllers: [AppController]
 })

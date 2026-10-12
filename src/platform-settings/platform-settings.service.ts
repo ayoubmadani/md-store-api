@@ -14,7 +14,35 @@ const SETTINGS = {
       return Math.round(n * 100) / 100;
     },
   },
+  // ثيم خاص يصنعه Claude للتاجر (بمفتاح Anthropic الخاص بالمنصة)
+  customThemeEnabled: {
+    default: false,
+    parse: (v: unknown) => v === true || v === 'true',
+  },
+  customThemePrice: {
+    default: 5000,
+    parse: (v: unknown) => num(v, 0, 1_000_000, 'customThemePrice'),
+  },
+  customThemeRevisions: {
+    default: 3,
+    parse: (v: unknown) => Math.round(num(v, 0, 50, 'customThemeRevisions')),
+  },
+  customThemeRevisionPrice: {
+    default: 1000,
+    parse: (v: unknown) => num(v, 0, 1_000_000, 'customThemeRevisionPrice'),
+  },
+  // مدة الانتظار قبل النشر التلقائي (يراجع فيها الأدمن)
+  customThemeDelayHours: {
+    default: 2,
+    parse: (v: unknown) => num(v, 0, 168, 'customThemeDelayHours'),
+  },
 } as const;
+
+function num(v: unknown, min: number, max: number, key: string) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < min || n > max) throw new BadRequestException(`${key}: رقم بين ${min} و ${max}`);
+  return Math.round(n * 100) / 100;
+}
 
 export type PlatformSettings = { [K in keyof typeof SETTINGS]: ReturnType<(typeof SETTINGS)[K]['parse']> };
 

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import { SuperAdminApiKey } from './entity/super-admin-api-key.entity';
 import { SuperAdmin } from './entity/super-admin.entity';
 import { Theme } from '../theme/entities/theme.entity';
@@ -77,6 +77,29 @@ export class SuperAdminApiKeyService {
       .getOne();
     if (exists) throw new BadRequestException(`النوع «${exists.name}» موجود من قبل`);
     return this.types.save(this.types.create({ name: clean }));
+  }
+
+  // كل الثيمات (حتى غير المفعّلة) — للبحث عن id قبل تعديل السعر أو الخطط
+  async listThemes(search?: string) {
+    const q = search?.trim();
+    const where = q
+      ? ['name_ar', 'name_en', 'name_fr', 'slug'].map((f) => ({ [f]: ILike(`%${q}%`) }))
+      : undefined;
+    const rows = await this.themes.find({ where, relations: ['type', 'themePlans', 'themePlans.plan'], order: { slug: 'ASC' }, take: 100 });
+    return rows.map((t) => ({
+      id: t.id, slug: t.slug, name_ar: t.name_ar, name_en: t.name_en, price: Number(t.price), isActive: t.isActive,
+      type: t.type?.name ?? null,
+      plans: (t.themePlans ?? []).map((tp) => ({ id: tp.planId, name: tp.plan?.name })),
+    }));
+  }
+
+  async updateTheme(id: string, changes: { price?: number; isActive?: boolean }) {
+    const theme = await this.themes.findOne({ where: { id } });
+    if (!theme) throw new NotFoundException('الثيم غير موجود');
+    if (changes.price !== undefined) theme.price = changes.price;
+    if (changes.isActive !== undefined) theme.isActive = changes.isActive;
+    const saved = await this.themes.save(theme);
+    return { id: saved.id, slug: saved.slug, price: Number(saved.price), isActive: saved.isActive };
   }
 
   async createTheme(dto: CreateThemeDto) {

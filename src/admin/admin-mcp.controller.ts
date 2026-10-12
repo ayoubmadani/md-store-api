@@ -1,7 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Type } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import { AdminService } from './admine.service';
+import { PlansService } from '../subscription/plan.service';
+import { CreateFeaturesDto } from '../subscription/dto/create-plan.dto';
+import { PartialType } from '@nestjs/mapped-types';
 import { CreateThemeDto } from '../theme/dto/create-theme.dto';
 import { SuperAdminApiKeyGuard } from './guard/super-admin-api-key.guard';
 import { SuperAdminGuard } from './guard/super-admin.guard';
@@ -41,6 +45,38 @@ class PublishThemeCodeWithPinDto extends PinProofDto {
   code: string;
 }
 
+class UpdateThemeWithPinDto extends PinProofDto {
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0)
+  price?: number;
+
+  @IsOptional() @IsBoolean()
+  isActive?: boolean;
+}
+
+class PlanFeaturesPatchDto extends PartialType(CreateFeaturesDto) { }
+
+class UpdatePlanWithPinDto extends PinProofDto {
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0)
+  monthlyPrice?: number;
+
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0)
+  yearlyPrice?: number;
+
+  @IsOptional() @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional() @ValidateNested() @Type(() => PlanFeaturesPatchDto)
+  features?: PlanFeaturesPatchDto;
+}
+
+class PlanThemesWithPinDto extends PinProofDto {
+  @IsIn(['add', 'remove'])
+  action: 'add' | 'remove';
+
+  @IsArray() @ArrayNotEmpty() @ArrayMaxSize(100) @IsUUID('all', { each: true })
+  themeIds: string[];
+}
+
 class CreateAdminKeyDto {
   @IsString()
   @IsNotEmpty()
@@ -65,6 +101,8 @@ export class AdminMcpController {
     private readonly keys: SuperAdminApiKeyService,
     private readonly auth: SuperAdminAuthService,
     private readonly themeCode: ThemeCodeService,
+    private readonly admin: AdminService,
+    private readonly plans: PlansService,
   ) { }
 
   @Post('pin-challenge')
@@ -92,6 +130,55 @@ export class AdminMcpController {
   async publishThemeCode(@Req() req: any, @Body() dto: PublishThemeCodeWithPinDto) {
     await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
     return this.themeCode.publish(dto.slug, dto.code);
+  }
+
+  /* الثيمات والخطط */
+
+  @Get('themes')
+  listThemes(@Query('search') search?: string) {
+    return this.keys.listThemes(search);
+  }
+
+  @Post('themes/:id/update')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async updateTheme(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateThemeWithPinDto) {
+    await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
+    return this.keys.updateTheme(id, { price: dto.price, isActive: dto.isActive });
+  }
+
+  @Get('plans')
+  async listPlans() {
+    const plans = await this.plans.findAll(false);
+    return plans.map((p: any) => ({
+      id: p.id, name: p.name, monthlyPrice: Number(p.monthlyPrice), yearlyPrice: Number(p.yearlyPrice),
+      currency: p.currency, isActive: p.isActive, features: p.features,
+    }));
+  }
+
+  @Post('plans/:id/update')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async updatePlan(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePlanWithPinDto) {
+    await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
+    const { pin: _pin, challenge_token: _token, ...changes } = dto;
+    return this.plans.update(id, changes as any);
+  }
+
+  // إضافة/إزالة ثيمات من خطة (التجار المشتركون فيها يحصلون عليها أو يفقدونها)
+  @Post('plans/:id/themes')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async planThemes(@Req() req: any, @Param('id', ParseUUIDPipe) planId: string, @Body() dto: PlanThemesWithPinDto) {
+    await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
+    const results: { themeId: string; ok: boolean; error?: string }[] = [];
+    for (const themeId of dto.themeIds) {
+      try {
+        if (dto.action === 'add') await this.admin.assignThemeToPlan(themeId, planId);
+        else await this.admin.removeThemeFromPlan(themeId, planId);
+        results.push({ themeId, ok: true });
+      } catch (err: any) {
+        results.push({ themeId, ok: false, error: err?.message });
+      }
+    }
+    return { planId, action: dto.action, results };
   }
 
   @Post('themes')
