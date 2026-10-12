@@ -51,11 +51,10 @@ export class ThemeService {
 
     if (searchQuery) {
       const ilikeQuery = ILike(`%${searchQuery}%`);
-      whereCondition = [
-        { name_ar: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter, ...hiddenTypesFilter },
-        { name_en: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter, ...hiddenTypesFilter },
-        { desc_ar: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter, ...hiddenTypesFilter },
-      ];
+      // البحث في الأسماء والأوصاف باللغات الثلاث والـ slug
+      whereCondition = ['name_ar', 'name_en', 'name_fr', 'desc_ar', 'desc_en', 'desc_fr', 'slug'].map((field) => ({
+        [field]: ilikeQuery, ...(filterType && { typeId: filterType }), ...activeFilter, ...hiddenTypesFilter,
+      }));
     } else if (filterType) {
       whereCondition = { typeId: filterType, ...activeFilter, ...hiddenTypesFilter };
     } else {
