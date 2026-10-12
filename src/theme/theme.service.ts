@@ -282,7 +282,8 @@ async getPlanInfo(userId: string) {
     const result = new Map<string, any>();
     for (const [themes, source] of [[owned, 'owned'], [inPlan, 'plan']] as const) {
       for (const t of themes) {
-        if (result.has(t.id)) continue;
+        // ثيمات الأنواع المخفية (custom، testing) لا تُعرض ولا تُطبَّق من هنا (لوحة الإنشاء وClaude)
+        if (result.has(t.id) || HIDDEN_TYPE_NAMES.includes(t.type?.name ?? '')) continue;
         result.set(t.id, {
           id: t.id,
           slug: t.slug,

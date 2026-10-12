@@ -12,6 +12,7 @@ import { Variant } from './entities/variant.entity';
 import { VariantDetail } from './entities/variant-detail.entity';
 import { Offer } from './entities/offer.entity';
 import { ImageProduct } from '../image-product/entities/image-product.entity';
+import { ImageService } from '../image/image.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { AttributeDto } from './dto/sub-dtos/attribute.dto';
@@ -135,6 +136,7 @@ export class ProductService {
     private readonly storeService: StoreService,
     private readonly dataSource: DataSource,
     private readonly subscriptionService: SubscriptionService,
+    private readonly imageService: ImageService,
   ) { }
 
   // ─── helper: قراءة الحد من features.productNumber ──────────────────────────
@@ -172,6 +174,19 @@ export class ProductService {
     }
   }
 
+  // روابط صور خارجية ← نسخة في تخزين المنصة (عند الفشل نبقي الرابط الأصلي حتى لا يفشل إنشاء المنتج)
+  private async importExternalImages(urls: string[], userId: string): Promise<string[]> {
+    const own = process.env.AWS_PUBLIC_URL || '';
+    return Promise.all(urls.map(async (url) => {
+      if (!/^https:\/\//.test(url) || (own && url.startsWith(own))) return url;
+      try {
+        return (await this.imageService.importFromUrl(url, userId, 'products')).url;
+      } catch {
+        return url;
+      }
+    }));
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // CREATE
   // ══════════════════════════════════════════════════════════════════════════
@@ -185,6 +200,7 @@ export class ProductService {
     // ← فحص الحد قبل فتح transaction
     await this.assertProductLimitNotReached(userId);
     if (dto.images?.length) await this.assertProductImagesLimitNotReached(userId, dto.images.length);
+    if (dto.importExternalImages && dto.images?.length) dto.images = await this.importExternalImages(dto.images, userId);
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();

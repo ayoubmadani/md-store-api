@@ -243,7 +243,9 @@ export class StoreService {
             // ─── استدعاء البيانات الوهمية داخل نفس الـ Transaction ───
 
             // 1. إنشاء الأصناف بناءً على النيش (لاحظ أن savedStore.id أصبح المعامل الأول)
-            if (storeDto.nicheId) {
+            if (storeDto.skipDemoContent) {
+                // المحتوى يُنشأ لاحقاً من طرف من أنشأ المتجر (Claude عبر MCP)
+            } else if (storeDto.nicheId) {
                 await this.createFakeCategories(
                     savedStore.id,      // storeId (Required)
                     storeDto.nicheId,   // nicheId (Optional)
@@ -256,7 +258,9 @@ export class StoreService {
             }
 
             // 2. إنشاء المنتجات التجريبية
-            await this.createFakeProduct(savedStore.id, storeDto.language, queryRunner.manager);
+            if (!storeDto.skipDemoContent) {
+                await this.createFakeProduct(savedStore.id, storeDto.language, queryRunner.manager);
+            }
             // ────────────────────────────────────────────────────────
 
             await queryRunner.commitTransaction();

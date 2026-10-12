@@ -21,6 +21,10 @@ export class SuperAdmin {
   @Column({ type: 'timestamp', nullable: true })
   pinLockedUntil: Date | null;
 
+  // وقت (ms) آخر تحدّي PIN استُعمل من MCP — كل تحدٍّ يُقبل مرة واحدة، والأقدم منه مرفوض
+  @Column({ type: 'bigint', nullable: true })
+  lastMcpChallengeTs: string | null;
+
   @Column({ default: true })
   isActive: boolean;
 

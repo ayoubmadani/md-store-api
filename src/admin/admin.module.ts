@@ -30,6 +30,9 @@ import { MessageAdmine } from './entity/message-admin.entity';
 import { SuperAdmin } from './entity/super-admin.entity';
 import { SuperAdminAuthController } from './super-admin-auth.controller';
 import { SuperAdminAuthService } from './super-admin-auth.service';
+import { SuperAdminApiKey } from './entity/super-admin-api-key.entity';
+import { SuperAdminApiKeyService } from './super-admin-api-key.service';
+import { AdminMcpController, AdminMcpKeysController } from './admin-mcp.controller';
 import { CategoryNiche } from '../niche/entities/category-niche.entity';
 import { ThemePlan } from '../theme/entities/theme-plan.entity';
 import { Plan } from '../subscription/entities/plan.entity';
@@ -71,9 +74,10 @@ import { SubscriptionModule } from '../subscription/subscription.module';
             ThemePlan,
             Plan,
             SuperAdmin,
+            SuperAdminApiKey,
         ]),
     ],
-    controllers: [AdminController, SuperAdminAuthController],
-    providers: [AdminService, SuperAdminAuthService],
+    controllers: [AdminController, SuperAdminAuthController, AdminMcpController, AdminMcpKeysController],
+    providers: [AdminService, SuperAdminAuthService, SuperAdminApiKeyService],
 })
 export class AdminModule { }

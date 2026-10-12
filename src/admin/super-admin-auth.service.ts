@@ -60,7 +60,7 @@ export class SuperAdminAuthService {
       labels.push(pool.splice(randomInt(pool.length), 1)[0]);
     }
     const challenge_token = await this.jwt.signAsync(
-      { sub: adminId, typ: SA_CHALLENGE, labels },
+      { sub: adminId, typ: SA_CHALLENGE, labels, ts: Date.now() },
       { expiresIn: CHALLENGE_TTL },
     );
     return { label: labels.join(''), challenge_token };
@@ -71,6 +71,32 @@ export class SuperAdminAuthService {
    * 5 محاولات خاطئة تقفل الإدخال 15 دقيقة.
    */
   async verifyPin(adminId: string, challengeToken: string, pin: string) {
+    const { admin } = await this.checkPin(adminId, challengeToken, pin);
+    const access_token = await this.jwt.signAsync({ sub: admin.id, typ: SA_ACCESS }, { expiresIn: ACCESS_TTL });
+    return { access_token };
+  }
+
+  /**
+   * لعمليات المدير عبر MCP: نفس تحدّي PIN لكن يُقبل مرة واحدة فقط —
+   * كل عملية تطلب تحدياً جديداً، ولا يُعاد استعمال تحدٍّ قديم أو مستعمل.
+   */
+  async consumePin(adminId: string, challengeToken: string, pin: string) {
+    const { admin, challenge } = await this.checkPin(adminId, challengeToken, pin);
+    const ts = Number(challenge?.ts);
+    if (!Number.isFinite(ts)) throw new UnauthorizedException('انتهت صلاحية الطلب، أعد المحاولة');
+    const res = await this.admins
+      .createQueryBuilder()
+      .update(SuperAdmin)
+      .set({ lastMcpChallengeTs: String(ts) })
+      .where('id = :id', { id: admin.id })
+      .andWhere('("lastMcpChallengeTs" IS NULL OR "lastMcpChallengeTs" < :ts)', { ts })
+      .execute();
+    if (!res.affected) throw new UnauthorizedException('هذا الرمز استُعمل من قبل، اطلب تحدياً جديداً');
+    return admin;
+  }
+
+  /** يتحقق من التحدّي والرمز (5 أخطاء تقفل 15 دقيقة) ويرجع المدير */
+  private async checkPin(adminId: string, challengeToken: string, pin: string) {
     let challenge: any;
     try {
       challenge = await this.jwt.verifyAsync(challengeToken, { secret: this.config.get<string>('JWT_SECRET') });
@@ -105,9 +131,7 @@ export class SuperAdminAuthService {
     if (admin.pinAttempts || admin.pinLockedUntil) {
       await this.admins.update(admin.id, { pinAttempts: 0, pinLockedUntil: null });
     }
-
-    const access_token = await this.jwt.signAsync({ sub: admin.id, typ: SA_ACCESS }, { expiresIn: ACCESS_TTL });
-    return { access_token };
+    return { admin, challenge };
   }
 
   // SUPER_ADMIN_PINS=ZZ:123456,SS:654321,...

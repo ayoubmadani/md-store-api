@@ -11,4 +11,6 @@ export class CreateStoreDto {
   @IsOptional() @IsBoolean() supportQty?: boolean;
   @IsOptional() @IsBoolean() supportFreeShipping?: boolean;
   @IsOptional() @IsNumber() @Min(0) freeShippingMinAmount?: number;
+  // بدون التصنيفات والمنتجات التجريبية (مثلاً Claude ينشئ منتجات خاصة بنشاط المتجر)
+  @IsOptional() @IsBoolean() skipDemoContent?: boolean;
 }

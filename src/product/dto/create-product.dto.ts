@@ -80,6 +80,11 @@ export class CreateProductDto {
   @Type(() => AddonDto)
   addons?: AddonDto[];
 
+  // صور من روابط خارجية (مثلاً اختارها Claude): تُنزَّل وتُحفظ في تخزين المنصة بدل الربط المباشر
+  @IsOptional()
+  @IsBoolean()
+  importExternalImages?: boolean;
+
   @IsOptional()
   @IsUUID('4', { message: 'معرف التصنيف غير صالح' })
   categoryId?: string;

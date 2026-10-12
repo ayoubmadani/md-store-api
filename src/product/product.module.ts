@@ -13,6 +13,7 @@ import { CategoryModule } from "../category/category.module";
 import { ProductPublicController } from "./product-public.controller";
 import { Store } from "..//store/entities/store.entity";
 import { SubscriptionModule } from "../subscription/subscription.module";
+import { ImageModule } from "../image/image.module";
 
 @Module({
   imports: [
@@ -27,7 +28,8 @@ import { SubscriptionModule } from "../subscription/subscription.module";
     ]),
     StoreModule, // للوصول إلى StoreService
     CategoryModule, // للوصول إلى CategoryService إذا لزم الأمر
-    SubscriptionModule
+    SubscriptionModule,
+    ImageModule,
   ],
   controllers: [ProductController, ProductPublicController],
   providers: [ProductService],
