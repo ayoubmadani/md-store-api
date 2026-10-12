@@ -168,6 +168,7 @@ async getPlanInfo(userId: string) {
 
   async activeThemePlan(userId: string, data: { storeId: string; themeId: string }) {
     const { themeId, storeId } = data;
+    await this.assertStoreOwner(storeId, userId);
 
     // ✅ findSub يعالج انتهاء الصلاحية أولاً — لا يمكن استخدام صف اشتراك منتهٍ
     // لم تتم معالجته بعد لتفعيل ثيم لم يعد ضمن الخطة الفعلية للمستخدم
@@ -249,6 +250,7 @@ async getPlanInfo(userId: string) {
   }
 
   async activeTheme(userId, { themeId, storeId, isDefault }) {
+    await this.assertStoreOwner(storeId, userId);
 
     if (isDefault === true || !themeId) {
       console.log(!themeId);
@@ -262,6 +264,56 @@ async getPlanInfo(userId: string) {
 
     await this.storeRepo.update(storeId, { themeId });
     return this.res(true, 'Theme activated successfully');
+  }
+
+  // ─────────────────────────────────────────────
+  //  الثيمات المتاحة للتاجر بدون دفع: ثيماته المشتراة + ثيمات خطته النشطة
+  //  (يستعملها Claude عبر MCP لاختيار الثيم الأقرب لنشاط المتجر)
+  // ─────────────────────────────────────────────
+  async findAvailable(userId: string) {
+    const sub = await this.subscriptionService.findSub(userId);
+    const [owned, inPlan] = await Promise.all([
+      this.themeRepo.find({ where: { isActive: true, themeUsers: { userId } }, relations: ['type'] }),
+      sub?.planId
+        ? this.themeRepo.find({ where: { isActive: true, themePlans: { planId: sub.planId } }, relations: ['type'] })
+        : Promise.resolve([] as Theme[]),
+    ]);
+
+    const result = new Map<string, any>();
+    for (const [themes, source] of [[owned, 'owned'], [inPlan, 'plan']] as const) {
+      for (const t of themes) {
+        if (result.has(t.id)) continue;
+        result.set(t.id, {
+          id: t.id,
+          slug: t.slug,
+          name: { ar: t.name_ar, fr: t.name_fr, en: t.name_en },
+          description: { ar: t.desc_ar, fr: t.desc_fr, en: t.desc_en },
+          tags: t.tag ?? [],
+          type: t.type?.name ?? null,
+          imageUrl: t.imageUrl,
+          source,
+        });
+      }
+    }
+    return [...result.values()];
+  }
+
+  // يطبّق على متجر التاجر ثيماً يملكه أو مشمولاً في خطته النشطة
+  async applyAvailable(userId: string, storeId: string, themeId: string) {
+    await this.assertStoreOwner(storeId, userId);
+
+    const available = await this.findAvailable(userId);
+    const theme = available.find((t) => t.id === themeId);
+    if (!theme) throw new NotFoundException('هذا القالب ليس من قوالبك ولا من خطتك النشطة');
+
+    await this.storeRepo.update(storeId, { themeId });
+    return { storeId, theme: { id: theme.id, slug: theme.slug, name: theme.name, source: theme.source } };
+  }
+
+  // تغيير ثيم متجر لا يكون إلا لصاحبه
+  private async assertStoreOwner(storeId: string, userId: string) {
+    const owned = storeId && (await this.storeRepo.exists({ where: { id: storeId, user: { id: userId } } }));
+    if (!owned) throw new NotFoundException('المتجر غير موجود أو ليس لديك صلاحية الوصول إليه');
   }
 
   private res(success: boolean, message: string) {

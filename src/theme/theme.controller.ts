@@ -1,12 +1,21 @@
 import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { ThemeService } from './theme.service';
 import { CreateThemeDto } from './dto/create-theme.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
 import { TypeThemeService } from './type-theme.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
+
+class ApplyThemeDto {
+  @IsUUID()
+  storeId: string;
+
+  @IsUUID()
+  themeId: string;
+}
 
 class InstallThemeDto {
   @IsOptional()
@@ -43,6 +52,22 @@ export class ThemeController {
   findUserTheme(@GetUser() user: any) {
     const userId = user.id || user.sub;
     return this.themeService.findUserTheme(userId);
+  }
+
+  // ثيمات التاجر المشتراة + ثيمات خطته (بدون دفع)
+  @Get('available')
+  @UseGuards(AuthGuard)
+  @AllowApiKey()
+  findAvailable(@GetUser() user: any) {
+    return this.themeService.findAvailable(user.id || user.sub);
+  }
+
+  // تطبيق ثيم متاح على متجر التاجر
+  @Post('apply')
+  @UseGuards(AuthGuard)
+  @AllowApiKey()
+  applyAvailable(@GetUser() user: any, @Body() dto: ApplyThemeDto) {
+    return this.themeService.applyAvailable(user.id || user.sub, dto.storeId, dto.themeId);
   }
 
   // ✅ endpoint جديد: معلومات خطة المستخدم مقابل الثيمات

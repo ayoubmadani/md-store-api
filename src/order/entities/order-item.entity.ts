@@ -60,6 +60,10 @@ export class OrderItem {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   unityPrice?: number;
 
+  // نسخة من الإضافات المختارة وقت الطلب (الاسم والسعر كما كانا حينها)
+  @Column({ type: 'jsonb', nullable: true })
+  addons?: { id: string; name: string; price: number }[] | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

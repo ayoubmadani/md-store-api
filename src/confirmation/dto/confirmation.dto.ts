@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional,
+  ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional,
   IsString, IsUUID, MaxLength, Min, ValidateNested,
 } from 'class-validator';
 import { StatusEnum, TypeShipEnum } from '../../order/entities/order.entity';
@@ -50,6 +50,20 @@ export class UpdateConfirmationCompanyDto {
   commissionPerDelivered?: number;
 }
 
+export class PauseCompanyDto {
+  @IsBoolean()
+  paused: boolean;
+
+  // تاريخ الاستئناف التلقائي — بدونه حتى الاستئناف اليدوي
+  @IsOptional() @IsDateString()
+  until?: string;
+}
+
+export class SetMerchantBlockedDto {
+  @IsBoolean()
+  blocked: boolean;
+}
+
 export class SetCompanyStatusDto {
   @IsEnum(ConfirmationCompanyStatus)
   status: ConfirmationCompanyStatus;
@@ -62,12 +76,25 @@ export class AddMemberDto {
 
 // ── التاجر ──────────────────────────────────────────────────────────────────
 
+export class SaveCompanyDto {
+  @IsUUID('all', { message: 'اختر حساب التوصيل' })
+  shippingAccountId: string;
+}
+
 export class SendOrdersDto {
   @IsUUID()
   companyId: string;
 
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @IsUUID('all', { each: true })
   orderIds: string[];
+}
+
+export class AutoSendDto {
+  @IsBoolean()
+  enabled: boolean;
+
+  @IsOptional() @IsUUID()
+  companyId?: string;
 }
 
 export class RecallOrdersDto {

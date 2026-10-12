@@ -1,84 +1,79 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { StatusEnum } from '../order/entities/order.entity';
 import { Wallet } from '../payment/entities/wallets.entity';
 import { Transaction, TransactionAction, TransactionType } from '../payment/entities/transaction.entity';
 import { ConfirmationAction, ConfirmationLog } from './entities/confirmation-log.entity';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
- * دفع عمولة شركة التأكيد عند تسليم الطلب:
- * - يُخصم مبلغ العمولة من محفظة التاجر (قد تصبح سالبة — دين يُسدَّد بالشحن القادم)،
- * - وتُضاف العمولة ناقص نسبة المنصة إلى محفظة صاحب الشركة.
- * آمنة للاستدعاء أكثر من مرة: confirmationPaidAt يُضبط مرة واحدة فقط.
+ * رسوم المنصة على شركة التأكيد: مبلغ ثابت يحدده مدير المنصة (confirmationFee، الافتراضي 12 د.ج)
+ * يُخصم من محفظة صاحب الشركة عن كل طلب تؤكده. التاجر والشركة يتفاهمان على
+ * أجر التأكيد خارج المنصة — لا شيء يُخصم من التاجر.
  */
 @Injectable()
 export class ConfirmationBillingService {
-  private readonly logger = new Logger(ConfirmationBillingService.name);
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly settings: PlatformSettingsService,
+  ) {}
 
-  constructor(private readonly dataSource: DataSource) {}
+  fee(): Promise<number> {
+    return this.settings.get('confirmationFee');
+  }
 
-  /** لا يرمي أبداً — فشل الدفع لا يجب أن يُفشل تغيير حالة الطلب */
-  async settleIfDelivered(orderId: string): Promise<void> {
-    try {
-      await this.dataSource.transaction((manager) => this.settle(manager, orderId));
-    } catch (err) {
-      this.logger.error(`Commission settlement failed for order ${orderId}`, err as Error);
+  async balanceOf(userId: string): Promise<number> {
+    const wallet = await this.dataSource.getRepository(Wallet).findOne({ where: { userId } });
+    return round2(Number(wallet?.balance ?? 0));
+  }
+
+  /** قبل أخذ طلب من القائمة: لا فائدة من الاتصال بالزبون إن تعذّر التأكيد بعده */
+  async assertCanPay(ownerId: string) {
+    const fee = await this.fee();
+    if (fee > 0 && (await this.balanceOf(ownerId)) < fee) {
+      throw new BadRequestException({ message: this.lowBalanceMessage(fee), code: 'insufficient_balance' });
     }
   }
 
-  private async settle(manager: EntityManager, orderId: string) {
-    // الحجز والتحقق في جملة واحدة: فقط طلب مسلَّم، مرسل لشركة، ولم يُدفع بعد
-    const rows: Array<{
-      confirmationCommission: string; confirmationPlatformRate: string | null;
-      confirmationCompanyId: string; merchantId: string; ownerId: string;
-    }> = await manager.query(
-      `UPDATE "orders" o
-          SET "confirmationPaidAt" = now()
-         FROM "stores" s, "confirmation_companies" c
-        WHERE o.id = $1
-          AND o.status = $2
-          AND o."confirmationCompanyId" IS NOT NULL
-          AND o."confirmationPaidAt" IS NULL
-          AND COALESCE(o."confirmationCommission", 0) > 0
-          AND s.id = o."storeId"
-          AND c.id = o."confirmationCompanyId"
-      RETURNING o."confirmationCommission", o."confirmationPlatformRate", o."confirmationCompanyId",
-                s."userId" AS "merchantId", c."ownerId"`,
-      [orderId, StatusEnum.DELIVERED],
+  /**
+   * يُستدعى داخل معاملة التأكيد: يخصم الرسوم مرة واحدة لكل طلب
+   * (confirmationPaidAt يُضبط عند أول تأكيد فقط). رصيد غير كافٍ ← التأكيد يُرفض كله.
+   */
+  async chargeOnConfirm(manager: EntityManager, orderId: string, companyId: string, ownerId: string) {
+    const fee = await this.fee();
+    if (fee <= 0) return;
+
+    const claimed: unknown[] = await manager.query(
+      `UPDATE "orders" SET "confirmationPaidAt" = now(), "confirmationCommission" = $2
+        WHERE id = $1 AND "confirmationPaidAt" IS NULL
+      RETURNING id`,
+      [orderId, fee],
     );
     // pg يرجع [rows, count] لـ UPDATE ... RETURNING
-    const row = (Array.isArray(rows[0]) ? rows[0][0] : rows[0]) as (typeof rows)[number] | undefined;
-    if (!row) return;
+    const rows = Array.isArray(claimed[0]) ? (claimed[0] as unknown[]) : claimed;
+    if (!rows.length) return; // دُفعت سابقاً (أُكّد ثم أُعيد تأكيده)
 
-    const commission = round2(Number(row.confirmationCommission));
-    const rate = Number(row.confirmationPlatformRate ?? 0);
-    const earning = round2(commission * (1 - rate));
+    const wallet = await manager.findOne(Wallet, { where: { userId: ownerId }, lock: { mode: 'pessimistic_write' } });
+    const balance = round2(Number(wallet?.balance ?? 0));
+    if (!wallet || balance < fee) {
+      throw new BadRequestException({ message: this.lowBalanceMessage(fee), code: 'insufficient_balance' });
+    }
 
-    await this.moveMoney(manager, row.merchantId, -commission, TransactionType.CONFIRMATION_FEE);
-    if (earning > 0) await this.moveMoney(manager, row.ownerId, earning, TransactionType.CONFIRMATION_EARNING);
-
+    wallet.balance = round2(balance - fee);
+    await manager.save(wallet);
+    await manager.save(manager.create(Transaction, {
+      action: TransactionAction.PAYMENT,
+      type: TransactionType.CONFIRMATION_FEE,
+      amount: fee,
+      userId: ownerId,
+    }));
     await manager.save(manager.create(ConfirmationLog, {
-      orderId,
-      companyId: row.confirmationCompanyId,
-      agentId: null,
-      action: ConfirmationAction.PAID,
-      note: `commission=${commission} earning=${earning} platformRate=${rate}`,
+      orderId, companyId, agentId: null, action: ConfirmationAction.PAID, note: `fee=${fee}`,
     }));
   }
 
-  private async moveMoney(manager: EntityManager, userId: string, delta: number, type: TransactionType) {
-    let wallet = await manager.findOne(Wallet, { where: { userId }, lock: { mode: 'pessimistic_write' } });
-    if (!wallet) wallet = manager.create(Wallet, { userId, balance: 0 });
-    wallet.balance = round2(Number(wallet.balance) + delta);
-    await manager.save(wallet);
-
-    await manager.save(manager.create(Transaction, {
-      action: delta >= 0 ? TransactionAction.DESPOSIT : TransactionAction.PAYMENT,
-      type,
-      amount: Math.abs(delta),
-      userId,
-    }));
+  private lowBalanceMessage(fee: number) {
+    return `رصيد محفظة الشركة غير كافٍ — كل طلب مؤكد يكلّف ${fee} د.ج. اطلب من مدير الشركة شحن المحفظة.`;
   }
 }

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
-import { Product } from './entities/product.entity';
+import { Product, ProductAddon } from './entities/product.entity';
 import { Attribute } from './entities/attribute.entity';
 import { Variant } from './entities/variant.entity';
 import { VariantDetail } from './entities/variant-detail.entity';
@@ -116,6 +116,13 @@ function generateCombinationsFromDto(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// تنظيف قائمة الإضافات: اسم مُقلَّم، سعر رقمي غير سالب، وتجاهل الأسطر الفارغة
+function normalizeAddons(addons?: { id: string; name: string; price: number | string; isActive?: boolean }[]): ProductAddon[] {
+  return (addons ?? [])
+    .filter((a) => a?.name?.trim())
+    .map((a) => ({ id: String(a.id), name: a.name.trim(), price: Math.max(0, Number(a.price) || 0), isActive: a.isActive ?? true }));
+}
+
 @Injectable()
 export class ProductService {
   constructor(
@@ -193,6 +200,7 @@ export class ProductService {
         isDigital: dto.isDigital ?? false,
         whatsappEnabled: dto.whatsappEnabled ?? false,
         whatsappNumber: dto.whatsappNumber?.trim() || null,
+        addons: normalizeAddons(dto.addons),
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
@@ -289,6 +297,7 @@ export class ProductService {
         isDigital: dto.isDigital ?? false,
         whatsappEnabled: dto.whatsappEnabled ?? false,
         whatsappNumber: dto.whatsappNumber?.trim() || null,
+        addons: normalizeAddons(dto.addons),
         store: { id: storeId },
         category: dto.categoryId ? { id: dto.categoryId } : undefined,
       });
@@ -469,6 +478,7 @@ export class ProductService {
         isDigital: dto.isDigital ?? product.isDigital,
         whatsappEnabled: dto.whatsappEnabled ?? product.whatsappEnabled,
         whatsappNumber: dto.whatsappNumber !== undefined ? dto.whatsappNumber.trim() || null : product.whatsappNumber,
+        addons: dto.addons !== undefined ? normalizeAddons(dto.addons) : product.addons,
         category: dto.categoryId ? { id: dto.categoryId } : product.category,
       });
       await queryRunner.manager.save(product);

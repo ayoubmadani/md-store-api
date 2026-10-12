@@ -6,7 +6,7 @@ import {
   IsString, IsUUID, IsNumber, IsEnum, IsOptional,
   Min, Max, IsPhoneNumber, Length, ValidateIf,
   IsNotEmpty,
-  Matches, IsEmail
+  Matches, IsEmail, IsArray, ArrayMaxSize
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TypeShipEnum } from '../entities/order.entity';
@@ -97,6 +97,13 @@ export class CreateOrderDto {
   @IsNumber()
   @IsOptional()
   customerWilayaId?: number;
+
+  @ApiPropertyOptional({ description: 'معرّفات الإضافات المختارة للمنتج (مثلاً: جبن إضافي)', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  addonIds?: string[];
 
   @ApiProperty({ description: 'الولاية' })
   @IsNumber()

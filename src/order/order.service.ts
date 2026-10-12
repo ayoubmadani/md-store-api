@@ -11,7 +11,15 @@ import { Product } from "../product/entities/product.entity";
 import { Store } from "../store/entities/store.entity";
 import { NtfyService } from "../ntfy/ntfy.service";
 import { Shipping } from "../shipping/entity/shipping.entity";
-import { ConfirmationBillingService } from "../confirmation/confirmation-billing.service";
+import { ConfirmationService } from "../confirmation/confirmation.service";
+
+// الإضافات المختارة كما هي معرّفة في المنتج وقت الطلب (المفعّلة فقط) — لا نثق باسم أو سعر يرسله العميل
+function pickAddons(product: Product | undefined, ids: string[]) {
+    const wanted = new Set(ids);
+    return (product?.addons ?? [])
+        .filter(a => wanted.has(a.id) && a.isActive !== false)
+        .map(a => ({ id: a.id, name: a.name, price: Number(a.price) }));
+}
 
 @Injectable()
 export class OrdersService {
@@ -23,7 +31,7 @@ export class OrdersService {
         @InjectRepository(Shipping) private readonly shippingRepo: Repository<Shipping>,
 
         private readonly ntfyService: NtfyService,
-        private readonly confirmationBilling: ConfirmationBillingService,
+        private readonly confirmationService: ConfirmationService,
     ) { }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
@@ -69,6 +77,9 @@ export class OrdersService {
             }
             if (d.variantDetailId && product?.variantDetails.some(v => v.id === d.variantDetailId && !v.isActive)) {
                 throw new BadRequestException('هذا الاختيار لم يعد متاحاً');
+            }
+            if (d.addonIds?.length && pickAddons(product, d.addonIds).length !== new Set(d.addonIds).size) {
+                throw new BadRequestException('إحدى الإضافات المختارة لم تعد متاحة');
             }
         }
 
@@ -125,7 +136,8 @@ export class OrdersService {
                 totalPrice: fp * qty,
                 variantDetailId: dto.variantDetailId,
                 offerId: dto.offerId ?? dto.selectedOffer,
-                unityPrice: dto.unityPrice
+                unityPrice: dto.unityPrice,
+                addons: dto.addonIds?.length ? pickAddons(products.find(p => p.id === dto.productId), dto.addonIds) : null,
             });
         });
 
@@ -133,6 +145,9 @@ export class OrdersService {
 
         // إرسال الإشعارات
         this.sendNotification(savedOrder, data).catch(console.error);
+
+        // إذا فعّل المتجر الإرسال التلقائي: الطلب يذهب لشركة التأكيد (لا يرمي أبداً)
+        await this.confirmationService.autoSendNewOrder(storeId, savedOrder.id);
 
         // مهم: إرجاع الطلب مع الـ relations لضمان ظهور الـ items في الفرونت إند
         return this.getOne(savedOrder.id);
@@ -205,6 +220,12 @@ export class OrdersService {
 
     // ─── GET ONE ──────────────────────────────────────────────────────────────
 
+    // الطلب يعود لمتجر يملكه هذا المستخدم — 404 بدل 403 حتى لا نكشف وجود الطلب
+    async assertOrderOwner(orderId: string, userId: string) {
+        const owned = await this.ordersRepo.exists({ where: { id: orderId, store: { user: { id: userId } } } });
+        if (!owned) throw new NotFoundException('Order not found');
+    }
+
     async getOne(orderId: string) {
         const order = await this.ordersRepo.findOne({
             where: { id: orderId },
@@ -265,7 +286,6 @@ export class OrdersService {
     // طلبية أكدتها شركة تأكيد: الحالة فقط، بدون أي تعديل آخر
     if (this.merchantEditMode(order, first['status'] as StatusEnum) === 'shippingOnly') {
         await this.ordersRepo.update(order.id, { status: first['status'] as StatusEnum });
-        await this.confirmationBilling.settleIfDelivered(order.id);
         return this.getOne(order.id);
     }
 
@@ -281,6 +301,12 @@ export class OrdersService {
         priceShip: Number(first.priceShip ?? first.priceLivraison ?? order.priceShip ?? 0),
         status: (first['status'] ?? order.status) as any, // تحديث الحالة إذا تم إرسالها
     });
+
+    // الإضافات: إن لم يُرسل addonIds نحتفظ بإضافات العنصر القديم لنفس المنتج (لا تضيع عند تعديل التاجر)
+    const oldAddons = new Map(order.items.map(i => [i.productId, i.addons ?? null]));
+    const addonProducts = dtos.some(d => d.addonIds !== undefined)
+        ? await this.productsRepo.find({ where: { id: In(dtos.map(d => d.productId)) } })
+        : [];
 
     // 2. حذف العناصر القديمة لمزامنة السلة بالكامل (Add/Delete support)
     await this.itemsRepo.delete({ order: { id: order.id } });
@@ -303,6 +329,9 @@ export class OrdersService {
             offerId: d.offerId || d.selectedOffer || undefined,
             variantDetailId: d.variantDetailId || (d.variantId as string) || undefined,
             unityPrice: d.unityPrice ?? undefined,
+            addons: d.addonIds !== undefined
+                ? (d.addonIds.length ? pickAddons(addonProducts.find(p => p.id === d.productId), d.addonIds) : null)
+                : oldAddons.get(d.productId) ?? null,
             order: { id: order.id } 
         });
     });
@@ -316,8 +345,6 @@ export class OrdersService {
         totalPrice: totalCartPrice + currentPriceShip 
     });
 
-    // طلب أُرسل لشركة تأكيد وأصبح مسلَّماً → دفع عمولتها (لا يدفع مرتين)
-    await this.confirmationBilling.settleIfDelivered(order.id);
 
     // إرجاع الطلب المحدث بالكامل
     return this.getOne(order.id);
@@ -395,7 +422,6 @@ export class OrdersService {
         if (!order) throw new NotFoundException('Order not found');
         this.merchantEditMode(order, status);
         await this.ordersRepo.update(order.id, { status });
-        await this.confirmationBilling.settleIfDelivered(order.id);
         return { id: order.id, status };
     }
 

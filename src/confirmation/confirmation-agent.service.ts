@@ -6,11 +6,14 @@ import { OrderItem } from '../order/entities/order-item.entity';
 import { Product } from '../product/entities/product.entity';
 import { Store } from '../store/entities/store.entity';
 import { Shipping } from '../shipping/entity/shipping.entity';
+import { ShippingProfile } from '../shipping/entity/shipping-profile.entity';
 import { Commune } from '../shipping/entity/commune.entity';
 import { User } from '../user/entities/user.entity';
 import { ShippingProviderService } from '../shipping-provider/shipping-provider.service';
 import { ConfirmationAction, ConfirmationLog } from './entities/confirmation-log.entity';
 import { ConfirmationMember } from './entities/confirmation-member.entity';
+import { StoreConfirmationCompany } from './entities/store-confirmation-company.entity';
+import { ConfirmationBillingService } from './confirmation-billing.service';
 import { ConfirmationService, QUEUE_STATUSES } from './confirmation.service';
 import { AgentEditOrderDto, AgentSetStatusDto } from './dto/confirmation.dto';
 
@@ -28,6 +31,7 @@ export class ConfirmationAgentService {
     private readonly confirmation: ConfirmationService,
     private readonly shipping: ShippingProviderService,
     private readonly dataSource: DataSource,
+    private readonly billing: ConfirmationBillingService,
   ) {}
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -89,6 +93,7 @@ export class ConfirmationAgentService {
     const member = await this.confirmation.requireMembership(userId);
     const current = await this.currentLock(member);
     if (current) return this.detail(userId, current.id);
+    await this.billing.assertCanPay(member.company.ownerId);
 
     const result = await this.dataSource.query(
       `UPDATE "orders"
@@ -215,6 +220,7 @@ export class ConfirmationAgentService {
    */
   async claim(userId: string, orderId: string) {
     const member = await this.confirmation.requireMembership(userId);
+    await this.billing.assertCanPay(member.company.ownerId);
     const result = await this.dataSource.query(
       `UPDATE "orders"
           SET "confirmationAgentId" = $1,
@@ -362,7 +368,16 @@ export class ConfirmationAgentService {
   private async merchantRates(storeId: string) {
     const store = await this.dataSource.getRepository(Store).findOne({ where: { id: storeId }, relations: ['user'] });
     if (!store) return [];
-    return this.dataSource.getRepository(Shipping).find({ where: { userId: store.user.id, isActive: true } });
+    const profileId = await this.storeShippingProfileId(this.dataSource.manager, store);
+    if (!profileId) return [];
+    return this.dataSource.getRepository(Shipping).find({ where: { profileId, isActive: true } });
+  }
+
+  /** حساب الشحن الذي يستعمله المتجر، وإلا الحساب الافتراضي للتاجر */
+  private async storeShippingProfileId(manager: any, store: Store): Promise<string | null> {
+    if (store.shippingProfileId) return store.shippingProfileId;
+    const profile = await manager.findOne(ShippingProfile, { where: { userId: store.user.id, isDefault: true } });
+    return profile?.id ?? null;
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -459,7 +474,8 @@ export class ConfirmationAgentService {
       return 0;
     }
     if (!order.customerWilayaId || !store) return Number(order.priceShip || 0);
-    const rate = await manager.findOne(Shipping, { where: { userId: store.user.id, wilayaId: order.customerWilayaId } });
+    const profileId = await this.storeShippingProfileId(manager, store);
+    const rate = profileId ? await manager.findOne(Shipping, { where: { profileId, wilayaId: order.customerWilayaId } }) : null;
     if (!rate) return Number(order.priceShip || 0);
     return Number(order.typeShip === TypeShipEnum.OFFICE ? rate.priceOffice : rate.priceHome);
   }
@@ -495,7 +511,16 @@ export class ConfirmationAgentService {
     } else {
       qb.set({ status: StatusEnum.CANCELLED, confirmationLockedUntil: null, confirmationNextAttemptAt: null });
     }
-    await qb.execute();
+
+    if (dto.status === StatusEnum.CONFIRMED) {
+      // رسوم المنصة وتغيير الحالة معاً: رصيد غير كافٍ ← لا يُؤكَّد الطلب
+      await this.dataSource.transaction(async (manager) => {
+        await this.billing.chargeOnConfirm(manager, orderId, member.companyId, member.company.ownerId);
+        await qb.setQueryRunner(manager.queryRunner!).execute();
+      });
+    } else {
+      await qb.execute();
+    }
     await this.log(orderId, member, ConfirmationAction.STATUS, { fromStatus: from, toStatus: dto.status, note: dto.note });
 
     let upload: { uploaded: boolean; tracking?: string | null; error?: string } | null = null;
@@ -509,7 +534,12 @@ export class ConfirmationAgentService {
   private async autoUpload(order: Order, member: ConfirmationMember) {
     try {
       const store = await this.dataSource.getRepository(Store).findOne({ where: { id: order.storeId }, relations: ['user'] });
-      const result = await this.shipping.uploadOrder(order.storeId, store!.user.id, order.id);
+      // حساب التوصيل الذي اختاره التاجر لهذه الشركة (بدونه: الافتراضي — شركات حُفظت قبل هذا الخيار)
+      const saved = await this.dataSource.getRepository(StoreConfirmationCompany).findOne({
+        where: { storeId: order.storeId, companyId: member.companyId },
+        select: ['id', 'shippingAccountId'],
+      });
+      const result = await this.shipping.uploadOrder(order.storeId, store!.user.id, order.id, saved?.shippingAccountId);
       await this.log(order.id, member, ConfirmationAction.UPLOADED, { toStatus: StatusEnum.SHIPPING, note: result.tracking ?? undefined });
       return { uploaded: true, tracking: result.tracking ?? null };
     } catch (err: any) {

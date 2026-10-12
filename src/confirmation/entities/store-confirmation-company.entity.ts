@@ -23,6 +23,10 @@ export class StoreConfirmationCompany {
   @JoinColumn({ name: 'companyId' })
   company: ConfirmationCompany;
 
+  // حساب التوصيل (من حسابات التاجر) الذي تُرفع به الطلبات التي تؤكدها هذه الشركة
+  @Column({ type: 'uuid', nullable: true })
+  shippingAccountId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

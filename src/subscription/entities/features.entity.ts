@@ -20,6 +20,10 @@ export class FeaturesEntity {
     @Column({ type: 'int', default: 0 })
     landingPageNumber: number;
 
+    // عدد الدومينات لكل متجر (فرعية mdstore.top + خاصة، للمتجر ولصفحات الهبوط معاً)
+    @Column({ type: 'int', default: 3 })
+    domainNumber: number;
+
     // استخدام boolean أفضل للإشعارات (أو int إذا كنت تفضل 0/1)
     @Column({ type: 'boolean', default: false })
     isNtfy: boolean;

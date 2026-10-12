@@ -33,6 +33,7 @@ import { CouponModule } from './coupon/coupon.module';
 import { ApiKeyModule } from './api-key/api-key.module';
 import { AliexpressModule } from './aliexpress/aliexpress.module';
 import { HiggsfieldModule } from './higgsfield/higgsfield.module';
+import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { HiggsfieldModule } from './higgsfield/higgsfield.module';
     ApiKeyModule,
     AliexpressModule,
     HiggsfieldModule,
+    PlatformSettingsModule,
   ],
   controllers: [AppController]
 })

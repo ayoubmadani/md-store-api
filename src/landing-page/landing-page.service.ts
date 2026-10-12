@@ -7,6 +7,8 @@ import { AiService } from '../ai/ai.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { CreateLandingPageDto } from './dto/create-landing-page.dto';
 import { UpdateLandingPageDto } from './dto/update-landing-page.dto';
+import { Product } from '../product/entities/product.entity';
+import { Store } from '../store/entities/store.entity';
 
 @Injectable()
 export class LandingPageService {
@@ -16,6 +18,26 @@ export class LandingPageService {
     private readonly aiService: AiService,
     private readonly subscriptionService: SubscriptionService,
   ) { }
+
+  // صفحة الهبوط ← المنتج ← المتجر ← صاحبه: لا تعديل إلا لصاحب المتجر
+  async assertOwner(id: string, userId: string) {
+    const owned = await this.landingPageRope.exists({ where: { id, product: { store: { user: { id: userId } } } } });
+    if (!owned) throw new NotFoundException('landing page not found');
+  }
+
+  async assertProductOwner(productId: string, userId: string) {
+    const owned = await this.landingPageRope.manager.getRepository(Product).exists({
+      where: { id: productId, store: { user: { id: userId } } },
+    });
+    if (!owned) throw new NotFoundException('product not found');
+  }
+
+  async assertStoreOwner(storeId: string, userId: string) {
+    const owned = await this.landingPageRope.manager.getRepository(Store).exists({
+      where: { id: storeId, user: { id: userId } },
+    });
+    if (!owned) throw new NotFoundException('store not found');
+  }
 
   private async getLPLimit(userId: string): Promise<number> {
     const sub = await this.subscriptionService.findSub(userId);

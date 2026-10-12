@@ -3,6 +3,7 @@ import { UserService } from './user.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from './decorator/get-user.decorator';
 import { ResetNewPassword } from './dto/reset-new-password.dto';
+import { UpdateProfileDto, UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('user')
 export class UserController {
@@ -21,10 +22,10 @@ export class UserController {
   @UseGuards(AuthGuard)
   update(
     @GetUser() user: any,
-    @Body() dto: any
+    @Body() dto: UpdateProfileDto
   ) {
     const userId = user.id || user.sub;
-    return this.userService.updateUser(dto, userId)
+    return this.userService.updateUser(dto as UpdateUserDto, userId)
   }
 
   @Patch('password')

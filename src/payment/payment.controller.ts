@@ -70,18 +70,30 @@ export class PaymentController {
   paymentFailed(@Query('checkout_id') checkoutId: string) {
     return this.paymentService.paymentStatus(checkoutId , "Failed");
   }
+
+  // شحن محفظة شركة تأكيد من confirm-app — الرجوع إليها بعد الدفع
+  @Get('payment-success-confirm')
+  @Redirect()
+  paymentSuccessConfirm(@Query('checkout_id') checkoutId: string) {
+    return this.paymentService.paymentStatus(checkoutId , "Success", 'confirm');
+  }
+
+  @Get('payment-failed-confirm')
+  @Redirect()
+  paymentFailedConfirm(@Query('checkout_id') checkoutId: string) {
+    return this.paymentService.paymentStatus(checkoutId , "Failed", 'confirm');
+  }
   
 
   @Post('top-up')
   @UseGuards(AuthGuard)
   createTopUpSession(
     @GetUser() user: any,
-    @Body('amount') amount: any
+    @Body('amount') amount: any,
+    @Body('app') app?: string,
   ) {
     const userId = user.sub || user.id;
     const numericAmount = Number(amount);
-    console.log(numericAmount);
-    
-    return this.paymentService.createTopUpSession(userId, numericAmount);
+    return this.paymentService.createTopUpSession(userId, numericAmount, app);
   }
 }

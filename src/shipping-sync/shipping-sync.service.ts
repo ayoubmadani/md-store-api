@@ -3,7 +3,6 @@ import { Cron } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { StatusEnum } from '../order/entities/order.entity';
 import { ShippingProviderService } from '../shipping-provider/shipping-provider.service';
-import { ConfirmationBillingService } from '../confirmation/confirmation-billing.service';
 import { mapProviderStatus, rawProviderStatus } from './provider-status';
 
 const BATCH = 50; // طلبيات في كل دفعة
@@ -23,7 +22,6 @@ export class ShippingSyncService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly shipping: ShippingProviderService,
-    private readonly billing: ConfirmationBillingService,
   ) {}
 
   // يعمل فقط حين يكون الـ API خادماً دائماً (أو محلياً). على Vercel لا يعمل @Cron —
@@ -57,8 +55,10 @@ export class ShippingSyncService {
           storeId: string;
           trackingId: string;
           merchantId: string;
+          accountId: string | null;
         }> = await this.dataSource.query(
-          `SELECT o.id, o."storeId", o."shippingTrackingId" AS "trackingId", s."userId" AS "merchantId"
+          `SELECT o.id, o."storeId", o."shippingTrackingId" AS "trackingId", s."userId" AS "merchantId",
+                  o."shippingAccountId" AS "accountId"
            FROM "orders" o JOIN "stores" s ON s.id = o."storeId"
           WHERE o.status = $1
             AND o."shippingTrackingId" IS NOT NULL
@@ -76,6 +76,7 @@ export class ShippingSyncService {
               order.storeId,
               order.merchantId,
               order.trackingId,
+              order.accountId,
             );
             const raw = rawProviderStatus(parcel as Record<string, unknown>);
             const next = mapProviderStatus(raw);
@@ -93,7 +94,6 @@ export class ShippingSyncService {
 
             if (next === StatusEnum.DELIVERED) {
               result.delivered++;
-              await this.billing.settleIfDelivered(order.id);
             } else if (next === StatusEnum.RETURNED) {
               result.returned++;
             }

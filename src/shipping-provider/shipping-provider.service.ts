@@ -130,7 +130,7 @@ export class ShippingProviderService {
    * رفع طلب إلى شركة التوصيل بحساب التاجر، ثم حفظ رقم التتبع وتحويل الحالة
    * إلى "قيد الشحن". يُستعمل من زر الشحن في الداشبورد ومن التأكيد التلقائي.
    */
-  async uploadOrder(storeId: string, userId: string, orderId: string) {
+  async uploadOrder(storeId: string, userId: string, orderId: string, accountId?: string | null) {
     if (!orderId) throw new BadRequestException('orderId مطلوب');
 
     // storeId في الشرط: لا يمكن شحن طلب متجر آخر
@@ -164,12 +164,13 @@ export class ShippingProviderService {
     };
 
     const result = await this.forward<Record<string, unknown>>('post', `/stores/${storeId}/shipping/orders`, userId, {
-      data: { order: shippingOrderInput },
+      data: { order: shippingOrderInput, ...(accountId ? { accountId } : {}) },
     });
 
     const trackingId = extractTracking(result);
     await this.orderRepo.update(order.id, {
       shippingTrackingId: trackingId ?? undefined,
+      shippingAccountId: accountId ?? null,
       isUploadedShipping: true,
       status: StatusEnum.SHIPPING,
       shippingAt: new Date(),
@@ -202,11 +203,28 @@ export class ShippingProviderService {
     return { id: order.id, status: StatusEnum.SHIPPING, shippingTrackingId: tracking };
   }
 
-  getOrder(storeId: string, userId: string, trackingId: string) {
-    return this.forward('get', `/stores/${storeId}/shipping/orders/${trackingId}`, userId);
+  getOrder(storeId: string, userId: string, trackingId: string, accountId?: string | null) {
+    return this.forward('get', `/stores/${storeId}/shipping/orders/${trackingId}`, userId, {
+      params: accountId ? { accountId } : undefined,
+    });
   }
 
-  getOrderLabel(storeId: string, userId: string, orderId: string) {
-    return this.forward('get', `/stores/${storeId}/shipping/orders/${orderId}/label`, userId);
+  // الملصق من نفس الحساب الذي رُفع به الطلب
+  async getOrderLabel(storeId: string, userId: string, orderId: string) {
+    // المعرّف قد يكون رقم طلبنا (uuid) أو رقم التتبع
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+    const order = await this.orderRepo.findOne({
+      where: isUuid ? { id: orderId, storeId } : { shippingTrackingId: orderId, storeId },
+      select: ['id', 'shippingAccountId'],
+    });
+    return this.forward('get', `/stores/${storeId}/shipping/orders/${orderId}/label`, userId, {
+      params: order?.shippingAccountId ? { accountId: order.shippingAccountId } : undefined,
+    });
+  }
+
+  // حسابات التوصيل للمتجر — للتحقق أن الحساب المختار يملكه التاجر
+  async accountBelongsTo(storeId: string, userId: string, accountId: string) {
+    const accounts = await this.getStoreAccounts(storeId, userId);
+    return Array.isArray(accounts) && accounts.some((a: any) => a.id === accountId);
   }
 }

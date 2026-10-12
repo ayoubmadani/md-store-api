@@ -150,6 +150,10 @@ export class Order {
   @Column({ nullable: true })
   shippingTrackingId?: string;
 
+  // حساب التوصيل الذي رُفع به الطلب (null = الافتراضي) — المزامنة والملصق تستعملان نفس الحساب
+  @Column({ type: 'uuid', nullable: true })
+  shippingAccountId?: string | null;
+
   @Column({ nullable: true })
   shippingProviderStatus?: string;
 

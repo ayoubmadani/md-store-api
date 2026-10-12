@@ -8,6 +8,7 @@ import { CreateDomainDto } from './dto/create-domain.dto';
 import { Domain } from './entities/domain.entity';
 import { Store } from '../store/entities/store.entity';
 import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class DomainService {
@@ -20,6 +21,7 @@ export class DomainService {
     @InjectRepository(Store) private readonly storeRepo: Repository<Store>,
     @InjectRepository(BuilderPage) private readonly builderPageRepo: Repository<BuilderPage>,
     private readonly configService: ConfigService,
+    private readonly subscriptionService: SubscriptionService,
   ) { }
 
   /**
@@ -43,6 +45,28 @@ export class DomainService {
     if (!store) throw new NotFoundException('المتجر غير موجود أو ليس لديك صلاحية الوصول إليه');
   }
 
+  // عدد الدومينات المسموح لكل متجر في خطة التاجر (3 إن لم يكن له اشتراك أو لم يُضبط الحقل)
+  async getDomainLimit(userId?: string): Promise<number> {
+    if (!userId) return 3;
+    const sub = await this.subscriptionService.findSub(userId);
+    return sub?.plan?.features?.domainNumber ?? 3;
+  }
+
+  async getStoreDomainUsage(storeId: string, userId: string) {
+    const [limit, used] = await Promise.all([this.getDomainLimit(userId), this.domainRepo.count({ where: { storeId } })]);
+    return { limit, used };
+  }
+
+  private async assertDomainLimitNotReached(storeId: string, userId?: string) {
+    const [limit, count] = await Promise.all([
+      this.getDomainLimit(userId),
+      this.domainRepo.count({ where: { storeId } }),
+    ]);
+    if (count >= limit) {
+      throw new BadRequestException(`وصلت للحد الأقصى للدومينات في خطتك (${limit} لكل متجر). احذف دوميناً أو رقِّ خطتك.`);
+    }
+  }
+
   // 1. إضافة دومين جديد
 
   async create(dto: CreateDomainDto) {
@@ -62,18 +86,16 @@ export class DomainService {
       if (domainSplit[1] !== "mdstore" || domainSplit[2] !== "top") {
         throw new NotFoundException(`دومين غير مقبول`);
       }
-
-      const getCountDomain = await this.domainRepo.count({ where: { storeId: dto.storeId, isSub: true } })
-      if (getCountDomain >= 3) {
-        throw new NotFoundException(`لديك الكثير من الدومينات الفرعية`);
-      }
     }
 
 
 
     // 2. التحقق من وجود المتجر
-    const store = await this.storeRepo.findOne({ where: { id: dto.storeId } });
+    const store = await this.storeRepo.findOne({ where: { id: dto.storeId }, relations: ['user'] });
     if (!store) throw new NotFoundException(`المتجر غير موجود`);
+
+    // حدّ الخطة: كل دومينات المتجر (فرعية وخاصة، للمتجر ولصفحات الهبوط) تُحسب معاً
+    await this.assertDomainLimitNotReached(store.id, store.user?.id);
 
     // 2.ب التحقق أن صفحة المحرر (عند تخصيص الدومين لصفحة هبوط) تعود لنفس المتجر
     if (dto.scope === 'landing_page') {

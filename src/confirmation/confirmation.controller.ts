@@ -1,5 +1,5 @@
 import {
-  BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, UseGuards,
+  BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
@@ -7,7 +7,7 @@ import { GetUser } from '../user/decorator/get-user.decorator';
 import { ConfirmationService } from './confirmation.service';
 import { ConfirmationAgentService } from './confirmation-agent.service';
 import {
-  AddMemberDto, AgentEditOrderDto, AgentSetStatusDto, CreateConfirmationCompanyDto, RecallOrdersDto, SendOrdersDto,
+  AddMemberDto, AgentEditOrderDto, AutoSendDto, SaveCompanyDto, PauseCompanyDto, SetMerchantBlockedDto, AgentSetStatusDto, CreateConfirmationCompanyDto, RecallOrdersDto, SendOrdersDto,
   SetAccessDto, SetCompanyStatusDto, UpdateConfirmationCompanyDto,
 } from './dto/confirmation.dto';
 import { ConfirmationCompanyStatus } from './entities/confirmation-company.entity';
@@ -47,6 +47,26 @@ export class ConfirmationController {
   @Patch('company')
   updateCompany(@Body() dto: UpdateConfirmationCompanyDto, @GetUser() user: any) {
     return this.confirmation.updateCompany(userIdOf(user), dto);
+  }
+
+  // ── مدير الشركة: إيقاف مؤقت، وإيقاف تاجر عن الإرسال ──
+  @Patch('company/pause')
+  pause(@Body() dto: PauseCompanyDto, @GetUser() user: any) {
+    return this.confirmation.setPause(userIdOf(user), dto.paused, dto.until);
+  }
+
+  @Get('clients')
+  clients(@GetUser() user: any) {
+    return this.confirmation.clients(userIdOf(user));
+  }
+
+  @Patch('clients/:merchantId')
+  setClientBlocked(
+    @Param('merchantId', ParseUUIDPipe) merchantId: string,
+    @Body() dto: SetMerchantBlockedDto,
+    @GetUser() user: any,
+  ) {
+    return this.confirmation.setMerchantBlocked(userIdOf(user), merchantId, dto.blocked);
   }
 
   @Get('earnings')
@@ -145,13 +165,15 @@ export class StoreConfirmationController {
     return this.confirmation.savedList(storeId, userIdOf(user));
   }
 
+  // حفظ شركة أو تغيير حساب التوصيل الخاص بها — shippingAccountId إجباري
   @Post('saved/:companyId')
   save(
     @Param('storeId', ParseUUIDPipe) storeId: string,
     @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Body() dto: SaveCompanyDto,
     @GetUser() user: any,
   ) {
-    return this.confirmation.saveCompany(storeId, userIdOf(user), companyId);
+    return this.confirmation.saveCompany(storeId, userIdOf(user), companyId, dto.shippingAccountId);
   }
 
   @Delete('saved/:companyId')
@@ -166,6 +188,17 @@ export class StoreConfirmationController {
   @Post('send')
   send(@Param('storeId', ParseUUIDPipe) storeId: string, @Body() dto: SendOrdersDto, @GetUser() user: any) {
     return this.confirmation.sendOrders(storeId, userIdOf(user), dto.companyId, dto.orderIds);
+  }
+
+  // الإرسال التلقائي لكل طلب جديد إلى شركة من قائمة المتجر
+  @Get('auto')
+  getAuto(@Param('storeId', ParseUUIDPipe) storeId: string, @GetUser() user: any) {
+    return this.confirmation.getAutoSend(storeId, userIdOf(user));
+  }
+
+  @Put('auto')
+  setAuto(@Param('storeId', ParseUUIDPipe) storeId: string, @Body() dto: AutoSendDto, @GetUser() user: any) {
+    return this.confirmation.setAutoSend(storeId, userIdOf(user), dto.enabled, dto.companyId);
   }
 
   @Post('recall')

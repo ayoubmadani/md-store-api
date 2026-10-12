@@ -23,6 +23,11 @@ export class CreateFeaturesDto {
   @IsInt() @Min(0)
   landingPageNumber: number;
 
+  // عدد الدومينات لكل متجر
+  @IsInt() @Min(0)
+  @IsOptional()
+  domainNumber?: number;
+
   @IsBoolean()
   isNtfy: boolean;
 

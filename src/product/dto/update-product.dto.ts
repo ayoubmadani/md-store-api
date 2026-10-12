@@ -10,6 +10,7 @@ import {
   MaxLength,
   ArrayMaxSize,
 } from 'class-validator';
+import { AddonDto } from './sub-dtos/addon.dto';
 import { Type } from 'class-transformer';
 import { AttributeDto } from './sub-dtos/attribute.dto';
 import { VariantDetailDto } from './sub-dtos/variant-detail.dto';
@@ -69,6 +70,13 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   whatsappNumber?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => AddonDto)
+  addons?: AddonDto[];
 
   @IsOptional()
   @IsUUID('4', { message: 'معرف التصنيف غير صالح' })

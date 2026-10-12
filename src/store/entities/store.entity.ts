@@ -58,6 +58,17 @@ export class Store {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   freeShippingMinAmount: number;
 
+  // إرسال كل طلب جديد تلقائياً لشركة تأكيد يختارها التاجر من قائمته
+  @Column({ default: false })
+  autoConfirmationEnabled: boolean;
+
+  @Column({ type: 'uuid', nullable: true })
+  autoConfirmationCompanyId: string | null;
+
+  // حساب الشحن (أسعار وولايات) الذي يستعمله هذا المتجر — null = الحساب الافتراضي للتاجر
+  @Column({ type: 'uuid', nullable: true })
+  shippingProfileId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

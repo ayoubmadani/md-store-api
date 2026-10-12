@@ -47,6 +47,14 @@ export class ConfirmationCompany {
   @Column({ type: 'enum', enum: ConfirmationCompanyStatus, default: ConfirmationCompanyStatus.PENDING })
   status: ConfirmationCompanyStatus;
 
+  // إيقاف مؤقت يقرره مدير الشركة: لا تستقبل طلبات جديدة (الطلبات الموجودة تُكمَل).
+  // pausedUntil = null مع isPaused ← حتى يستأنف يدوياً
+  @Column({ default: false })
+  isPaused: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  pausedUntil: Date | null;
+
   /** صاحب الشركة — تُضاف أرباحها إلى محفظته */
   @Column({ type: 'uuid' })
   ownerId: string;

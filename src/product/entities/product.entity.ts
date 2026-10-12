@@ -21,6 +21,13 @@ import { Order } from '../../order/entities/order.entity';
 import { Show } from '../../show/entity/show.entity';
 import { OrderItem } from '../../order/entities/order-item.entity';
 
+export interface ProductAddon {
+  id: string;
+  name: string;
+  price: number;
+  isActive?: boolean;
+}
+
 @Entity({ name: 'products' })
 @Index(['store', 'category'])
 @Index(['store', 'isActive'])
@@ -57,6 +64,10 @@ export class Product {
   // رقم واتساب خاص بالمنتج (يُملأ افتراضياً من رقم واتساب المتجر في لوحة التحكم)
   @Column({ type: 'varchar', nullable: true })
   whatsappNumber?: string | null;
+
+  // إضافات اختيارية يضيفها الزبون للمنتج (مثلاً: جبن إضافي +100 دج)، سعر كل إضافة يُضاف لسعر الوحدة
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  addons: ProductAddon[];
 
   @Column({ default: 0 })
   stock: number;

@@ -28,6 +28,14 @@ export class DomainController {
     return this.domainService.findAllWithStore(storeId);
   }
 
+  // حدّ الدومينات في خطة التاجر والعدد المستعمل في هذا المتجر
+  @Get('limit/:storeId')
+  @AllowApiKey()
+  async limit(@Param('storeId', ParseUUIDPipe) storeId: string, @GetUser() user: any) {
+    await this.domainService.verifyStoreOwner(storeId, userIdOf(user));
+    return this.domainService.getStoreDomainUsage(storeId, userIdOf(user));
+  }
+
   // 3. جلب بيانات الـ DNS (A Record و CNAME) ليقوم العميل بوضعها في Namecheap
   @Get('setup-instructions/:domain')
   @AllowApiKey()

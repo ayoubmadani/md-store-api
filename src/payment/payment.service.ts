@@ -26,14 +26,16 @@ export class PaymentService {
     }
 
     // 1. بدء عملية شحن (إنشاء رابط دفع)
-    async createTopUpSession(userId: number, amount: number) {
+    // app=confirm: شحن محفظة شركة تأكيد من confirm-app — الرجوع إليها بعد الدفع
+    async createTopUpSession(userId: number, amount: number, app?: string) {
+        const back = app === 'confirm' ? '-confirm' : '';
         try {
             // إنشاء Checkout باستخدام Chargily
             const checkout = await this.chargilyClient.createCheckout({
                 amount: amount, // المبلغ بالدينار الجزائري
                 currency: 'dzd',
-                success_url: `${this.config.get('Api_URL')}/payment/payment-success`,
-                failure_url: `${this.config.get('Api_URL')}/payment/payment-failed`,
+                success_url: `${this.config.get('Api_URL')}/payment/payment-success${back}`,
+                failure_url: `${this.config.get('Api_URL')}/payment/payment-failed${back}`,
                 metadata: {
                     userId: String(userId),
                     action: 'top_up'
@@ -148,7 +150,11 @@ export class PaymentService {
 
     // status payment 
 
-    async paymentStatus(checkoutId: string, status: 'Success' | 'Failed') {
+    async paymentStatus(checkoutId: string, status: 'Success' | 'Failed', app?: string) {
+        if (app === 'confirm') {
+            const confirmUrl = this.config.get<string>('CONFIRM_URL') ?? 'http://localhost:3176';
+            return { url: `${confirmUrl}/earnings?payment=${status === 'Success' ? 'success' : 'failed'}`, statusCode: 302 };
+        }
         if (status === 'Success') {
             const transaction = await this.transactionRepo.findOne({
                 where: { providerTransactionId: checkoutId },

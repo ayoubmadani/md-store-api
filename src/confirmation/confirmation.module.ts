@@ -11,6 +11,7 @@ import { ConfirmationLog } from './entities/confirmation-log.entity';
 import { ConfirmationService } from './confirmation.service';
 import { ConfirmationAgentService } from './confirmation-agent.service';
 import { ConfirmationBillingService } from './confirmation-billing.service';
+import { ConfirmationBlockedMerchant } from './entities/confirmation-blocked-merchant.entity';
 import { ConfirmationAdminController, ConfirmationController, StoreConfirmationController } from './confirmation.controller';
 
 // لا يستورد OrderModule — OrderModule هو من يستورد هذا الموديول (لدفع العمولة عند التسليم)
@@ -18,12 +19,13 @@ import { ConfirmationAdminController, ConfirmationController, StoreConfirmationC
   imports: [
     TypeOrmModule.forFeature([
       ConfirmationCompany, ConfirmationMember, StoreConfirmationCompany, ConfirmationLog, Order, User,
+      ConfirmationBlockedMerchant,
     ]),
     StoreModule,
     ShippingProviderModule,
   ],
   controllers: [ConfirmationController, StoreConfirmationController, ConfirmationAdminController],
   providers: [ConfirmationService, ConfirmationAgentService, ConfirmationBillingService],
-  exports: [ConfirmationBillingService],
+  exports: [ConfirmationBillingService, ConfirmationService],
 })
 export class ConfirmationModule {}
