@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { build, type Plugin } from 'esbuild';
+import { icons as LUCIDE_ICONS } from 'lucide';
 import { Repository } from 'typeorm';
 import { S3Service } from '../image/s3.service';
 import { Theme } from '../theme/entities/theme.entity';
@@ -27,6 +28,74 @@ const onlyAllowedImports: Plugin = {
     });
   },
 };
+
+// أيقونات lucide تُدمج في الحزمة (المستعملة فقط) بدل أن يحمّل المتجر مكتبة lucide-react كاملة (~200KB) لكل زائر.
+// نولّد مكوّنات مطابقة لـ lucide-react من بيانات حزمة lucide؛ إن تعذّر تحديد أيقونة تبقى lucide-react خارجية كما كانت.
+const lucideIcon = (name: string) => {
+  const map = LUCIDE_ICONS as Record<string, any>;
+  return map[name] ?? map[name.replace(/Icon$/, '')] ?? map[name.replace(/^Lucide/, '')];
+};
+const kebab = (name: string) => name.replace(/^Lucide|Icon$/g, '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([A-Z])([A-Z][a-z])/g, '$1-$2').toLowerCase();
+
+// أخطاء الأيقونات تُرجع للكاتب (Claude) ليصلحها: import * as يحمّل المكتبة كاملة، واسم غير موجود يكسر الصفحة في المتصفح
+function lucideProblems(code: string): string[] {
+  const problems: string[] = [];
+  if (/import\s*\*\s*as\s+\w+\s+from\s*['"]lucide-react['"]/.test(code)) {
+    problems.push("lucide-react: استورد الأيقونات بالاسم (import { Home } from 'lucide-react') لا import * as");
+  }
+  const unknown = [...lucideNames(code)].filter((n) => n !== 'LucideIcon' && n !== 'LucideProps' && !lucideIcon(n));
+  if (unknown.length) problems.push(`أيقونات غير موجودة في lucide-react: ${unknown.join(', ')}`);
+  return problems;
+}
+
+function lucideNames(code: string): Set<string> {
+  const names = new Set<string>();
+  for (const m of code.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"]lucide-react['"]/g)) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0].trim();
+      if (name) names.add(name);
+    }
+  }
+  return names;
+}
+
+function lucideInlineModule(code: string): string | null {
+  if (/import\s*\*\s*as\s+\w+\s+from\s*['"]lucide-react['"]/.test(code)) return null;
+  const names = lucideNames(code);
+  const entries: string[] = [];
+  for (const name of names) {
+    if (name === 'LucideIcon' || name === 'LucideProps') continue; // أنواع TS فقط
+    const node = lucideIcon(name);
+    if (!node) return null;
+    entries.push(`export const ${name} = mk(${JSON.stringify(name)}, ${JSON.stringify(kebab(name))}, ${JSON.stringify(node)});`);
+  }
+  return `import { createElement, forwardRef } from 'react';
+const mk = (display, cls, node) => {
+  const C = forwardRef(({ color = 'currentColor', size = 24, strokeWidth = 2, absoluteStrokeWidth, className = '', children, ...rest }, ref) =>
+    createElement('svg', {
+      ref, xmlns: 'http://www.w3.org/2000/svg', width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color,
+      strokeWidth: absoluteStrokeWidth ? (Number(strokeWidth) * 24) / Number(size) : strokeWidth,
+      strokeLinecap: 'round', strokeLinejoin: 'round', className: ['lucide', 'lucide-' + cls, className].filter(Boolean).join(' '),
+      ...(!children && !Object.keys(rest).some((k) => k.startsWith('aria-')) ? { 'aria-hidden': 'true' } : {}), ...rest,
+    }, ...node.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs })), ...(Array.isArray(children) ? children : [children])));
+  C.displayName = display;
+  return C;
+};
+${entries.join('\n')}
+`;
+}
+
+function inlineLucide(code: string): Plugin {
+  const mod = lucideInlineModule(code);
+  return {
+    name: 'inline-lucide',
+    setup(b) {
+      if (!mod) return;
+      b.onResolve({ filter: /^lucide-react$/ }, () => ({ path: 'lucide-react', namespace: 'lucide-inline' }));
+      b.onLoad({ filter: /.*/, namespace: 'lucide-inline' }, () => ({ contents: mod, loader: 'js', resolveDir: '/' }));
+    },
+  };
+}
 
 /**
  * كود ثيم (TSX ملف واحد) ← فحص + بناء (نفس صيغة scripts/bundle-themes.mjs في mdstore-store) ← رفع إلى
@@ -58,6 +127,8 @@ export class ThemeCodeService {
       const hits = STRICT_FORBIDDEN.filter(([re]) => re.test(code)).map(([, why]) => why);
       if (hits.length) throw new BadRequestException(`كود غير مسموح: ${hits.join('، ')}`);
     }
+    const iconProblems = lucideProblems(code);
+    if (iconProblems.length) throw new BadRequestException(iconProblems.join('\n'));
 
     const common = {
       stdin: { contents: code, loader: 'tsx' as const, sourcefile: `${slug}.tsx`, resolveDir: '/' },
@@ -66,7 +137,7 @@ export class ThemeCodeService {
       jsx: 'automatic' as const,
       target: 'es2020',
       logLevel: 'silent' as const,
-      plugins: [onlyAllowedImports],
+      plugins: [inlineLucide(code), onlyAllowedImports],
     };
 
     // 1) فحص الـ exports (صيغة esm تعطي قائمتها في الـ metafile)
@@ -83,7 +154,7 @@ export class ThemeCodeService {
     // 2) البناء الفعلي — cjs كما يقرؤه ThemeRunner و theme-loader
     let bundle: string;
     try {
-      const out = await build({ ...common, format: 'cjs', platform: 'node', outfile: `${slug}.js` });
+      const out = await build({ ...common, format: 'cjs', platform: 'node', minify: true, outfile: `${slug}.js` });
       bundle = out.outputFiles?.[0]?.text ?? '';
       if (!bundle) throw new Error('empty bundle');
     } catch (err: any) {

@@ -20,6 +20,7 @@ import { AuthGuard } from '../auth/guard/auth.guard';
 import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
+import { UpdateStoreSeoDto } from './dto/update-store-seo.dto';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('stores')
@@ -110,6 +111,22 @@ export class StoreController {
   }
 
   // ==================== PIXELS ====================
+
+  // ==================== SEO ====================
+
+  @Get(':id/seo')
+  @AllowApiKey()
+  @UseGuards(AuthGuard)
+  async getSeo(@Param('id') storeId: string, @GetUser() user: any) {
+    return this.storeService.getStoreSeo(storeId, this.getUserId(user));
+  }
+
+  @Put(':id/seo')
+  @AllowApiKey()
+  @UseGuards(AuthGuard)
+  async updateSeo(@Param('id') storeId: string, @Body() dto: UpdateStoreSeoDto, @GetUser() user: any) {
+    return this.storeService.updateStoreSeo(storeId, this.getUserId(user), dto);
+  }
 
   @Post(':id/pixels')
   @UseGuards(AuthGuard)

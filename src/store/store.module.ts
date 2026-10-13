@@ -10,6 +10,7 @@ import { StoreDesign } from './entities/store-design.entity';
 import { StoreContact } from './entities/store-contact.entity';
 import { StoreTopBar } from './entities/store-topBar.entity';
 import { StoreHeroSection } from './entities/hero-section.entity';
+import { StoreSeo } from './entities/store-seo.entity';
 import { StorePixel } from './entities/store-pixel.entity'; // 🆕
 
 import { User } from '../user/entities/user.entity';
@@ -34,6 +35,7 @@ import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
       StoreContact,
       StoreHeroSection,
       StorePixel, // ✅ تمت الإضافة
+      StoreSeo,
       User,
       Niche,
       Category,

@@ -4,6 +4,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, TreeRepository, IsNull } from 'typeorm';
 import { Store } from './entities/store.entity';
 import { StorePixel } from './entities/store-pixel.entity';
+import { StoreSeo } from './entities/store-seo.entity';
+import { UpdateStoreSeoDto } from './dto/update-store-seo.dto';
 import { StoreDesign } from './entities/store-design.entity';
 import { StoreTopBar } from './entities/store-topBar.entity';
 import { StoreContact } from './entities/store-contact.entity';
@@ -43,6 +45,7 @@ export class StoreService {
         private readonly dataSource: DataSource,
         @InjectRepository(Store) private readonly storeRepository: Repository<Store>,
         @InjectRepository(StorePixel) private readonly pixelRepository: Repository<StorePixel>,
+        @InjectRepository(StoreSeo) private readonly seoRepository: Repository<StoreSeo>,
         @InjectRepository(Category) private categoryRepository: TreeRepository<Category>,
         @InjectRepository(CategoryNiche) private cateNicheRepo: Repository<CategoryNiche>,
         @InjectRepository(Product) private productRepo: Repository<Product>,
@@ -168,6 +171,26 @@ export class StoreService {
         if (!pixel || pixel.store.user.id !== userId) throw new NotFoundException('Pixel not found or you do not have permission');
         await this.pixelRepository.remove(pixel);
         return { success: true, message: 'Pixel deleted successfully' };
+    }
+
+    // ==================== SEO ====================
+
+    private async assertOwnStore(storeId: string, userId: string) {
+        const store = await this.storeRepository.findOne({ where: { id: storeId, user: { id: userId } }, select: ['id'] });
+        if (!store) throw new NotFoundException('Store not found or you do not have permission');
+    }
+
+    async getStoreSeo(storeId: string, userId: string) {
+        await this.assertOwnStore(storeId, userId);
+        return (await this.seoRepository.findOne({ where: { storeId } }))
+            ?? this.seoRepository.create({ storeId, allowIndexing: true });
+    }
+
+    async updateStoreSeo(storeId: string, userId: string, dto: UpdateStoreSeoDto) {
+        await this.assertOwnStore(storeId, userId);
+        const seo = (await this.seoRepository.findOne({ where: { storeId } })) ?? this.seoRepository.create({ storeId });
+        Object.assign(seo, Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined)));
+        return this.seoRepository.save(seo);
     }
 
     async getStorePixels(storeId: string, userId: string) {
@@ -405,6 +428,7 @@ export class StoreService {
             .leftJoinAndSelect('store.hero', 'hero')
             .leftJoinAndSelect('store.categories', 'categories')
             .leftJoinAndSelect('store.pixels', 'pixels')
+            .leftJoinAndSelect('store.seo', 'seo')
             .leftJoinAndSelect('store.theme', 'theme')
             .leftJoinAndSelect('store.user', 'user')
             .where('(store.subdomain = :identifier OR domains.domain = :identifier)', { identifier: subdomain })

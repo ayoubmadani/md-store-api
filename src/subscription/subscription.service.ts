@@ -11,6 +11,11 @@ import { Store } from '../store/entities/store.entity';
 import { ThemeUser } from '../theme/entities/theme-user.entity';
 import { ThemePlan } from '../theme/entities/theme-plan.entity';
 
+// مدة التجربة المجانية للحسابات الجديدة (الخطة يختارها التاجر)
+export const TRIAL_DAYS = 7;
+// الحساب يبقى مؤهلاً للتجربة خلال هذه المدة من تسجيله (الحسابات القديمة لا تحصل عليها)
+const TRIAL_ELIGIBLE_DAYS = 7;
+
 @Injectable()
 export class SubscriptionService {
     // ─── In-memory cache لتجنب query متكررة في نفس الـ request ───────────────
@@ -51,7 +56,7 @@ export class SubscriptionService {
             const existingPrice = existing.interval === 'year'
                 ? Number(existing.plan.yearlyPrice)
                 : Number(existing.plan.monthlyPrice);
-            if (existingPrice > 0) throw new BadRequestException('أنت مشترك بالفعل في خطة نشطة');
+            if (existingPrice > 0 && !existing.isTrial) throw new BadRequestException('أنت مشترك بالفعل في خطة نشطة');
         }
 
         await this.subRepo.update({ userId, status: 'active' }, { status: 'expired' });
@@ -217,6 +222,67 @@ export class SubscriptionService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // ─── التجربة المجانية ─────────────────────────────────────────────────────
+    // مرة واحدة لكل حساب جديد: يختار التاجر الخطة بنفسه عند أول تسجيل (TRIAL_DAYS يوماً مجاناً)،
+    // وبعدها تتجدد من المحفظة بسعر الخطة إن كان التجديد التلقائي مفعّلاً، وإلا يرجع للخطة المجانية.
+    // مؤهل: حساب عمره أقل من TRIAL_ELIGIBLE_DAYS، ولم يسبق له تجربة ولا اشتراك مدفوع.
+    async trialStatus(userId: string) {
+        const eligible = await this.isTrialEligible(userId);
+        const plans = eligible
+            ? await this.planRepo.find({ where: { isActive: true }, relations: ['features'], order: { monthlyPrice: 'ASC' } })
+            : [];
+        return {
+            eligible,
+            days: TRIAL_DAYS,
+            plans: plans.filter((p) => Number(p.monthlyPrice) > 0 || Number(p.yearlyPrice) > 0),
+        };
+    }
+
+    private async isTrialEligible(userId: string, manager = this.dataSource.manager): Promise<boolean> {
+        const [user] = await manager.query(`SELECT "createdAt" FROM users WHERE id::text = $1`, [userId]);
+        if (!user?.createdAt) return false;
+        if (Date.now() - new Date(user.createdAt).getTime() > TRIAL_ELIGIBLE_DAYS * 86_400_000) return false;
+        // أي تجربة سابقة أو اشتراك في خطة مدفوعة (بأي حالة) يلغي الأهلية
+        const [{ count }] = await manager.query(
+            `SELECT count(*)::int AS count FROM subscriptions s JOIN plans p ON p.id::text = s."planId"::text
+             WHERE s."userId"::text = $1 AND (s."isTrial" OR p."monthlyPrice" > 0 OR p."yearlyPrice" > 0)`,
+            [userId],
+        );
+        return count === 0;
+    }
+
+    async startTrial(userId: string, planId: string, interval: 'month' | 'year', autoRenew: boolean) {
+        const plan = await this.planRepo.findOne({ where: { id: planId, isActive: true } });
+        if (!plan) throw new NotFoundException('الخطة غير موجودة أو غير متاحة حالياً');
+        const renewalPrice = interval === 'year' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice);
+        if (renewalPrice <= 0) throw new BadRequestException('التجربة المجانية متاحة للخطط المدفوعة فقط');
+
+        const startDate = new Date();
+        const endDate = new Date(startDate.getTime() + TRIAL_DAYS * 86_400_000);
+
+        // لوحة التحكم قد ترسل الطلب مرتين: قفل لكل حساب حتى لا تُنشأ التجربة مرتين
+        await this.dataSource.transaction(async (manager) => {
+            await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`trial:${userId}`]);
+            if (!(await this.isTrialEligible(userId, manager))) {
+                throw new BadRequestException('التجربة المجانية متاحة مرة واحدة فقط للحسابات الجديدة');
+            }
+            await manager.update(Subscription, { userId, status: 'active' }, { status: 'expired' });
+            await manager.save(manager.create(Subscription, {
+                userId, planId, interval, status: 'active', autoRenew, isTrial: true, startDate, endDate,
+            }));
+        });
+
+        this.invalidateSubCache(userId);
+        return {
+            success: true,
+            message: `بدأت تجربتك المجانية لخطة ${plan.name} — ${TRIAL_DAYS} أيام`,
+            expiresAt: endDate,
+            renewalPrice,
+            autoRenew,
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     private async activateFreePlan(userId: string): Promise<Subscription | null> {
         // ✅ select فقط الحقول الضرورية بدل SELECT *
         const freePlan = await this.planRepo
@@ -254,7 +320,8 @@ export class SubscriptionService {
 
         let credit = 0;
 
-        if (currentSub) {
+        // التجربة المجانية: لا رصيد أيام ولا منع للخطط الأرخص
+        if (currentSub && !currentSub.isTrial) {
             const currentPrice = currentSub.interval === 'year'
                 ? Number(currentSub.plan.yearlyPrice)
                 : Number(currentSub.plan.monthlyPrice);

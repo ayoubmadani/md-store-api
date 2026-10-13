@@ -2,6 +2,23 @@ import { Injectable, BadRequestException, InternalServerErrorException } from '@
 import { ConfigService } from '@nestjs/config';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto'; // ← استبدال uuid
+import sharp from 'sharp';
+
+// صور المتجر تُعرض على الهاتف — نصغّرها لعرض 1600 كحد أقصى ونحوّلها WebP (عادةً أخف 5-10 مرات)
+const COMPRESSIBLE = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+async function compressImage(file: Express.Multer.File): Promise<{ buffer: Buffer; mimeType: string; ext: string } | null> {
+  if (!COMPRESSIBLE.includes(file.mimetype) || !file.buffer?.length) return null;
+  try {
+    const out = await sharp(file.buffer, { failOn: 'none' })
+      .rotate()
+      .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+    return out.length < file.buffer.length ? { buffer: out, mimeType: 'image/webp', ext: 'webp' } : null;
+  } catch {
+    return null;
+  }
+}
 
 @Injectable()
 export class S3Service {
@@ -51,7 +68,10 @@ export class S3Service {
       throw new BadRequestException('لم يتم إرفاق ملف');
     }
 
-    const fileExtension = file.originalname.split('.').pop();
+    const compressed = await compressImage(file);
+    const body = compressed?.buffer ?? file.buffer;
+    const mimeType = compressed?.mimeType ?? file.mimetype;
+    const fileExtension = compressed?.ext ?? file.originalname.split('.').pop();
     const fileName = `${randomUUID()}.${fileExtension}`; // ← استخدام crypto.randomUUID()
     const key = `${folder}/${fileName}`;
 
@@ -59,8 +79,9 @@ export class S3Service {
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
+        Body: body,
+        ContentType: mimeType,
+        CacheControl: 'public, max-age=31536000, immutable',
       });
 
       await this.s3Client.send(command);
@@ -81,8 +102,8 @@ export class S3Service {
         key,
         url,
         originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
+        mimeType,
+        size: body.length,
       };
     } catch (error) {
       console.error('S3 Upload Error:', error);

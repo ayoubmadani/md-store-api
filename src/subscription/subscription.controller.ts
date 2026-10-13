@@ -22,6 +22,19 @@ class AutoRenewDto {
   autoRenew: boolean;
 }
 
+class StartTrialDto {
+  @IsUUID()
+  @IsNotEmpty()
+  planId: string;
+
+  @IsEnum(['month', 'year'])
+  interval: 'month' | 'year';
+
+  // التجديد التلقائي من المحفظة بعد انتهاء التجربة
+  @IsBoolean()
+  autoRenew: boolean;
+}
+
 @Controller('subscription')
 @UseGuards(AuthGuard)
 export class SubscriptionController {
@@ -39,6 +52,17 @@ export class SubscriptionController {
   @Post('upgrade')
   async upgrade(@GetUser() user: any, @Body() dto: SubscribeDto) {
     return this.subscriptionService.upgradePlan(this.uid(user), dto.planId, dto.interval, dto.couponCode);
+  }
+
+  // هل الحساب مؤهل للتجربة المجانية + الخطط وأسعار تجديدها (تُعرض عند أول تسجيل)
+  @Get('trial')
+  async trialStatus(@GetUser() user: any) {
+    return this.subscriptionService.trialStatus(this.uid(user));
+  }
+
+  @Post('trial')
+  async startTrial(@GetUser() user: any, @Body() dto: StartTrialDto) {
+    return this.subscriptionService.startTrial(this.uid(user), dto.planId, dto.interval, dto.autoRenew);
   }
 
   @Get('my')

@@ -212,7 +212,8 @@ export class SupportService {
             order: { endDate: 'DESC' } as any,
         });
 
-        if (currentSub) {
+        // التجربة المجانية لا تُحتسب رصيداً ولا تمنع شراء خطة أرخص
+        if (currentSub && !currentSub.isTrial) {
             const currentPrice = currentSub.interval === 'year'
                 ? Number(currentSub.plan.yearlyPrice)
                 : Number(currentSub.plan.monthlyPrice);

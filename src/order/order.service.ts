@@ -39,6 +39,23 @@ export class OrdersService {
     private fmt = (name: string, limit = 15) =>
         name.length > limit ? name.slice(0, limit) + '...' : name;
 
+    private async assertDeliveryTypeAllowed(store: Store, dto: CreateOrderDto) {
+        const wilayaId = Number(dto.customerWilayaId ?? dto.customerWelaya);
+        if (!wilayaId) return;
+        const type = dto.typeShip ?? dto.typeLivraison ?? TypeShipEnum.HOME;
+        const profileId: string | undefined = store.shippingProfileId
+            ?? (await this.shippingRepo.manager.query(
+                `SELECT p.id FROM shipping_profiles p JOIN stores s ON s."userId"::text = p."userId"::text WHERE s.id = $1 AND p."isDefault" LIMIT 1`,
+                [store.id],
+            ))[0]?.id;
+        if (!profileId) return;
+        const rate = await this.shippingRepo.findOne({ where: { profileId, wilayaId } });
+        if (!rate) return;
+        if ((type === TypeShipEnum.OFFICE && rate.officeEnabled === false) || (type === TypeShipEnum.HOME && rate.homeEnabled === false)) {
+            throw new BadRequestException(type === TypeShipEnum.OFFICE ? 'التوصيل للمكتب غير متاح لهذه الولاية' : 'التوصيل للمنزل غير متاح لهذه الولاية');
+        }
+    }
+
     // ─── CREATE ───────────────────────────────────────────────────────────────
 
     /**
@@ -91,6 +108,9 @@ export class OrdersService {
         if (isDigital && !first.customerEmail?.trim() && !first.customerWhatsapp?.trim()) {
             throw new BadRequestException('يجب إدخال البريد الإلكتروني أو رقم الواتساب لطلب منتج رقمي');
         }
+
+        // نوع التوصيل يجب أن يكون مفعّلاً لهذه الولاية في حساب الشحن الذي يستعمله المتجر
+        if (!isDigital) await this.assertDeliveryTypeAllowed(store, first);
 
         const shipPrice = isDigital ? 0 : Number(first.priceShip ?? first.priceLivraison ?? 0);
 

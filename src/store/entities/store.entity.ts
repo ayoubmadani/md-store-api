@@ -4,6 +4,7 @@ import { Product } from "../../product/entities/product.entity";
 import { User } from "../../user/entities/user.entity";
 import { StoreDesign } from "./store-design.entity";
 import { StoreTopBar } from "./store-topBar.entity";
+import { StoreSeo } from "./store-seo.entity";
 import { StoreContact } from "./store-contact.entity";
 import { StoreHeroSection } from "./hero-section.entity";
 import {
@@ -105,6 +106,9 @@ export class Store {
 
   @OneToOne(() => StoreHeroSection, (hero) => hero.store, { cascade: true })
   hero: StoreHeroSection;
+
+  @OneToOne(() => StoreSeo, (seo) => seo.store)
+  seo: StoreSeo;
 
   // داخل ملف store.entity.ts
 

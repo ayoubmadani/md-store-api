@@ -51,6 +51,10 @@ export class Subscription {
     @Column({ default: true })
     autoRenew: boolean;
 
+    // تجربة مجانية (7 أيام لكل حساب جديد) — لا تُحتسب رصيداً عند الترقية ولا تمنع شراء خطة
+    @Column({ default: false })
+    isTrial: boolean;
+
     @CreateDateColumn()
     createdAt: Date;
 

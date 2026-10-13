@@ -118,6 +118,7 @@ export class ShippingService {
         if (rates.length) {
             await this.shippingRepo.insert(rates.map((r) => ({
                 userId, profileId: profile.id, wilayaId: r.wilayaId, isActive: r.isActive,
+                homeEnabled: r.homeEnabled, officeEnabled: r.officeEnabled,
                 priceHome: r.priceHome, priceOffice: r.priceOffice, priceReturn: r.priceReturn,
             })));
         } else {
@@ -188,6 +189,8 @@ export class ShippingService {
             livraisonOfice: w.priceOffice,
             livraisonReturn: w.priceReturn,
             isActive: w.isActive,
+            homeEnabled: w.homeEnabled !== false,
+            officeEnabled: w.officeEnabled !== false,
         }));
     }
 
@@ -220,7 +223,7 @@ export class ShippingService {
         return this.toPublicRows(rows);
     }
 
-    async updateShippingPrices(userId: string, updates: { wilayaId: number, priceHome?: number, priceOffice?: number, priceReturn?: number, isActive?: boolean }[], profileId?: string) {
+    async updateShippingPrices(userId: string, updates: { wilayaId: number, priceHome?: number, priceOffice?: number, priceReturn?: number, isActive?: boolean, homeEnabled?: boolean, officeEnabled?: boolean }[], profileId?: string) {
         const profile = await this.resolveProfile(userId, profileId);
         const updatePromises = updates.map(async (update) => {
             // تحديث الحقول المرسلة فقط
@@ -229,6 +232,8 @@ export class ShippingService {
             if (update.priceOffice != null) updateFields.priceOffice = update.priceOffice;
             if (update.priceReturn != null) updateFields.priceReturn = update.priceReturn;
             if (update.isActive != null) updateFields.isActive = update.isActive;
+            if (update.homeEnabled != null) updateFields.homeEnabled = !!update.homeEnabled;
+            if (update.officeEnabled != null) updateFields.officeEnabled = !!update.officeEnabled;
             if (Object.keys(updateFields).length === 0) return null;
             return this.shippingRepo.update({ profileId: profile.id, wilayaId: update.wilayaId }, updateFields);
         });

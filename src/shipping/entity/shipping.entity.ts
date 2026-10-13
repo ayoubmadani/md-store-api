@@ -32,6 +32,13 @@ export class Shipping {
     @Column({default: true})
     isActive:boolean
 
+    // أنواع التوصيل المتاحة في هذه الولاية (للمنزل / للمكتب) — الاثنان افتراضياً
+    @Column({ default: true })
+    homeEnabled: boolean;
+
+    @Column({ default: true })
+    officeEnabled: boolean;
+
     // ربط سعر الشحن بالولاية (69 ولاية)
     @ManyToOne(() => Wilaya)
     @JoinColumn({ name: 'wilayaId' })
