@@ -116,6 +116,10 @@ export class Order {
   @Column({ nullable: true })
   builderPageId?: string;
 
+  // طلب جاء عبر رابط اختبار A/B (الصفحة نفسها في builderPageId)
+  @Column({ type: 'uuid', nullable: true })
+  splitTestId?: string;
+
   @ManyToOne(() => BuilderPage, builderPage => builderPage.orders)
   @JoinColumn({ name: 'builderPageId' })
   builderPage?: BuilderPage;

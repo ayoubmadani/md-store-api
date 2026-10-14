@@ -30,6 +30,7 @@ export class ShowServices {
                 storeId: dto.storeId ?? IsNull(),
                 lpId: dto.lpId ?? IsNull(),
                 builderPageId: dto.builderPageId ?? IsNull(),
+                splitTestId: dto.splitTestId ?? IsNull(),
             },
         });
 
@@ -37,7 +38,12 @@ export class ShowServices {
             return { success: true };
         }
 
-        await this.showRepo.save(this.showRepo.create({ ...dto, dayDate: today }));
+        try {
+            await this.showRepo.save(this.showRepo.create({ ...dto, dayDate: today }));
+        } catch (err: any) {
+            // قيد (visitorId, productId, storeId, dayDate): نفس الزائر رأى نفس المنتج اليوم من صفحة أخرى — ليست مشكلة
+            if (err?.code !== '23505') throw err;
+        }
         return { success: true };
     }
     // الطريقة الصحيحة للتحقق من أن الحقل ليس null في TypeORM هي Not(IsNull())

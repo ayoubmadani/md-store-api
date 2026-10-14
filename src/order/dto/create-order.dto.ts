@@ -165,6 +165,11 @@ export class CreateOrderDto {
   @IsString()
   builderPageId?: string
 
+  // رابط اختبار A/B الذي جاء منه الطلب
+  @IsOptional()
+  @IsUUID()
+  splitTestId?: string
+
   @IsOptional()
   @IsString()
   storeId?: string

@@ -139,6 +139,7 @@ export class OrdersService {
             platform: first.platform ?? 'mdstore',
             lpId: first.lpId,
             builderPageId: first.builderPageId,
+            splitTestId: first.splitTestId,
             isDigital,
         });
 

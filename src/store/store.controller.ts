@@ -21,6 +21,12 @@ import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 import { UpdatePixelDto } from './dto/pixel/update-pixel.dto';
 import { CreatePixelDto } from './dto/pixel/create-pixel.dto';
 import { UpdateStoreSeoDto } from './dto/update-store-seo.dto';
+import { IsBoolean } from 'class-validator';
+
+class SetStoreStatusDto {
+  @IsBoolean()
+  isActive: boolean;
+}
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('stores')
@@ -108,6 +114,13 @@ export class StoreController {
   @UseGuards(AuthGuard)
   async toggleStatus(@Param('storeId') storeId: string, @GetUser() user: any) {
     return this.storeService.toggleStatusWithAuth(storeId, this.getUserId(user));
+  }
+
+  @Put(':storeId/status')
+  @AllowApiKey()
+  @UseGuards(AuthGuard)
+  async setStatus(@Param('storeId') storeId: string, @Body() dto: SetStoreStatusDto, @GetUser() user: any) {
+    return this.storeService.setStatusWithAuth(storeId, this.getUserId(user), dto.isActive);
   }
 
   // ==================== PIXELS ====================

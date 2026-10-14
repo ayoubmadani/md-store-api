@@ -19,6 +19,8 @@ import {
   FileTypeValidator,
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/guard/auth.guard';
+import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
+import { UploadBase64Dto } from './dto/upload-base64.dto';
 import { ImageService } from './image.service';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
@@ -162,6 +164,17 @@ export class ImageController {
 
     // استدعاء الخدمة التي كتبناها سابقاً
     return this.imageService.uploadSingle(file, userId, folder);
+  }
+
+  // رفع صورة مرسلة كنص base64 (من موصّل Claude/MCP بمفتاح التاجر) — نفس مسار الرفع العادي:
+  // حد صور الخطة، الضغط إلى WebP، والحفظ في مكتبة صور التاجر
+  @Post('upload-base64')
+  @AllowApiKey()
+  @UseGuards(AuthGuard)
+  async uploadBase64(@Body() dto: UploadBase64Dto, @GetUser() user: any) {
+    const userId = user.id || user.sub || user.userId;
+    if (!userId) throw new BadRequestException('معرف المستخدم غير موجود');
+    return this.imageService.uploadBase64(dto.data, userId, dto.folder ?? 'products', dto.filename);
   }
 
   //------------------------------------------

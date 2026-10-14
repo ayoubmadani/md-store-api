@@ -95,6 +95,31 @@ export class BuilderPagesService {
     return this.builderPageRepo.save(page);
   }
 
+  // ربط الصفحة بمنتج (أو فكّه بـ null) بعد إنشائها — لصفحة أُنشئت بلا منتج أو حُذف منتجها.
+  // المتجر يقرأ productId الحالي من قاعدة البيانات، فلا حاجة لإعادة النشر.
+  async updateProduct(id: string, productId: string | null, userId: string) {
+    const page = await this.findOne(id, userId);
+    if ((productId ?? null) === (page.productId ?? null)) return { id: page.id, productId: page.productId ?? null };
+
+    // صفحة في اختبار A/B قيد التشغيل: كل صفحاته تبيع نفس المنتج، فلا يُغيَّر منتج إحداها وسط الاختبار
+    const [running] = await this.builderPageRepo.query(
+      `SELECT name FROM split_tests
+       WHERE "isActive" AND "winnerPageId" IS NULL AND variants @> $1::jsonb LIMIT 1`,
+      [JSON.stringify([{ builderPageId: page.id }])],
+    );
+    if (running) {
+      throw new BadRequestException(`هذه الصفحة في اختبار A/B قيد التشغيل («${running.name}»)؛ أوقف الاختبار أو احذفه قبل تغيير منتجها`);
+    }
+    if (productId) {
+      // findOne يستبعد المنتجات المحذوفة (soft delete)
+      const product = await this.productRepo.findOne({ where: { id: productId, store: { id: page.storeId } }, select: ['id', 'name'] });
+      if (!product) throw new NotFoundException('المنتج غير موجود في هذا المتجر');
+    }
+    page.productId = productId as any;
+    await this.builderPageRepo.save(page);
+    return { id: page.id, productId: page.productId ?? null };
+  }
+
   async duplicate(id: string, userId: string) {
     const page = await this.findOne(id, userId);
     const randomNumber = Math.floor(Math.random() * 1000) + 1;
@@ -191,7 +216,8 @@ export class BuilderPagesService {
       ],
     });
 
-    return { ...data, pixels };
+    // المنتج الحالي من قاعدة البيانات (قد يكون تغيّر بعد آخر نشر)
+    return { ...data, productId: page.productId ?? null, pixels };
   }
 
   // Silently drops any entry that isn't a real block object (e.g. a stray

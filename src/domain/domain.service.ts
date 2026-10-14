@@ -31,12 +31,15 @@ export class DomainService {
   async resolve(domain: string) {
     const clean = (domain || '').toLowerCase().replace(/^www\./, '').split(':')[0];
     const row = clean
-      ? await this.domainRepo.findOne({ where: { domain: clean, isActive: true }, select: ['id', 'scope', 'builderPageId'] })
+      ? await this.domainRepo.findOne({ where: { domain: clean, isActive: true }, select: ['id', 'scope', 'builderPageId', 'splitTestId'] })
       : null;
-    if (row?.scope === 'landing_page' && row.builderPageId) {
-      return { scope: 'landing_page' as const, builderPageId: row.builderPageId };
+    if (row?.scope === 'landing_page' && row.splitTestId) {
+      return { scope: 'landing_page' as const, builderPageId: null, splitTestId: row.splitTestId };
     }
-    return { scope: 'store' as const, builderPageId: null };
+    if (row?.scope === 'landing_page' && row.builderPageId) {
+      return { scope: 'landing_page' as const, builderPageId: row.builderPageId, splitTestId: null };
+    }
+    return { scope: 'store' as const, builderPageId: null, splitTestId: null };
   }
 
   // التحقق أن المتجر يعود للمستخدم (JWT أو مفتاح API) قبل أي عملية على دوميناته
@@ -69,7 +72,8 @@ export class DomainService {
 
   // 1. إضافة دومين جديد
 
-  async create(dto: CreateDomainDto) {
+  // opts.splitTestId: الدومين يُنشأ مخصصاً لاختبار A/B (بدل صفحة واحدة)
+  async create(dto: CreateDomainDto, opts: { splitTestId?: string } = {}) {
     // 1. تنظيف الدومين: إزالة الفراغات، تحويله لأحرف صغيرة، وإزالة www.
     const cleanDomain = dto.domain
       .trim()
@@ -98,7 +102,7 @@ export class DomainService {
     await this.assertDomainLimitNotReached(store.id, store.user?.id);
 
     // 2.ب التحقق أن صفحة المحرر (عند تخصيص الدومين لصفحة هبوط) تعود لنفس المتجر
-    if (dto.scope === 'landing_page') {
+    if (dto.scope === 'landing_page' && !opts.splitTestId) {
       const page = await this.builderPageRepo.findOne({ where: { id: dto.builderPageId } });
       if (!page || page.storeId !== dto.storeId) {
         throw new NotFoundException('الصفحة المحددة غير موجودة أو لا تنتمي لهذا المتجر');
@@ -127,8 +131,9 @@ export class DomainService {
       storeId: dto.storeId,
       isActive: isActive,
       isSub: domainSplit.length === 3,
-      scope: dto.scope ?? 'store',
-      builderPageId: dto.scope === 'landing_page' ? dto.builderPageId : undefined,
+      scope: opts.splitTestId ? 'landing_page' : dto.scope ?? 'store',
+      builderPageId: dto.scope === 'landing_page' && !opts.splitTestId ? dto.builderPageId : undefined,
+      splitTestId: opts.splitTestId ?? null,
     });
 
     return await this.domainRepo.save(newDomain);
@@ -312,6 +317,7 @@ export class DomainService {
 
     domainRecord.scope = 'landing_page';
     domainRecord.builderPageId = builderPageId;
+    domainRecord.splitTestId = null; // صفحة واحدة بدل اختبار A/B
     return this.domainRepo.save(domainRecord);
   }
 
@@ -324,7 +330,7 @@ export class DomainService {
     // .update() (not .save()) so builderPageId is explicitly NULLed in SQL —
     // an entity property set to `undefined` isn't guaranteed to clear an
     // existing DB value the way a real SQL NULL does.
-    await this.domainRepo.update(id, { scope: 'store', builderPageId: null as unknown as undefined });
-    return { ...domainRecord, scope: 'store' as const, builderPageId: null };
+    await this.domainRepo.update(id, { scope: 'store', builderPageId: null as unknown as undefined, splitTestId: null });
+    return { ...domainRecord, scope: 'store' as const, builderPageId: null, splitTestId: null };
   }
 }

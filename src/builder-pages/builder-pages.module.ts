@@ -13,6 +13,7 @@ import { ImageModule } from '../image/image.module';
 @Module({
   controllers: [BuilderPagesController],
   providers: [BuilderPagesService],
+  exports: [BuilderPagesService],
   imports: [TypeOrmModule.forFeature([BuilderPage, Product, StorePixel, Domain, Store]), AiModule, ImageModule],
 })
 export class BuilderPagesModule {}

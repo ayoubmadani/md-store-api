@@ -581,6 +581,21 @@ export class StoreService {
         return { success: true, isActive: newStatus, message: `Store "${store.name}" has been ${newStatus ? 'activated' : 'deactivated'}` };
     }
 
+    // تفعيل/إيقاف صريح (لا تبديل) — لموصّل MCP: تكرار الطلب لا يعكس النتيجة
+    async setStatusWithAuth(storeId: string, userId: string, isActive: boolean) {
+        const store = await this.storeRepository.findOne({
+            where: { id: storeId, user: { id: userId } },
+            select: ['id', 'isActive', 'name'],
+        });
+        if (!store) throw new NotFoundException('Store not found or you do not have permission');
+        if (store.isActive === isActive) return { success: true, isActive, changed: false };
+
+        if (isActive) await this.assertStoreLimitNotReached(userId);
+        await this.storeRepository.update({ id: storeId }, { isActive });
+        this.invalidateStoresCache(userId);
+        return { success: true, isActive, changed: true };
+    }
+
     async bulkToggleStatus(storeIds: string[], isActive: boolean) {
         const result = await this.storeRepository
             .createQueryBuilder()

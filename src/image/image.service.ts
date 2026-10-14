@@ -325,6 +325,23 @@ export class ImageService {
    * المتجر عبر Claude/MCP لصورة الهيرو، حتى لا تختفي الصورة إذا حذفها الموقع الأصلي.
    * حماية SSRF: https فقط، لا عناوين داخلية/خاصة، صور فقط، حجم أقصى 8MB، مهلة 15 ثانية.
    */
+  // صورة كنص base64 أو data URL: النوع يُحدَّد من محتوى الملف نفسه (لا من الاسم ولا من الـ data URL)
+  async uploadBase64(data: string, userId: string, folder = 'products', filename?: string): Promise<Image> {
+    const b64 = data.trim().replace(/^data:[^;,]*;base64,/i, '').replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9+/=_-]+$/.test(b64)) throw new BadRequestException('النص ليس base64 صالحاً');
+    const buffer = Buffer.from(b64, 'base64');
+    if (buffer.length < 100) throw new BadRequestException('الصورة فارغة أو تالفة');
+    if (buffer.length > 8 * 1024 * 1024) throw new BadRequestException('حجم الصورة أكبر من 8MB');
+
+    const type = sniffImageType(buffer);
+    if (!type) throw new BadRequestException('نوع الصورة غير مدعوم (JPEG أو PNG أو WebP أو GIF فقط)');
+
+    const ext = type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
+    const base = (filename || 'image').replace(/\.[a-z0-9]+$/i, '').replace(/[^\w؀-ۿ.-]+/g, '-').slice(0, 80) || 'image';
+    const file = { buffer, originalname: `${base}.${ext}`, mimetype: type, size: buffer.length } as Express.Multer.File;
+    return this.uploadSingle(file, userId, folder);
+  }
+
   async importFromUrl(url: string, userId: string, folder = 'uploads'): Promise<Image> {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') throw new BadRequestException('رابط الصورة يجب أن يبدأ بـ https');
@@ -355,4 +372,14 @@ function isPrivateAddress(ip: string): boolean {
   const [a, b] = v4.split('.').map(Number);
   if ([a, b].some((n) => Number.isNaN(n))) return false;
   return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+}
+
+// نوع الصورة من أول بايتات الملف
+function sniffImageType(b: Buffer): string | null {
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (b.subarray(0, 4).toString('ascii') === 'RIFF' && b.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  const gif = b.subarray(0, 6).toString('ascii');
+  if (gif === 'GIF87a' || gif === 'GIF89a') return 'image/gif';
+  return null;
 }

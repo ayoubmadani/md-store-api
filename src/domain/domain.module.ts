@@ -10,6 +10,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 @Module({
   controllers: [DomainController, PublicDomainController],
   providers: [DomainService],
+  exports: [DomainService],
   imports:[
     TypeOrmModule.forFeature([Domain , Store, BuilderPage]),
     SubscriptionModule,

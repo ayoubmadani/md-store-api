@@ -20,4 +20,8 @@ export class AddShowDto {
     @IsUUID()
     @IsOptional()
     builderPageId?: string
+
+    @IsUUID()
+    @IsOptional()
+    splitTestId?: string
 }

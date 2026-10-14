@@ -45,4 +45,8 @@ export class Domain {
 
     @Column({ type: 'uuid', nullable: true })
     builderPageId?: string;
+
+    // scope = 'landing_page' مع اختبار A/B بدل صفحة واحدة: الزوار يتوزعون على صفحات الاختبار
+    @Column({ type: 'uuid', nullable: true })
+    splitTestId?: string | null;
 }

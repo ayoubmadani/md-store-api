@@ -30,6 +30,10 @@ export class Show {
     @Column({ nullable: true })
     builderPageId?: string
 
+    // زيارة عبر رابط اختبار A/B (الصفحة المعروضة في builderPageId)
+    @Column({ type: 'uuid', nullable: true })
+    splitTestId?: string
+
     @Column()
     visitorId: string;
 

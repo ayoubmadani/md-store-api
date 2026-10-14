@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { IsOptional, IsUUID, ValidateIf } from 'class-validator';
 import { BuilderPagesService } from './builder-pages.service';
 import { CreateBuilderPageDto } from './dto/create-builder-page.dto';
 import { UpdateTreeDto } from './dto/update-tree.dto';
@@ -11,6 +12,14 @@ import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 // pattern of guarding only the merchant-management routes individually,
 // since a real storefront visitor (never logged into the dashboard) needs
 // to reach `find`/`product-info` for a published page to render at all.
+// منتج الصفحة (null = بدون منتج)
+class UpdatePageProductDto {
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsUUID()
+  productId?: string | null;
+}
+
 @Controller('builder-pages')
 export class BuilderPagesController {
   constructor(private readonly builderPagesService: BuilderPagesService) {}
@@ -117,6 +126,13 @@ export class BuilderPagesController {
   @UseGuards(AuthGuard)
   updatePlatform(@Param('id') id: string, @Body('platform') platform: string, @GetUser() user: any) {
     return this.builderPagesService.updatePlatform(id, platform, this.getUserId(user));
+  }
+
+  @Patch(':id/product')
+  @AllowApiKey()
+  @UseGuards(AuthGuard)
+  updateProduct(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePageProductDto, @GetUser() user: any) {
+    return this.builderPagesService.updateProduct(id, dto.productId ?? null, this.getUserId(user));
   }
 
   @Post(':id/duplicate')
