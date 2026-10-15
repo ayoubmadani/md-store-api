@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { AliexpressService } from './aliexpress.service';
+import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
 import { RequirePermission } from '../team/guards/store-access.decorator';
 import { StorePermission } from '../team/permissions';
 import { LogActivity } from '../team/activity.interceptor';
@@ -24,29 +25,24 @@ export class AliexpressController {
     return this.ali.status(this.getUserId(user));
   }
 
-  // رابط صفحة موافقة AliExpress — الواجهة تفتحه
-  @Get('connect')
-  @UseGuards(AuthGuard)
-  connect(@GetUser() user: any) {
-    return { url: this.ali.authorizeUrl(this.getUserId(user)) };
-  }
-
-  @Delete('connect')
-  @UseGuards(AuthGuard)
-  disconnect(@GetUser() user: any) {
-    return this.ali.disconnect(this.getUserId(user));
-  }
-
-  // يعود إليه AliExpress بعد الموافقة (Callback URL المسجّل في App Console)
+  // يعود إليه AliExpress بعد الموافقة (Callback URL المسجّل في App Console).
+  // الربط يُفتح من لوحة الأدمن في نافذة جديدة ← صفحة نتيجة تُغلق نفسها وتُبلغ اللوحة
   @Get('callback')
   async callback(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
-    const back = `${(this.config.get<string>('FRONT_URL') || '').replace(/\/+$/, '')}/dashboard/products/create`;
+    let ok = true;
+    let message = 'تم ربط حساب AliExpress للمنصة بنجاح';
     try {
       await this.ali.handleCallback(code, state);
-      return res.redirect(`${back}?aliexpress=connected`);
     } catch (e: any) {
-      return res.redirect(`${back}?aliexpress=error&message=${encodeURIComponent(e?.message || 'error')}`);
+      ok = false;
+      message = e?.message || 'تعذر ربط حساب AliExpress';
     }
+    const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+    res.status(ok ? 200 : 400).type('html').send(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AliExpress</title></head>
+<body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f8fafc">
+<div style="text-align:center;padding:24px"><div style="font-size:44px">${ok ? '✅' : '❌'}</div><p style="font-size:17px;font-weight:700;color:${ok ? '#047857' : '#b91c1c'}">${esc(message)}</p><p style="color:#64748b;font-size:13px">يمكنك إغلاق هذه النافذة والعودة للوحة الأدمن</p></div>
+<script>try{window.opener&&window.opener.postMessage({type:'aliexpress-connect',ok:${ok}},'*')}catch(e){}${ok ? 'setTimeout(function(){window.close()},1500)' : ''}</script>
+</body></html>`);
   }
 
   @Post('import')
@@ -78,6 +74,29 @@ export class AliexpressController {
   @UseGuards(AuthGuard)
   markImportUsed(@GetUser() user: any, @Param('id', ParseUUIDPipe) id: string, @Body() body: { productId?: string }) {
     return this.ali.markImportUsed(this.getUserId(user), id, body?.productId);
+  }
+}
+
+// ربط حساب AliExpress للمنصة وإلغاؤه — من لوحة الأدمن فقط
+@Controller('admin/aliexpress')
+@UseGuards(SuperAdminGuard)
+export class AdminAliexpressController {
+  constructor(private readonly ali: AliexpressService) {}
+
+  @Get()
+  status() {
+    return this.ali.adminStatus();
+  }
+
+  // رابط صفحة موافقة AliExpress — اللوحة تفتحه في نافذة جديدة
+  @Get('connect')
+  connect() {
+    return { url: this.ali.authorizeUrl() };
+  }
+
+  @Delete('connect')
+  disconnect() {
+    return this.ali.adminDisconnect();
   }
 }
 

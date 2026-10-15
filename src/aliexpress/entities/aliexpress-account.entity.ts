@@ -7,8 +7,13 @@ export class AliexpressAccount {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid', unique: true })
-  userId: string;
+  // حساب المنصة يُربط من لوحة الأدمن (مدير المنصة ليس مستخدماً) ← بلا userId
+  @Column({ type: 'uuid', unique: true, nullable: true })
+  userId: string | null;
+
+  // حساب المنصة الذي يستعمله كل التجار للجلب
+  @Column({ type: 'boolean', default: false })
+  isPlatform: boolean;
 
   @OneToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'userId' })

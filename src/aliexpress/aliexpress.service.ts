@@ -4,7 +4,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { AliexpressAccount } from './entities/aliexpress-account.entity';
-import { UserRole } from '../user/entities/user.entity';
 import { ProductService } from '../product/product.service';
 
 const SYNC_URL = 'https://api-sg.aliexpress.com/sync';
@@ -90,9 +89,10 @@ export class AliexpressService {
     return createHmac('sha256', this.config.get<string>('JWT_SECRET') || 'aliexpress').update(payload).digest('hex');
   }
 
-  authorizeUrl(userId: string) {
+  // الربط من لوحة الأدمن فقط ← الحالة تحمل «platform» بدل معرّف مستخدم
+  authorizeUrl() {
     this.ensureConfigured();
-    const payload = `${userId}.${Date.now()}`;
+    const payload = `platform.${Date.now()}`;
     const state = Buffer.from(`${payload}.${this.stateSig(payload)}`).toString('base64url');
     const q = new URLSearchParams({
       response_type: 'code',
@@ -104,29 +104,27 @@ export class AliexpressService {
     return `${AUTHORIZE_URL}?${q.toString()}`;
   }
 
-  private userIdFromState(state: string): string {
-    const [userId, ts, sig] = Buffer.from(state || '', 'base64url').toString().split('.');
-    const expected = this.stateSig(`${userId}.${ts}`);
-    const ok = !!sig && sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  private verifyState(state: string) {
+    const [who, ts, sig] = Buffer.from(state || '', 'base64url').toString().split('.');
+    const expected = this.stateSig(`${who}.${ts}`);
+    const ok = who === 'platform' && !!sig && sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
     if (!ok || Date.now() - Number(ts) > STATE_TTL_MS) throw new BadRequestException('رابط الربط غير صالح أو منتهي — أعد المحاولة');
-    return userId;
   }
 
   async handleCallback(code: string, state: string) {
-    const userId = this.userIdFromState(state);
+    this.verifyState(state);
     if (!code) throw new BadRequestException('لم تتم الموافقة على الربط');
     const t = await this.call('/auth/token/create', { code });
-    await this.saveToken(userId, t);
-    return userId;
+    await this.saveToken(await this.platformAccount(), t);
   }
 
-  private async saveToken(userId: string, t: any) {
+  // يحفظ رمز حساب المنصة (ينشئه إن لم يوجد)
+  private async saveToken(existing: AliexpressAccount | null, t: any) {
     if (!t?.access_token) throw new BadRequestException('لم يُرجع AliExpress رمز الدخول');
     const toDate = (v: any) => (v ? new Date(Number(v)) : null);
-    const existing = await this.accounts.findOne({ where: { userId } });
     await this.accounts.save({
-      ...(existing ?? {}),
-      userId,
+      ...(existing ?? { userId: null }),
+      isPlatform: true,
       accessToken: t.access_token,
       refreshToken: t.refresh_token ?? existing?.refreshToken ?? null,
       expiresAt: toDate(t.expire_time) ?? (t.expires_in ? new Date(Date.now() + Number(t.expires_in) * 1000) : null),
@@ -135,51 +133,64 @@ export class AliexpressService {
     });
   }
 
-  // حساب المنصة: حساب AliExpress الذي ربطه مدير المنصة (ADMIN) — يستعمله كل التجار
-  // للجلب بدون أن يربط كل تاجر حسابه
+  // حساب المنصة: يربطه مدير المنصة من لوحة الأدمن — يستعمله كل التجار للجلب
   private platformAccount() {
-    return this.accounts
-      .createQueryBuilder('a')
-      .innerJoin('a.user', 'u')
-      .where('u.role = :role', { role: UserRole.ADMIN })
-      .orderBy('a.updatedAt', 'DESC')
-      .getOne();
+    return this.accounts.findOne({ where: { isPlatform: true }, order: { updatedAt: 'DESC' } });
   }
 
-  private async accountFor(userId: string) {
-    return (await this.accounts.findOne({ where: { userId } })) ?? (await this.platformAccount());
+  // الرمز منتهٍ ولا يمكن تجديده ← يجب إعادة الربط من لوحة الأدمن
+  private isExpired(acc: AliexpressAccount) {
+    const now = Date.now();
+    const accessDead = !!acc.expiresAt && acc.expiresAt.getTime() <= now;
+    const refreshDead = !acc.refreshToken || (!!acc.refreshExpiresAt && acc.refreshExpiresAt.getTime() <= now);
+    return accessDead && refreshDead;
   }
 
+  // للتاجر: هل الجلب متاح الآن + الحد اليومي (لا تفاصيل عن الحساب)
   async status(userId: string) {
-    const own = await this.accounts.findOne({ where: { userId } });
-    const acc = own ?? (await this.platformAccount());
+    const acc = await this.platformAccount();
     return {
       configured: !!(this.appKey && this.appSecret && this.callbackUrl),
-      connected: !!acc,
-      shared: !own && !!acc, // يستعمل حساب المنصة — لا حاجة للربط ولا لإلغائه
-      account: own?.account ?? null,
-      expiresAt: acc?.expiresAt ?? null,
+      connected: !!acc && !this.isExpired(acc),
       daily: await this.dailyUsage(userId),
     };
   }
 
-  async disconnect(userId: string) {
-    await this.accounts.delete({ userId });
+  // للوحة الأدمن
+  async adminStatus() {
+    const acc = await this.platformAccount();
+    return {
+      configured: !!(this.appKey && this.appSecret && this.callbackUrl),
+      connected: !!acc,
+      expired: acc ? this.isExpired(acc) : false,
+      account: acc?.account ?? null,
+      expiresAt: acc?.expiresAt ?? null,
+      refreshExpiresAt: acc?.refreshExpiresAt ?? null,
+      connectedAt: acc?.createdAt ?? null,
+      updatedAt: acc?.updatedAt ?? null,
+    };
+  }
+
+  async adminDisconnect() {
+    await this.accounts.delete({ isPlatform: true });
     return { success: true };
   }
 
-  private async sessionFor(userId: string) {
-    const acc = await this.accountFor(userId);
-    if (!acc) throw new NotFoundException('جلب AliExpress غير مفعّل بعد — يجب على إدارة المنصة ربط حساب AliExpress');
+  private async sessionFor(_userId: string) {
+    const acc = await this.platformAccount();
+    if (!acc) throw new ServiceUnavailableException('الجلب من AliExpress غير مفعّل بعد — إدارة المنصة لم تربط حساب AliExpress');
     // تجديد الرمز قبل انتهائه بيوم
     if (acc.expiresAt && acc.expiresAt.getTime() - Date.now() < 24 * 3600 * 1000 && acc.refreshToken) {
       try {
         const t = await this.call('/auth/token/refresh', { refresh_token: acc.refreshToken });
-        await this.saveToken(acc.userId, t);
+        await this.saveToken(acc, t);
         return t.access_token as string;
-      } catch (e) {
-        this.logger.warn(`AliExpress token refresh failed for ${acc.userId}`);
+      } catch {
+        this.logger.warn('AliExpress platform token refresh failed');
       }
+    }
+    if (this.isExpired(acc)) {
+      throw new ServiceUnavailableException('الجلب من AliExpress متوقف مؤقتاً — إدارة المنصة تعيد ربط الحساب، حاول لاحقاً');
     }
     return acc.accessToken;
   }
