@@ -9,6 +9,7 @@ import { CategoryModule } from './category/category.module';
 import { LandingPageModule } from './landing-page/landing-page.module';
 import { BuilderPagesModule } from './builder-pages/builder-pages.module';
 import { SplitTestModule } from './split-test/split-test.module';
+import { TeamModule } from './team/team.module';
 import { ProductModule } from './product/product.module';
 import { NicheModule } from './niche/niche.module';
 import { ImageProductModule } from './image-product/image-product.module';
@@ -73,6 +74,7 @@ import { CustomThemeModule } from './custom-theme/custom-theme.module';
     LandingPageModule,
     BuilderPagesModule,
     SplitTestModule,
+    TeamModule,
     ProductModule,
     NicheModule,
     ImageProductModule,

@@ -7,6 +7,9 @@ import { AuthGuard } from "../auth/guard/auth.guard";
 import { Throttle } from "@nestjs/throttler";
 import { GetUser } from "../user/decorator/get-user.decorator";
 import { StoreService } from "../store/store.service";
+import { OwnerOnly, RequirePermission } from '../team/guards/store-access.decorator';
+import { StorePermission } from '../team/permissions';
+import { LogActivity } from '../team/activity.interceptor';
 
 const userIdOf = (user: any): string => user.id || user.sub;
 
@@ -41,7 +44,7 @@ export class OrdersController {
     // ── Read ───────────────────────────────────────────────────────────────────
     // القراءة للتاجر صاحب المتجر فقط — الطلبات فيها أسماء الزبائن وهواتفهم وعناوينهم
     @Get(':storeId')
-    @UseGuards(AuthGuard)
+    @RequirePermission(StorePermission.ORDER_VIEW)
     async getAllOrdersByStoreId(
         @GetUser() user: any,
         @Param('storeId') storeId: string,
@@ -55,7 +58,7 @@ export class OrdersController {
     }
 
     @Get('count/:storeId')
-    @UseGuards(AuthGuard)
+    @RequirePermission(StorePermission.ORDER_VIEW)
     async getCountPageByStoreId(
         @GetUser() user: any,
         @Param('storeId') storeId: string,
@@ -68,14 +71,14 @@ export class OrdersController {
     }
 
     @Get('get-one/:orderId')
-    @UseGuards(AuthGuard)
+    @RequirePermission(StorePermission.ORDER_VIEW, { entity: 'order', param: 'orderId' })
     async getOne(@Param('orderId') orderId: string, @GetUser() user: any) {
         await this.ordersService.assertOrderOwner(orderId, userIdOf(user));
         return this.ordersService.getOne(orderId);
     }
 
     @Get('get-count-status/:storeId')
-    @UseGuards(AuthGuard)
+    @RequirePermission(StorePermission.ORDER_VIEW)
     async getCountStatus(@Param('storeId') storeId: string, @GetUser() user: any) {
         await this.storeService.verifyOwnership(storeId, userIdOf(user));
         return this.ordersService.getCountStatus(storeId);
@@ -83,7 +86,8 @@ export class OrdersController {
 
     // ── Update ─────────────────────────────────────────────────────────────────
     @Patch(':orderId')
-    @UseGuards(AuthGuard)
+    @RequirePermission(StorePermission.ORDER_MANAGE, { entity: 'order', param: 'orderId' })
+    @LogActivity('order', 'update', { param: 'orderId' })
     async updateInfoUser(
         @Param('orderId') orderId: string,
         @Body() dto: any[],
@@ -95,7 +99,8 @@ export class OrdersController {
 
     // ── Delete ─────────────────────────────────────────────────────────────────
     @Delete(':orderId')
-    @UseGuards(AuthGuard)
+    @RequirePermission(StorePermission.ORDER_MANAGE, { entity: 'order', param: 'orderId' })
+    @LogActivity('order', 'delete', { param: 'orderId' })
     async delete(@Param('orderId') orderId: string, @GetUser() user: any) {
         await this.ordersService.assertOrderOwner(orderId, userIdOf(user));
         return this.ordersService.delete(orderId);

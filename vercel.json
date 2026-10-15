@@ -20,6 +20,10 @@
     {
       "path": "/internal/cron/custom-themes",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/cron/cleanup-activity",
+      "schedule": "0 2 * * *"
     }
   ]
 }

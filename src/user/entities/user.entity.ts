@@ -70,6 +70,10 @@ export class User {
     @Column({ nullable: true }) // جعلتها nullable لسهولة التحكم
     image: string;
 
+    // آخر متجر اختاره في اللوحة (مملوك أو مشترك) — يبقى بعد تسجيل الخروج
+    @Column({ type: 'uuid', nullable: true })
+    lastStoreId?: string | null;
+
     // حقل الـ OTP
     @Column({ nullable: true })
     otp: number;

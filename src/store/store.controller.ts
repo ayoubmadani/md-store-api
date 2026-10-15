@@ -11,6 +11,7 @@ import {
   Put,
   Query,
   NotFoundException,
+  Req,
 } from '@nestjs/common';
 import { StoreService } from './store.service';
 import { CreateFullStoreDto } from './dto/create-full-store.dto';
@@ -28,10 +29,14 @@ class SetStoreStatusDto {
   isActive: boolean;
 }
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { OwnerOnly, RequirePermission } from '../team/guards/store-access.decorator';
+import { ALL_PERMISSIONS, StorePermission } from '../team/permissions';
+import { TeamService } from '../team/team.service';
+import { LogActivity } from '../team/activity.interceptor';
 
 @Controller('stores')
 export class StoreController {
-  constructor(private readonly storeService: StoreService) { }
+  constructor(private readonly storeService: StoreService, private readonly team: TeamService) { }
 
   private getUserId(user: any): string {
     const userId = user.id || user.sub;
@@ -78,21 +83,37 @@ export class StoreController {
   @UseGuards(AuthGuard)
   @AllowApiKey()
   async getMyStores(@GetUser() user: any) {
-    const stores = await this.storeService.getAllStores(this.getUserId(user));
-    return { success: true, data: stores };
+    const userId = this.getUserId(user);
+    // متاجره + المتاجر التي هو عضو مقبول فيها (مع صلاحياته وهل يمكن الدخول إليها الآن)
+    const [owned, shared] = await Promise.all([this.storeService.getAllStores(userId), this.team.memberStores(userId)]);
+    const ownedItems = owned.map((s: any) => ({ ...s, role: 'owner', permissions: ALL_PERMISSIONS, selectable: true, reason: null }));
+    // آخر متجر اختاره (يبقى بعد تسجيل الخروج) — فقط إن كان ما يزال في قائمته
+    const selectedStoreId = await this.storeService.getLastStoreId(userId);
+    const all = [...ownedItems, ...shared];
+    return { success: true, data: all, selectedStoreId: all.some((s: any) => s.id === selectedStoreId) ? selectedStoreId : null };
+  }
+
+  // حفظ المتجر المختار في اللوحة: المالك أو عضو مقبول له وصول حالياً (الحارس يتحقق)
+  @Put(':storeId/select')
+  @AllowApiKey()
+  @RequirePermission(null)
+  async selectStore(@Param('storeId') storeId: string, @Req() req: any) {
+    await this.storeService.setLastStoreId(req.storeAccess?.actorId ?? this.getUserId(req.user), storeId);
+    return { success: true, storeId };
   }
 
   @Get(':storeId')
+  @RequirePermission(null)
   @AllowApiKey()
-  @UseGuards(AuthGuard)
   async getStore(@Param('storeId') storeId: string, @GetUser() user: any) {
     const store = await this.storeService.getStore(storeId, this.getUserId(user));
     return { success: true, data: store };
   }
 
   @Patch(':storeId')
+  @RequirePermission(StorePermission.STORE_UPDATE)
+  @LogActivity('store', 'update', { store: true })
   @AllowApiKey()
-  @UseGuards(AuthGuard)
   async updateStore(
     @Param('storeId') storeId: string,
     @Body() dto: UpdateFullStoreDto,
@@ -105,20 +126,22 @@ export class StoreController {
   }
 
   @Delete(':storeId')
-  @UseGuards(AuthGuard)
+  @OwnerOnly()
   async deleteStore(@Param('storeId') storeId: string, @GetUser() user: any) {
     return this.storeService.deleteStore(storeId, this.getUserId(user));
   }
 
   @Put(':storeId/toggle-status')
-  @UseGuards(AuthGuard)
+  @RequirePermission(StorePermission.STORE_UPDATE)
+  @LogActivity('store', 'update', { store: true })
   async toggleStatus(@Param('storeId') storeId: string, @GetUser() user: any) {
     return this.storeService.toggleStatusWithAuth(storeId, this.getUserId(user));
   }
 
   @Put(':storeId/status')
+  @RequirePermission(StorePermission.STORE_UPDATE)
+  @LogActivity('store', 'update', { store: true })
   @AllowApiKey()
-  @UseGuards(AuthGuard)
   async setStatus(@Param('storeId') storeId: string, @Body() dto: SetStoreStatusDto, @GetUser() user: any) {
     return this.storeService.setStatusWithAuth(storeId, this.getUserId(user), dto.isActive);
   }
@@ -128,15 +151,16 @@ export class StoreController {
   // ==================== SEO ====================
 
   @Get(':id/seo')
+  @RequirePermission(StorePermission.SEO_MANAGE, { param: 'id' })
   @AllowApiKey()
-  @UseGuards(AuthGuard)
   async getSeo(@Param('id') storeId: string, @GetUser() user: any) {
     return this.storeService.getStoreSeo(storeId, this.getUserId(user));
   }
 
   @Put(':id/seo')
+  @RequirePermission(StorePermission.SEO_MANAGE, { param: 'id' })
+  @LogActivity('seo', 'update', { param: 'id' })
   @AllowApiKey()
-  @UseGuards(AuthGuard)
   async updateSeo(@Param('id') storeId: string, @Body() dto: UpdateStoreSeoDto, @GetUser() user: any) {
     return this.storeService.updateStoreSeo(storeId, this.getUserId(user), dto);
   }

@@ -24,6 +24,9 @@ import { UpdateOfferQuickDto, UpdateVariantQuickDto } from './dto/update-product
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
+import { OwnerOnly, RequirePermission } from '../team/guards/store-access.decorator';
+import { StorePermission } from '../team/permissions';
+import { LogActivity } from '../team/activity.interceptor';
 
 // ... (الاستيرادات تبقى كما هي)
 
@@ -41,6 +44,8 @@ export class ProductController {
   }
 
   @Post()
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  @LogActivity('product', 'create', { response: true })
   @AllowApiKey()
   @HttpCode(HttpStatus.CREATED)
   create(
@@ -55,6 +60,8 @@ export class ProductController {
   }
 
   @Post('multi')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  @LogActivity('product', 'create', { response: true })
   @HttpCode(HttpStatus.CREATED)
   createMulti(
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -66,6 +73,7 @@ export class ProductController {
   }
 
   @Get()
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   @AllowApiKey()
   findAll(
     @GetUser() user: any,
@@ -90,6 +98,7 @@ export class ProductController {
 
   // ... طبق نفس التغيير على بقية الدوال (استخدام GetUser)
   @Get('stats')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   getStats(
     @Param('storeId', ParseUUIDPipe) storeId: string,
     @GetUser() user: any,
@@ -100,6 +109,7 @@ export class ProductController {
   // ==================== إحصائيات منتج واحد ====================
 
   @Get(':id/analytics')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   getAnalytics(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -112,6 +122,7 @@ export class ProductController {
   // ==================== تفعيل/تعطيل عرض أو متغير ====================
 
   @Patch(':id/offers/:offerId/toggle-active')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   toggleOfferActive(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('offerId', ParseUUIDPipe) offerId: string,
@@ -124,6 +135,7 @@ export class ProductController {
   // تعطيل/تفعيل قيمة كاملة (مثل اللون الأحمر) في كل تركيباتها
   // — مسار ثابت قبل :variantId حتى لا يُلتقط كمعرّف
   @Patch(':id/variants/attribute-value')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   setAttributeValueActive(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -136,6 +148,7 @@ export class ProductController {
   }
 
   @Patch(':id/variants/:variantId/toggle-active')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   toggleVariantActive(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('variantId', ParseUUIDPipe) variantId: string,
@@ -149,6 +162,7 @@ export class ProductController {
   // بعد مسار variants/attribute-value حتى لا يُلتقط "attribute-value" كمعرّف
 
   @Patch(':id/offers/:offerId')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   updateOffer(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('offerId', ParseUUIDPipe) offerId: string,
@@ -160,6 +174,7 @@ export class ProductController {
   }
 
   @Patch(':id/variants/:variantId')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   updateVariant(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('variantId', ParseUUIDPipe) variantId: string,
@@ -173,6 +188,7 @@ export class ProductController {
   // ==================== جلب منتج واحد ====================
 
   @Get(':id')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
   @AllowApiKey()
   findOne(
     @Param('id') id: string,
@@ -185,6 +201,8 @@ export class ProductController {
   // ==================== تحديث منتج ====================
 
   @Patch(':id')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  @LogActivity('product', 'update', { param: 'id' })
   @AllowApiKey()
   update(
     @Param('id') id: string,
@@ -200,6 +218,8 @@ export class ProductController {
   // ==================== تغيير حالة المنتج ====================
 
   @Patch(':id/toggle-active')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  @LogActivity('product', 'update', { param: 'id' })
   @AllowApiKey()
   toggleActive(
     @Param('id') id: string,
@@ -212,6 +232,8 @@ export class ProductController {
   // ==================== تحديث المخزون ====================
 
   @Patch(':id/stock')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  @LogActivity('product', 'update', { param: 'id' })
   @AllowApiKey()
   updateStock(
     @Param('id') id: string,
@@ -226,6 +248,8 @@ export class ProductController {
   // ==================== حذف منتج (Soft Delete) ====================
 
   @Delete(':id')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  @LogActivity('product', 'delete', { param: 'id' })
   @AllowApiKey()
   @HttpCode(HttpStatus.OK)
   remove(
@@ -239,6 +263,8 @@ export class ProductController {
   // ==================== الحذف النهائي ====================
 
   @Delete(':id/force')
+  @OwnerOnly()
+  @LogActivity('product', 'delete', { param: 'id' })
   @HttpCode(HttpStatus.OK)
   forceRemove(
     @Param('id') id: string,
@@ -251,6 +277,8 @@ export class ProductController {
   // ==================== استعادة منتج محذوف ====================
 
   @Patch(':id/restore')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  @LogActivity('product', 'restore', { param: 'id' })
   restore(
     @Param('id') id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,

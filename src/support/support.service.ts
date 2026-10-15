@@ -12,6 +12,7 @@ import { SupportUser } from './entities/support-users.entity';
 import { Store } from '../store/entities/store.entity';
 import { CouponService } from '../coupon/coupon.service';
 import { CouponContext } from '../coupon/entities/coupon-redemption.entity';
+import { enforceMemberLimitSafe } from '../team/member-limit';
 
 @Injectable()
 export class SupportService {
@@ -96,6 +97,7 @@ export class SupportService {
         });
 
         await this.subRepo.save(newSub);
+        await enforceMemberLimitSafe(this.subRepo.manager, userId);
 
         return {
             success: true,
@@ -274,6 +276,7 @@ export class SupportService {
                 await this.paymentService.handleWalletBalance(supportId, finalPrice, 'SUB', TransactionType.PLAN_SUBSCRIPTION, manager, undefined, undefined, planId);
             }
         });
+        await enforceMemberLimitSafe(this.dataSource, userId); // حد أعضاء الفريق حسب الخطة الجديدة
 
         return {
             success: true,

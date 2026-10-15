@@ -4,6 +4,9 @@ import { CreateDomainDto } from './dto/create-domain.dto';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
 import { GetUser } from '../user/decorator/get-user.decorator';
+import { OwnerOnly, RequirePermission } from '../team/guards/store-access.decorator';
+import { StorePermission } from '../team/permissions';
+import { LogActivity } from '../team/activity.interceptor';
 
 const userIdOf = (user: any): string => user.id || user.sub || user.userId;
 
@@ -14,6 +17,8 @@ export class DomainController {
 
   // 1. إضافة دومين جديد لمتجر التاجر (يربطه بـ Vercel ويحفظه في DB)
   @Post()
+  @RequirePermission(StorePermission.DOMAIN_CRUD, { body: 'storeId' })
+  @LogActivity('domain', 'create', { response: true })
   @AllowApiKey()
   async create(@Body() createDomainDto: CreateDomainDto, @GetUser() user: any) {
     await this.domainService.verifyStoreOwner(createDomainDto.storeId, userIdOf(user));
@@ -22,6 +27,7 @@ export class DomainController {
 
   // 2. جلب جميع الدومينات المربوطة بمتجر معين (لعرضها في الجدول)
   @Get('store/:storeId')
+  @RequirePermission(StorePermission.DOMAIN_CRUD)
   @AllowApiKey()
   async findAllWithStore(@Param('storeId', ParseUUIDPipe) storeId: string, @GetUser() user: any) {
     await this.domainService.verifyStoreOwner(storeId, userIdOf(user));
@@ -30,6 +36,7 @@ export class DomainController {
 
   // حدّ الدومينات في خطة التاجر والعدد المستعمل في هذا المتجر
   @Get('limit/:storeId')
+  @RequirePermission(StorePermission.DOMAIN_CRUD)
   @AllowApiKey()
   async limit(@Param('storeId', ParseUUIDPipe) storeId: string, @GetUser() user: any) {
     await this.domainService.verifyStoreOwner(storeId, userIdOf(user));
@@ -45,6 +52,8 @@ export class DomainController {
 
   // 4. زر "تحديث الحالة" - يفحص Vercel الآن ويحدث isActive إذا اكتمل الربط
   @Patch('sync/:id')
+  @RequirePermission(StorePermission.DOMAIN_CRUD, { entity: 'domain', param: 'id' })
+  @LogActivity('domain', 'update', { param: 'id' })
   @AllowApiKey()
   syncStatus(@Param('id', ParseUUIDPipe) id: string, @GetUser() user: any) {
     return this.domainService.syncDomainStatus(id, userIdOf(user));
@@ -59,15 +68,20 @@ export class DomainController {
 
   // 6. حذف الدومين نهائياً (من قاعدة بياناتك ومن مشروع Vercel)
   @Post('delete/:id')
+  @RequirePermission(StorePermission.DOMAIN_CRUD, { entity: 'domain', param: 'id' })
+  @LogActivity('domain', 'delete', { param: 'id' })
   @AllowApiKey()
   async remove(@Param('id', ParseUUIDPipe) id: string, @Body('storeId', ParseUUIDPipe) storeId: string, @GetUser() user: any) {
     await this.domainService.verifyStoreOwner(storeId, userIdOf(user));
-    return this.domainService.remove(id, storeId);
+    // حذف ناعم — يُستعاد من سجل النشاط خلال 90 يوماً
+    return this.domainService.softRemove(id, storeId);
   }
 
   // 7. تخصيص دومين موجود (تم إنشاؤه من صفحة الدومين) لصفحة هبوط واحدة — يُستدعى
   // من داخل المحرر بعد اختيار الدومين من القائمة.
   @Patch(':id/assign-page')
+  @RequirePermission(StorePermission.DOMAIN_CRUD, { entity: 'domain', param: 'id' })
+  @LogActivity('domain', 'update', { param: 'id' })
   @AllowApiKey()
   async assignToBuilderPage(
     @Param('id', ParseUUIDPipe) id: string,
@@ -80,6 +94,8 @@ export class DomainController {
 
   // 8. فك الربط — يُعيد الدومين ليصبح دومين متجر عادي (scope: store) بدل حذفه.
   @Patch(':id/unassign-page')
+  @RequirePermission(StorePermission.DOMAIN_CRUD, { entity: 'domain', param: 'id' })
+  @LogActivity('domain', 'update', { param: 'id' })
   @AllowApiKey()
   async unassignFromBuilderPage(
     @Param('id', ParseUUIDPipe) id: string,

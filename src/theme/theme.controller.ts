@@ -8,6 +8,9 @@ import { TypeThemeService } from './type-theme.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
+import { OwnerOnly, RequirePermission } from '../team/guards/store-access.decorator';
+import { StorePermission } from '../team/permissions';
+import { LogActivity } from '../team/activity.interceptor';
 
 class ApplyThemeDto {
   @IsUUID()
@@ -64,7 +67,8 @@ export class ThemeController {
 
   // تطبيق ثيم متاح على متجر التاجر
   @Post('apply')
-  @UseGuards(AuthGuard)
+  @RequirePermission(StorePermission.THEME_CHANGE, { body: 'storeId' })
+  @LogActivity('theme', 'update', { store: true })
   @AllowApiKey()
   applyAvailable(@GetUser() user: any, @Body() dto: ApplyThemeDto) {
     return this.themeService.applyAvailable(user.id || user.sub, dto.storeId, dto.themeId);
@@ -89,7 +93,8 @@ export class ThemeController {
   }
 
   @Post('active-theme-plan')
-  @UseGuards(AuthGuard)
+  @RequirePermission(StorePermission.THEME_CHANGE, { body: 'storeId' })
+  @LogActivity('theme', 'update', { store: true })
   async activeThemePlan( // أضف async هنا
     @GetUser() user: any,
     @Body() data: { storeId: string; themeId: string } // تغيير String لـ string (يفضل)
@@ -110,7 +115,8 @@ export class ThemeController {
   }
 
   @Post('active-theme')
-  @UseGuards(AuthGuard)
+  @RequirePermission(StorePermission.THEME_CHANGE, { body: 'storeId' })
+  @LogActivity('theme', 'update', { store: true })
   activeTheme(
     @GetUser() user: any,
     @Body() data: any,

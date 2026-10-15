@@ -110,11 +110,16 @@ export class DomainService {
     }
 
     // 3. التحقق من تكرار الدومين (استخدام الاسم النظيف)
-    const existing = await this.domainRepo.findOne({ where: { domain: cleanDomain } });
-    if (existing) throw new BadRequestException('هذا الدومين مسجل مسبقاً');
+    const existing = await this.domainRepo.findOne({ where: { domain: cleanDomain }, withDeleted: true });
+    if (existing && !existing.deletedAt) throw new BadRequestException('هذا الدومين مسجل مسبقاً');
+    // نفس الدومين محذوف ناعماً: نحذف الصف القديم نهائياً (ما زال مربوطاً بـ Vercel، فلا نعيد تسجيله)
+    const stillOnVercel = !!existing;
+    if (existing) await this.domainRepo.delete({ id: existing.id });
 
     // 4. تسجيل الدومين في Vercel إذا كان خارجياً
-    if (!cleanDomain.endsWith('.mdstore.top')) {
+    if (!cleanDomain.endsWith('.mdstore.top') && stillOnVercel) {
+      isActive = false;
+    } else if (!cleanDomain.endsWith('.mdstore.top')) {
       try {
         isActive = false
         await this.registerWithVercel(cleanDomain);
@@ -298,6 +303,28 @@ export class DomainService {
 
     // 4. الحذف النهائي من قاعدة البيانات
     return await this.domainRepo.remove(domainRecord);
+  }
+
+  /** حذف ناعم (قابل للاستعادة من سجل النشاط 90 يوماً): يبقى مربوطاً بـ Vercel لكن المتجر لا يعرفه */
+  async softRemove(id: string, storeId: string) {
+    const domainRecord = await this.domainRepo.findOne({ where: { id, storeId } });
+    if (!domainRecord) throw new NotFoundException('الدومين غير موجود أو لا ينتمي لهذا المتجر');
+    await this.domainRepo.softDelete({ id: domainRecord.id });
+    return { ...domainRecord, deleted: true };
+  }
+
+  /** الحذف النهائي بعد 90 يوماً (cron): فك الربط من Vercel للدومين الخاص ثم حذف الصف */
+  async purgeDeleted(id: string) {
+    const d = await this.domainRepo.findOne({ where: { id }, withDeleted: true });
+    if (!d?.deletedAt) return;
+    if (!d.domain.endsWith('.mdstore.top')) {
+      const projectId = this.configService.get<string>('TARGET_STORE_ID');
+      const token = this.configService.get<string>('MY_SECRET_TOKEN');
+      await axios.delete(`${this.VERCEL_BASE_URL}/v9/projects/${projectId}/domains/${d.domain}`, {
+        params: { projectId }, headers: { Authorization: `Bearer ${token}` },
+      }).catch((e) => this.logger.error(`purge ${d.domain} from Vercel: ${e.response?.data?.message || e.message}`));
+    }
+    await this.domainRepo.delete({ id: d.id });
   }
 
   async findAllWithStore(storeId: string) {

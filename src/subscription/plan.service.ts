@@ -5,6 +5,7 @@ import { Plan } from './entities/plan.entity';
 import { Subscription } from '../subscription/entities/subscription.entity';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import { enforceMemberLimitSafe } from '../team/member-limit';
 
 @Injectable()
 export class PlansService {
@@ -54,11 +55,19 @@ export class PlansService {
         this.planRepository.merge(plan, planFields);
 
         // تحديث الـ FeaturesEntity بشكل منفصل إذا أُرسلت
+        const oldMaxMembers = plan.features?.maxMembers;
         if (features && plan.features) {
             Object.assign(plan.features, features);
         }
 
-        return await this.planRepository.save(plan); // cascade:true يحفظ features تلقائياً
+        const saved = await this.planRepository.save(plan); // cascade:true يحفظ features تلقائياً
+
+        // تغيّر حد أعضاء الفريق: يُطبَّق على كل مشتركي هذه الخطة الحاليين
+        if (features && (features as any).maxMembers !== undefined && (features as any).maxMembers !== oldMaxMembers) {
+            const subs = await this.subRepository.find({ where: { planId: id, status: 'active' }, select: ['userId'] });
+            for (const userId of new Set(subs.map((x) => x.userId))) await enforceMemberLimitSafe(this.subRepository.manager, userId);
+        }
+        return saved;
     }
 
     async remove(id: string): Promise<void> {

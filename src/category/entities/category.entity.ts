@@ -58,6 +58,10 @@ export class Category {
     @DeleteDateColumn()
     deletedAt: Date;
 
+    // من حذف (المالك أو عضو الفريق)
+    @Column({ type: 'uuid', nullable: true })
+    deletedBy?: string | null;
+
     @Column({ default: true })
     isActive: boolean;
 

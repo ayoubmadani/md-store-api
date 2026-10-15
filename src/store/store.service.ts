@@ -526,6 +526,16 @@ export class StoreService {
     }
 
     // ✅ الدالة الرئيسية — بدل JOIN يسبب cartesian product
+    // آخر متجر اختاره المستخدم في اللوحة
+    async getLastStoreId(userId: string): Promise<string | null> {
+        const [row] = await this.dataSource.query(`SELECT "lastStoreId" FROM users WHERE id::text = $1`, [userId]);
+        return row?.lastStoreId ?? null;
+    }
+
+    async setLastStoreId(userId: string, storeId: string) {
+        await this.dataSource.query(`UPDATE users SET "lastStoreId" = $2 WHERE id::text = $1`, [userId, storeId]);
+    }
+
     async getAllStores(userId?: string) {
         if (userId) {
             const cached = this.getCachedStores(userId);

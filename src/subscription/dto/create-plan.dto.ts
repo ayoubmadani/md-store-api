@@ -28,6 +28,11 @@ export class CreateFeaturesDto {
   @IsOptional()
   domainNumber?: number;
 
+  // أعضاء الفريق (مستخدمون مختلفون عبر كل متاجر المالك) — 0 = المشاركة غير متاحة
+  @IsInt() @Min(0)
+  @IsOptional()
+  maxMembers?: number;
+
   @IsBoolean()
   isNtfy: boolean;
 

@@ -87,6 +87,10 @@ export class Product {
   @DeleteDateColumn()
   deletedAt?: Date;
 
+  // من حذف (المالك أو عضو الفريق)
+  @Column({ type: 'uuid', nullable: true })
+  deletedBy?: string | null;
+
   // ── Relations ──────────────────────────────────────────────────────────────
 
   @Transform(({ value }) =>

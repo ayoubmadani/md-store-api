@@ -28,6 +28,10 @@ export class FeaturesEntity {
     @Column({ type: 'boolean', default: false })
     isNtfy: boolean;
 
+    // عدد أعضاء الفريق (مستخدمون مختلفون عبر كل متاجر المالك، مقبولون أو مدعوون) — 0 = المشاركة غير متاحة
+    @Column({ type: 'int', default: 0 })
+    maxMembers: number;
+
     @Column({ type: 'int', default: 0 })
     pixelTiktokNumber: number; // تصحيح إملائي: Pixel
 

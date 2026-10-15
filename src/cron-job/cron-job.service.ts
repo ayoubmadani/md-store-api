@@ -4,6 +4,7 @@ import { Repository, LessThan } from 'typeorm';
 import { Subscription } from '../subscription/entities/subscription.entity';
 import { Store } from '../store/entities/store.entity';
 import { Product } from '../product/entities/product.entity';
+import { enforceMemberLimitSafe } from '../team/member-limit';
 
 @Injectable()
 export class CronJobService {
@@ -41,6 +42,8 @@ export class CronJobService {
 
         // استخدام userId مباشرة من حقل الـ Column (أسرع) أو من العلاقة
         await this.applyFreeLimits(sub.userId);
+        // انتهى الاشتراك: أعضاء الفريق يُعلّقون حسب حد الخطة الحالية (تُرفع عند التجديد/الترقية)
+        await enforceMemberLimitSafe(this.subRepo.manager, sub.userId);
 
         this.logger.log(`تم إنهاء اشتراك وتطبيق قيود المجاني للمستخدم: ${sub.userId}`);
       } catch (error) {

@@ -4,6 +4,9 @@ import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { AliexpressService } from './aliexpress.service';
+import { RequirePermission } from '../team/guards/store-access.decorator';
+import { StorePermission } from '../team/permissions';
+import { LogActivity } from '../team/activity.interceptor';
 
 @Controller('aliexpress')
 export class AliexpressController {
@@ -61,6 +64,9 @@ export class AliexpressStoreProductsController {
 
   @Post('import-aliexpress')
   @AllowApiKey()
+  // عضو الفريق بصلاحية المنتجات — يستعمل ربط AliExpress الخاص بالمالك
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  @LogActivity('product', 'create', { response: true })
   importToStore(
     @Param('storeId', ParseUUIDPipe) storeId: string,
     @GetUser() user: any,

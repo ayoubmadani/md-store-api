@@ -20,6 +20,9 @@ import { AuthGuard } from '../auth/guard/auth.guard';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
+import { OwnerOnly, RequirePermission } from '../team/guards/store-access.decorator';
+import { StorePermission } from '../team/permissions';
+import { LogActivity } from '../team/activity.interceptor';
 
 @Controller('stores/:storeId/categories')
 @UseGuards(AuthGuard)
@@ -33,6 +36,8 @@ export class CategoryController {
   }
 
   @Post()
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
+  @LogActivity('category', 'create', { response: true })
   @AllowApiKey()
   @HttpCode(HttpStatus.CREATED)
   create(
@@ -44,6 +49,7 @@ export class CategoryController {
   }
 
   @Get()
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
   @AllowApiKey()
   findAll(
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -53,6 +59,7 @@ export class CategoryController {
   }
 
   @Get('search')
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
   search(
     @Param('storeId', ParseUUIDPipe) storeId: string,
     @Query('q') searchTerm: string,
@@ -62,6 +69,7 @@ export class CategoryController {
   }
 
   @Get(':id')
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
   @AllowApiKey()
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -72,6 +80,7 @@ export class CategoryController {
   }
 
   @Get(':id/stats')
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
   getStats(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -81,6 +90,7 @@ export class CategoryController {
   }
 
   @Get(':id/products')
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
   getCategoryProducts(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -93,6 +103,8 @@ export class CategoryController {
   }
 
   @Patch(':id')
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
+  @LogActivity('category', 'update', { param: 'id' })
   @AllowApiKey()
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -104,6 +116,7 @@ export class CategoryController {
   }
 
   @Patch(':id/move-products')
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
   moveProducts(
     @Param('id', ParseUUIDPipe) fromCategoryId: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -116,6 +129,8 @@ export class CategoryController {
   }
 
   @Patch(':id/restore')
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
+  @LogActivity('category', 'restore', { param: 'id' })
   restore(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('storeId', ParseUUIDPipe) storeId: string,
@@ -125,6 +140,8 @@ export class CategoryController {
   }
 
   @Delete(':id')
+  @RequirePermission(StorePermission.CATEGORY_CRUD)
+  @LogActivity('category', 'delete', { param: 'id' })
   @AllowApiKey()
   @HttpCode(HttpStatus.OK)
   remove(
@@ -136,6 +153,8 @@ export class CategoryController {
   }
 
   @Delete(':id/force')
+  @OwnerOnly()
+  @LogActivity('category', 'delete', { param: 'id' })
   @HttpCode(HttpStatus.OK)
   forceRemove(
     @Param('id', ParseUUIDPipe) id: string,

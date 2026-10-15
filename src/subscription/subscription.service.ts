@@ -10,6 +10,7 @@ import { CouponContext } from '../coupon/entities/coupon-redemption.entity';
 import { Store } from '../store/entities/store.entity';
 import { ThemeUser } from '../theme/entities/theme-user.entity';
 import { ThemePlan } from '../theme/entities/theme-plan.entity';
+import { enforceMemberLimitSafe } from '../team/member-limit';
 
 // مدة التجربة المجانية للحسابات الجديدة (الخطة يختارها التاجر)
 export const TRIAL_DAYS = 7;
@@ -93,6 +94,7 @@ export class SubscriptionService {
             await queryRunner.commitTransaction();
 
             this.invalidateSubCache(userId); // ← invalidate بعد التغيير
+            await enforceMemberLimitSafe(this.dataSource, userId); // حد أعضاء الفريق حسب الخطة الجديدة
             return { success: true, message: `تم الاشتراك في خطة ${plan.name} بنجاح`, expiresAt: endDate, price: finalPrice };
         } catch (error) {
             await queryRunner.rollbackTransaction();
@@ -141,6 +143,8 @@ export class SubscriptionService {
 
             // الخطة القديمة انتهت — أعد أي ثيم مفعّل عبر الخطة (وليس مملوكاً) إلى الافتراضي
             await this.revertUnauthorizedThemes(userId, result?.planId ?? null);
+            // الخطة تغيّرت: تعليق/رفع تعليق أعضاء الفريق حسب حدها
+            await enforceMemberLimitSafe(this.dataSource, userId);
 
             this.subCache.set(userId, { data: result, ts: Date.now() });
             return result;
@@ -273,6 +277,7 @@ export class SubscriptionService {
         });
 
         this.invalidateSubCache(userId);
+        await enforceMemberLimitSafe(this.dataSource, userId);
         return {
             success: true,
             message: `بدأت تجربتك المجانية لخطة ${plan.name} — ${TRIAL_DAYS} أيام`,
@@ -378,6 +383,7 @@ export class SubscriptionService {
             await queryRunner.commitTransaction();
 
             this.invalidateSubCache(userId);
+            await enforceMemberLimitSafe(this.dataSource, userId);
             return {
                 success: true,
                 message: `تمت الترقية إلى خطة ${plan.name} بنجاح${credit > 0 ? ` (خصم ${credit} DZD من الأيام المتبقية)` : ''}`,
@@ -412,6 +418,7 @@ export class SubscriptionService {
         await this.subRepo.save(newSub);
 
         this.invalidateSubCache(userId);
+        await enforceMemberLimitSafe(this.dataSource, userId);
         return { success: true, message: `تم ربط المستخدم بخطة ${plan.name} بنجاح`, expiresAt: endDate };
     }
 

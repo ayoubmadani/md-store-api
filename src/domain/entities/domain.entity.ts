@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, DeleteDateColumn } from "typeorm";
 import { Store } from "../../store/entities/store.entity";
 import { BuilderPage } from "../../builder-pages/entities/builder-page.entity";
 
@@ -49,4 +49,11 @@ export class Domain {
     // scope = 'landing_page' مع اختبار A/B بدل صفحة واحدة: الزوار يتوزعون على صفحات الاختبار
     @Column({ type: 'uuid', nullable: true })
     splitTestId?: string | null;
+
+    // حذف ناعم (قابل للاستعادة من سجل النشاط 90 يوماً)
+    @DeleteDateColumn()
+    deletedAt?: Date | null;
+
+    @Column({ type: 'uuid', nullable: true })
+    deletedBy?: string | null;
 }
