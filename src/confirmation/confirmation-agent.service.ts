@@ -89,7 +89,7 @@ export class ConfirmationAgentService {
    * "الطلب التالي": يرجع الطلب الذي بيد الموظف إن وُجد، وإلا يحجز أقدم طلب
    * جاهز في قائمة شركته. SKIP LOCKED يضمن ألا يأخذ موظفان نفس الطلب.
    */
-  async next(userId: string) {
+  async next(userId: string, merchantId?: string) {
     const member = await this.confirmation.requireMembership(userId);
     const current = await this.currentLock(member);
     if (current) return this.detail(userId, current.id);
@@ -105,11 +105,12 @@ export class ConfirmationAgentService {
              AND status = ANY($3)
              AND ("confirmationLockedUntil" IS NULL OR "confirmationLockedUntil" < now())
              AND ("confirmationNextAttemptAt" IS NULL OR "confirmationNextAttemptAt" <= now())
+             AND ($5::uuid IS NULL OR "storeId" IN (SELECT id FROM "stores" WHERE "userId" = $5::uuid))
            ORDER BY COALESCE("confirmationNextAttemptAt", "confirmationSentAt") ASC
            LIMIT 1
            FOR UPDATE SKIP LOCKED)
       RETURNING id, status`,
-      [member.userId, member.companyId, QUEUE_STATUSES, LOCK_MINUTES],
+      [member.userId, member.companyId, QUEUE_STATUSES, LOCK_MINUTES, merchantId ?? null],
     );
     const claimed = (Array.isArray(result[0]) ? result[0][0] : result[0]) as { id: string; status: string } | undefined;
     if (!claimed) return null;
@@ -130,7 +131,7 @@ export class ConfirmationAgentService {
     cancelled: [StatusEnum.CANCELLED, StatusEnum.RETURNED],
   };
 
-  async list(userId: string, tab = 'new', search?: string, page = 1) {
+  async list(userId: string, tab = 'new', search?: string, page = 1, merchantId?: string) {
     const member = await this.confirmation.requireMembership(userId);
     const take = 30;
     const statuses = ConfirmationAgentService.TABS[tab];
@@ -147,6 +148,10 @@ export class ConfirmationAgentService {
     if (statuses) qb.andWhere('o.status IN (:...statuses)', { statuses });
     if (search?.trim()) {
       qb.andWhere('(o.customerName ILIKE :s OR o.customerPhone LIKE :s)', { s: `%${search.trim()}%` });
+    }
+    // فلتر التاجر: كل متاجره
+    if (merchantId) {
+      qb.andWhere('o.storeId IN (SELECT st.id FROM "stores" st WHERE st."userId" = :merchantId)', { merchantId });
     }
     // الجديدة والمحاولات: الأقدم أولاً (بالترتيب الذي يُتصل به)؛ الباقي: الأحدث أولاً
     if (tab === 'new' || tab === 'attempts' || tab === 'postponed') {
@@ -180,7 +185,21 @@ export class ConfirmationAgentService {
       `SELECT ${Object.entries(ConfirmationAgentService.TABS)
         .map(([key, sts]) => `COUNT(*) FILTER (WHERE status IN (${sts.map((x) => `'${x}'`).join(',')})) AS "${key}"`)
         .join(', ')}, COUNT(*) AS "all"
-         FROM "orders" WHERE "confirmationCompanyId" = $1`,
+         FROM "orders" WHERE "confirmationCompanyId" = $1
+          AND ($2::uuid IS NULL OR "storeId" IN (SELECT id FROM "stores" WHERE "userId" = $2::uuid))`,
+      [member.companyId, merchantId ?? null],
+    );
+
+    // التجار الذين لهم طلبات عند الشركة — لقائمة الفلتر (متاحة لكل أعضاء الفريق)
+    const merchants: Array<{ id: string; username: string; orders: number; pending: number }> = await this.dataSource.query(
+      `SELECT u.id, u.username, COUNT(*)::int AS orders,
+              COUNT(*) FILTER (WHERE o.status IN ('pending','appl1','appl2','appl3','postponed'))::int AS pending
+         FROM "orders" o
+         JOIN "stores" s ON s.id = o."storeId"
+         JOIN "users" u ON u.id = s."userId"
+        WHERE o."confirmationCompanyId" = $1
+        GROUP BY u.id, u.username
+        ORDER BY pending DESC, orders DESC`,
       [member.companyId],
     );
 
@@ -189,6 +208,7 @@ export class ConfirmationAgentService {
       page,
       pages: Math.ceil(total / take),
       counts: Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, Number(v)])),
+      merchants,
       orders: orders.map((o) => {
         const st = states.find((x) => x.id === o.id);
         const lockedBy = st?.locked ? st.agentId : null;
@@ -337,7 +357,7 @@ export class ConfirmationAgentService {
         offers: (p.offers ?? []).filter((o) => o.isActive !== false)
           .map((o) => ({ id: o.id, name: o.name, quantity: o.quantity, price: Number(o.price), shippingFree: o.shippingFree })),
         variants: (p.variantDetails ?? []).filter((v) => v.isActive !== false)
-          .map((v) => ({ id: v.id, name: v.name, price: Number(v.price), stock: v.stock })),
+          .map((v) => ({ id: v.id, name: v.name, price: Number(v.price), stock: v.stock, autoGenerate: !!v.autoGenerate })),
       })),
       shippingRates: rates.map((r) => ({ wilayaId: r.wilayaId, priceHome: Number(r.priceHome), priceOffice: Number(r.priceOffice) })),
       customerHistory,

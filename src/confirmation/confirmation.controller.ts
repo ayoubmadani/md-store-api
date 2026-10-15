@@ -20,6 +20,9 @@ const userIdOf = (user: any): string => {
 };
 
 /** تطبيق المؤكّد + البحث العام */
+const uuidOrUndefined = (v?: string) =>
+  v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : undefined;
+
 @Controller('confirmation')
 @UseGuards(AuthGuard)
 export class ConfirmationController {
@@ -96,9 +99,10 @@ export class ConfirmationController {
     return this.agent.queueSummary(userIdOf(user));
   }
 
+  // merchantId اختياري: الطلب التالي من تاجر واحد فقط (نفس فلتر صفحة الطلبات)
   @Post('queue/next')
-  next(@GetUser() user: any) {
-    return this.agent.next(userIdOf(user));
+  next(@GetUser() user: any, @Query('merchantId') merchantId?: string) {
+    return this.agent.next(userIdOf(user), uuidOrUndefined(merchantId));
   }
 
   @Get('history')
@@ -112,8 +116,9 @@ export class ConfirmationController {
     @Query('tab') tab?: string,
     @Query('search') search?: string,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
+    @Query('merchantId') merchantId?: string,
   ) {
-    return this.agent.list(userIdOf(user), tab, search, page ?? 1);
+    return this.agent.list(userIdOf(user), tab, search, page ?? 1, uuidOrUndefined(merchantId));
   }
 
   @Post('orders/:id/claim')
