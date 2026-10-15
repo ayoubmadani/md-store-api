@@ -54,6 +54,31 @@ export class AliexpressController {
   importProduct(@GetUser() user: any, @Body() body: { url?: string; language?: string }) {
     return this.ali.importProduct(this.getUserId(user), body?.url || '', body?.language);
   }
+
+  // المنتجات المجلوبة التي لم تُحفظ بعد (ألغى التاجر أو فشل الحفظ) — إعادة فتحها لا تُحسب من الحد
+  @Get('imports')
+  @UseGuards(AuthGuard)
+  savedImports(@GetUser() user: any) {
+    return this.ali.savedImports(this.getUserId(user));
+  }
+
+  @Get('imports/:id')
+  @UseGuards(AuthGuard)
+  savedImport(@GetUser() user: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.ali.savedImport(this.getUserId(user), id);
+  }
+
+  @Delete('imports/:id')
+  @UseGuards(AuthGuard)
+  dismissImport(@GetUser() user: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.ali.dismissImport(this.getUserId(user), id);
+  }
+
+  @Post('imports/:id/used')
+  @UseGuards(AuthGuard)
+  markImportUsed(@GetUser() user: any, @Param('id', ParseUUIDPipe) id: string, @Body() body: { productId?: string }) {
+    return this.ali.markImportUsed(this.getUserId(user), id, body?.productId);
+  }
 }
 
 // إنشاء منتج من رابط AliExpress في خطوة واحدة — متاح بمفتاح API (Claude عبر MCP)
@@ -81,6 +106,6 @@ export class AliexpressStoreProductsController {
       stock: body.stock !== undefined ? Number(body.stock) : undefined,
       name: body.name,
       language: body.language,
-    });
+    }, user?.actorId);
   }
 }

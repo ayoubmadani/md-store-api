@@ -32,6 +32,10 @@ export class FeaturesEntity {
     @Column({ type: 'int', default: 0 })
     maxMembers: number;
 
+    // عدد المنتجات التي يمكن جلبها من AliExpress في اليوم (بتوقيت الجزائر) — 0 = غير متاح
+    @Column({ type: 'int', default: 10 })
+    aliexpressImportsPerDay: number;
+
     @Column({ type: 'int', default: 0 })
     pixelTiktokNumber: number; // تصحيح إملائي: Pixel
 

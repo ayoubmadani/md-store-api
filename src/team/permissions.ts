@@ -1,8 +1,7 @@
-// صلاحيات أعضاء فريق المتجر. ما يخص المالك وحده (حذف المتجر، الفريق والمجموعات، سجل النشاط، الاشتراك والفوترة)
+// صلاحيات أعضاء فريق المتجر. ما يخص المالك وحده (حذف المتجر، الثيم، الفريق والمجموعات، سجل النشاط، الاشتراك والفوترة)
 // ليس صلاحية ولا يمكن منحه لأحد.
 export enum StorePermission {
   STORE_UPDATE = 'store.update',
-  THEME_CHANGE = 'theme.change',
   PRODUCT_CRUD = 'product.crud',
   CATEGORY_CRUD = 'category.crud',
   ORDER_VIEW = 'order.view',

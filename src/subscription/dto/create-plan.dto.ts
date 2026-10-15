@@ -33,6 +33,11 @@ export class CreateFeaturesDto {
   @IsOptional()
   maxMembers?: number;
 
+  // جلب منتجات من AliExpress في اليوم — 0 = غير متاح
+  @IsInt() @Min(0)
+  @IsOptional()
+  aliexpressImportsPerDay?: number;
+
   @IsBoolean()
   isNtfy: boolean;
 

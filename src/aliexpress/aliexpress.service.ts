@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -19,6 +19,7 @@ export interface ImportedAttribute {
 }
 export interface ImportedProduct {
   productId: string;
+  importId?: string; // معرّف الجلب المحفوظ (لإعادة فتحه أو تعليمه كمنتج محفوظ)
   name: string;
   desc: string;
   images: string[];
@@ -158,6 +159,7 @@ export class AliexpressService {
       shared: !own && !!acc, // يستعمل حساب المنصة — لا حاجة للربط ولا لإلغائه
       account: own?.account ?? null,
       expiresAt: acc?.expiresAt ?? null,
+      daily: await this.dailyUsage(userId),
     };
   }
 
@@ -190,8 +192,59 @@ export class AliexpressService {
     return m[1];
   }
 
-  async importProduct(userId: string, input: string, language = 'ar'): Promise<ImportedProduct> {
+  // ── الحد اليومي (حسب خطة المستخدم، اليوم بتوقيت الجزائر) ─────────────────
+  async dailyUsage(userId: string): Promise<{ used: number; limit: number }> {
+    const db = this.accounts.manager;
+    const [plan] = await db.query(
+      `SELECT f."aliexpressImportsPerDay" AS "limit"
+         FROM subscriptions s
+         JOIN plans p ON p.id = s."planId"
+         JOIN plan_features f ON f.id = p."featuresId"
+        WHERE s."userId"::text = $1 AND s.status = 'active' AND s."endDate" > now()
+        ORDER BY s."startDate" DESC
+        LIMIT 1`,
+      [userId],
+    );
+    const [row] = await db.query(
+      `SELECT count(*)::int AS used FROM aliexpress_imports
+        WHERE "userId" = $1
+          AND "createdAt" >= (date_trunc('day', now() AT TIME ZONE 'Africa/Algiers') AT TIME ZONE 'Africa/Algiers')`,
+      [userId],
+    );
+    return { used: row?.used ?? 0, limit: plan ? Number(plan.limit) || 0 : 0 };
+  }
+
+  private async assertDailyLimit(userId: string) {
+    const { used, limit } = await this.dailyUsage(userId);
+    if (used >= limit) {
+      throw new HttpException(
+        {
+          statusCode: 429,
+          code: 'ALIEXPRESS_DAILY_LIMIT',
+          message: limit === 0
+            ? 'خطتك لا تتضمن الجلب من AliExpress'
+            : `وصلت للحد اليومي للجلب من AliExpress (${limit} منتج في اليوم) — جرّب غداً أو رقِّ خطتك`,
+          used,
+          limit,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  // actorId: عضو الفريق الذي قام بالجلب باسم المالك (يُحسب على حد المالك)
+  async importProduct(userId: string, input: string, language = 'ar', actorId?: string): Promise<ImportedProduct> {
     const productId = AliexpressService.parseProductId(input);
+    // نفس المنتج جُلب خلال 7 أيام ولم يُحذف ← نعيد النسخة المحفوظة (لا يُحسب من الحد)
+    const [cached] = await this.accounts.manager.query(
+      `SELECT id, data FROM aliexpress_imports
+        WHERE "userId" = $1 AND "aliexpressProductId" = $2 AND COALESCE("language", '') = $3
+          AND data IS NOT NULL AND "dismissedAt" IS NULL AND "createdAt" > now() - interval '7 days'
+        ORDER BY "createdAt" DESC LIMIT 1`,
+      [userId, productId, language || ''],
+    );
+    if (cached) return { ...cached.data, importId: cached.id };
+    await this.assertDailyLimit(userId);
     const session = await this.sessionFor(userId);
     const lang = ({ ar: 'AR', fr: 'FR', en: 'EN' } as Record<string, string>)[language] || 'EN';
     let data: any;
@@ -203,7 +256,51 @@ export class AliexpressService {
     }
     const r = data?.aliexpress_ds_product_get_response?.result;
     if (!r) throw new NotFoundException('لم يتم العثور على المنتج في AliExpress');
-    return this.mapProduct(productId, r);
+    const product = this.mapProduct(productId, r);
+    // جلب ناجح فقط يُحسب من الحد اليومي — ويُحفظ ليجده التاجر إن ألغى أو فشل الحفظ
+    const [saved] = await this.accounts.manager.query(
+      `INSERT INTO aliexpress_imports ("userId", "actorId", "aliexpressProductId", "language", "data")
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [userId, actorId && actorId !== userId ? actorId : null, String(productId).slice(0, 40), language || null, JSON.stringify(product)],
+    );
+    return { ...product, importId: saved.id };
+  }
+
+  // ── المنتجات المجلوبة المحفوظة (لم تُحفظ كمنتج بعد) ───────────────────
+  async savedImports(userId: string) {
+    const rows = await this.accounts.manager.query(
+      `SELECT id, "aliexpressProductId", "createdAt", data->>'name' AS name, data->'images'->>0 AS image,
+              (data->>'price')::numeric AS price, data->>'currency' AS currency
+         FROM aliexpress_imports
+        WHERE "userId" = $1 AND data IS NOT NULL AND "productId" IS NULL AND "dismissedAt" IS NULL
+          AND "createdAt" > now() - interval '30 days'
+        ORDER BY "createdAt" DESC LIMIT 20`,
+      [userId],
+    );
+    return rows.map((r: any) => ({ ...r, price: r.price == null ? null : Number(r.price) }));
+  }
+
+  async savedImport(userId: string, id: string): Promise<ImportedProduct> {
+    const [row] = await this.accounts.manager.query(
+      `SELECT id, data FROM aliexpress_imports WHERE id = $1 AND "userId" = $2 AND data IS NOT NULL`, [id, userId]);
+    if (!row) throw new NotFoundException('المنتج المجلوب غير موجود');
+    return { ...row.data, importId: row.id };
+  }
+
+  async dismissImport(userId: string, id: string) {
+    await this.accounts.manager.query(
+      `UPDATE aliexpress_imports SET "dismissedAt" = now() WHERE id = $1 AND "userId" = $2`, [id, userId]);
+    return { success: true };
+  }
+
+  // بعد حفظ المنتج في المتجر: يختفي من قائمة المحفوظات
+  async markImportUsed(userId: string, id: string, productId?: string | null) {
+    await this.accounts.manager.query(
+      `UPDATE aliexpress_imports SET "productId" = COALESCE($3::uuid, "productId"), "dismissedAt" = COALESCE("dismissedAt", now())
+        WHERE id = $1 AND "userId" = $2`,
+      [id, userId, productId || null],
+    );
+    return { success: true };
   }
 
   private mapProduct(productId: string, r: any): ImportedProduct {
@@ -249,9 +346,10 @@ export class AliexpressService {
     userId: string,
     storeId: string,
     input: { url: string; price: number; stock?: number; name?: string; language?: string },
+    actorId?: string,
   ) {
     if (!(Number(input.price) > 0)) throw new BadRequestException('سعر البيع مطلوب');
-    const p = await this.importProduct(userId, input.url, input.language);
+    const p = await this.importProduct(userId, input.url, input.language, actorId);
     const maxImages = await this.products.getProductImagesLimit(userId);
     const now = Date.now();
     const attributes = p.attributes.map((a, ai) => {
@@ -276,6 +374,7 @@ export class AliexpressService {
       attributes,
       variantDetails: [], // تُولَّد التركيبات تلقائياً من الخصائص
     } as any);
+    if (p.importId) await this.markImportUsed(userId, p.importId, product.id).catch(() => undefined);
     return {
       id: product.id,
       name: product.name,

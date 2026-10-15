@@ -8,8 +8,7 @@ import { TypeThemeService } from './type-theme.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
-import { OwnerOnly, RequirePermission } from '../team/guards/store-access.decorator';
-import { StorePermission } from '../team/permissions';
+import { OwnerOnly } from '../team/guards/store-access.decorator';
 import { LogActivity } from '../team/activity.interceptor';
 
 class ApplyThemeDto {
@@ -67,7 +66,8 @@ export class ThemeController {
 
   // تطبيق ثيم متاح على متجر التاجر
   @Post('apply')
-  @RequirePermission(StorePermission.THEME_CHANGE, { body: 'storeId' })
+  // الثيمات المتاحة حسب خطة المالك ومشترياته ← اختيار الثيم للمالك فقط
+  @OwnerOnly({ body: 'storeId' })
   @LogActivity('theme', 'update', { store: true })
   @AllowApiKey()
   applyAvailable(@GetUser() user: any, @Body() dto: ApplyThemeDto) {
@@ -93,7 +93,8 @@ export class ThemeController {
   }
 
   @Post('active-theme-plan')
-  @RequirePermission(StorePermission.THEME_CHANGE, { body: 'storeId' })
+  // الثيمات المتاحة حسب خطة المالك ومشترياته ← اختيار الثيم للمالك فقط
+  @OwnerOnly({ body: 'storeId' })
   @LogActivity('theme', 'update', { store: true })
   async activeThemePlan( // أضف async هنا
     @GetUser() user: any,
@@ -115,7 +116,8 @@ export class ThemeController {
   }
 
   @Post('active-theme')
-  @RequirePermission(StorePermission.THEME_CHANGE, { body: 'storeId' })
+  // الثيمات المتاحة حسب خطة المالك ومشترياته ← اختيار الثيم للمالك فقط
+  @OwnerOnly({ body: 'storeId' })
   @LogActivity('theme', 'update', { store: true })
   activeTheme(
     @GetUser() user: any,
