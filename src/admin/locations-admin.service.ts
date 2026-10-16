@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { S3Service } from '../image/s3.service';
 import { Wilaya } from '../shipping/entity/wilaya.entity';
 import { Commune } from '../shipping/entity/commune.entity';
+import { clearCountriesCache } from '../shipping/countries.util';
 
 // بيانات خدمة المواقع (mdstore-locations) في R2:
 //   locations/countries.json   ← قائمة الدول (العملة، مفتاح الهاتف، أسماء المستويات)
@@ -62,8 +63,19 @@ export class LocationsAdminService {
     }));
   }
 
+  // قبل أول حفظ من الأدمن: قائمة الدول من خدمة mdstore-locations نفسها (ملفاتها المرفقة)
+  private async countriesFromService(): Promise<CountryMeta[] | null> {
+    const base = (this.config.get<string>('LOCATIONS_API_URL') || 'https://locations.mdstore.top').replace(/\/$/, '');
+    try {
+      const res = await fetch(`${base}/v1/countries`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return null;
+      const list = (await res.json()) as (CountryMeta & { test?: boolean })[];
+      return Array.isArray(list) && list.length ? list.map(({ test: _t, ...c }) => c as CountryMeta) : null;
+    } catch { return null; }
+  }
+
   async listCountries(): Promise<CountryMeta[]> {
-    return (await this.readJson<CountryMeta[]>('countries.json')) ?? [DZ_META];
+    return (await this.readJson<CountryMeta[]>('countries.json')) ?? (await this.countriesFromService()) ?? [DZ_META];
   }
 
   async getRegions(code: string): Promise<Region[]> {
@@ -71,7 +83,7 @@ export class LocationsAdminService {
     const file = await this.readJson<{ regions: Region[] }>(`${cc}.json`);
     if (file) return file.regions;
     if (cc === 'DZ') return this.dzFromDatabase();
-    throw new NotFoundException(`لا توجد بيانات للدولة ${cc}`);
+    return []; // دولة بلا مناطق بعد — تُضاف من اللوحة (Region / Import JSON)
   }
 
   // ملخّص للعرض: المناطق بدون قائمة البلديات
@@ -86,12 +98,20 @@ export class LocationsAdminService {
   }
 
   async upsertCountry(meta: CountryMeta) {
+    if (meta.code === 'DZ') meta = { ...meta, active: true }; // كل المتاجر الحالية جزائرية — لا تُوقَف
     const countries = await this.listCountries();
     const i = countries.findIndex((c) => c.code === meta.code);
     if (i >= 0) countries[i] = { ...countries[i], ...meta };
     else countries.push(meta);
     await this.writeJson('countries.json', countries);
-    return { country: meta.code, created: i < 0, countries: countries.map((c) => ({ code: c.code, active: c.active })) };
+    clearCountriesCache();
+    // العملة محفوظة في كل متجر من هذه الدولة (تستعملها الثيمات) — تتبع تعديل الأدمن
+    let storesUpdated = 0;
+    if (meta.code !== 'DZ' && meta.currency) {
+      const res = await this.wilayas.manager.query(`UPDATE stores SET currency = $1 WHERE country = $2 AND currency <> $1`, [meta.currency, meta.code]);
+      storesUpdated = Array.isArray(res) ? Number(res[1] ?? 0) : 0;
+    }
+    return { country: meta.code, created: i < 0, storesUpdated, countries: countries.map((c) => ({ code: c.code, active: c.active })) };
   }
 
   private validate(cc: string, regions: Region[]) {
@@ -114,7 +134,7 @@ export class LocationsAdminService {
   async setRegions(code: string, regions: Region[]) {
     const cc = code.toUpperCase();
     const countries = await this.listCountries();
-    if (!countries.some((c) => c.code === cc)) throw new BadRequestException(`أضف الدولة ${cc} أولاً (admin_upsert_country)`);
+    if (!countries.some((c) => c.code === cc)) throw new BadRequestException(`أضف الدولة ${cc} أولاً`);
     const clean = this.validate(cc, regions);
     await this.writeJson(`${cc}.json`, { country: cc, regions: clean });
     await this.syncToPlatform(cc, clean);

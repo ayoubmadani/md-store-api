@@ -38,6 +38,11 @@ export class CreateFeaturesDto {
   @IsOptional()
   aliexpressImportsPerDay?: number;
 
+  // حسابات الشحن شاملاً الافتراضي — 1 = الافتراضي فقط
+  @IsInt() @Min(1)
+  @IsOptional()
+  shippingProfileNumber?: number;
+
   @IsBoolean()
   isNtfy: boolean;
 

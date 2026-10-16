@@ -32,7 +32,7 @@ import { SuperAdminAuthController } from './super-admin-auth.controller';
 import { SuperAdminAuthService } from './super-admin-auth.service';
 import { SuperAdminApiKey } from './entity/super-admin-api-key.entity';
 import { SuperAdminApiKeyService } from './super-admin-api-key.service';
-import { AdminMcpController, AdminMcpKeysController } from './admin-mcp.controller';
+import { AdminMcpController, AdminMcpKeysController, AdminLocationsController } from './admin-mcp.controller';
 import { ThemeCodeService } from './theme-code.service';
 import { LocationsAdminService } from './locations-admin.service';
 import { ImageModule } from '../image/image.module';
@@ -81,7 +81,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
             SuperAdminApiKey,
         ]),
     ],
-    controllers: [AdminController, SuperAdminAuthController, AdminMcpController, AdminMcpKeysController],
+    controllers: [AdminController, SuperAdminAuthController, AdminMcpController, AdminMcpKeysController, AdminLocationsController],
     providers: [AdminService, SuperAdminAuthService, SuperAdminApiKeyService, ThemeCodeService, LocationsAdminService],
 })
 export class AdminModule { }

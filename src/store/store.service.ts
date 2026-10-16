@@ -1,3 +1,4 @@
+import { currencyFor, levelsFor } from '../shipping/countries.util';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ImageService } from '../image/image.service';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -241,11 +242,24 @@ export class StoreService {
         try {
             const { store: storeDto, design, topBar, contact, hero } = dto;
 
+            // متجر خارج الجزائر: يحتاج حساب شحن من نفس الدولة (يُربط به تلقائياً)
+            const country = (storeDto.country || 'DZ').toUpperCase();
+            let countryProfileId: string | null = null;
+            if (country !== 'DZ') {
+                const [p] = await queryRunner.manager.query(
+                    `SELECT id FROM shipping_profiles WHERE "userId"::text = $1 AND country = $2 ORDER BY "createdAt" LIMIT 1`, [String(userId), country]);
+                if (!p) throw new BadRequestException(`أنشئ حساب شحن للدولة ${country} أولاً من صفحة أسعار التوصيل`);
+                countryProfileId = p.id;
+            }
+
             // إنشاء المتجر
             const store = queryRunner.manager.create(Store, {
                 name: storeDto.name,
                 subdomain: storeDto.subdomain,
-                currency: storeDto.currency,
+                // العملة تُحفظ في المتجر من بيانات الدولة (Currency في لوحة الأدمن) لتستعملها الثيمات
+                currency: country === 'DZ' ? storeDto.currency : (await currencyFor(country)) ?? storeDto.currency,
+                country,
+                shippingProfileId: countryProfileId,
                 language: storeDto.language,
                 cart: storeDto.cart,
                 supportQty: storeDto.supportQty,
@@ -350,7 +364,10 @@ export class StoreService {
 
             if (dto.store) {
                 store.name = dto.store.name ?? store.name;
-                store.currency = dto.store.currency ?? store.currency;
+                // خارج الجزائر العملة تتبع الدولة دائماً (لا تُعدَّل من نموذج المتجر)
+                store.currency = (store.country || 'DZ') !== 'DZ'
+                    ? (await currencyFor(store.country)) ?? store.currency
+                    : dto.store.currency ?? store.currency;
                 store.language = dto.store.language ?? store.language;
                 store.cart = dto.store.cart ?? store.cart;
                 store.supportQty = dto.store.supportQty ?? store.supportQty;
@@ -491,21 +508,16 @@ export class StoreService {
             where: { store: { id: store.id }, isActive: true }
         });
 
-        // دولة المتجر = دولة حساب الشحن الذي يستعمله (الجزائر افتراضياً)، وعملته تتبعها خارج الجزائر
-        const [loc] = await this.storeRepository.manager.query(
-            `SELECT p.country FROM shipping_profiles p
-              WHERE p.id = COALESCE($1, (SELECT p2.id FROM shipping_profiles p2 WHERE p2."userId"::text = $2 AND p2."isDefault" LIMIT 1))`,
-            [store.shippingProfileId ?? null, String((store as any).user?.id ?? '')],
-        ).catch(() => []);
-        const country: string = loc?.country || 'DZ';
-        const CURRENCIES: Record<string, string> = { DZ: 'DZD', TN: 'TND', MA: 'MAD' };
-        const currency = country === 'DZ' ? store.currency : (CURRENCIES[country] ?? store.currency);
+        // دولة المتجر (العملة محفوظة في المتجر نفسه)
+        const country: string = store.country || 'DZ';
+        // أسماء الولاية/البلدية في دولة المتجر (null = أسماء الثيم الجزائرية)
+        const locationLevels = await levelsFor(country).catch(() => null);
 
         // 5. دمج النتائج النهائية وإرسالها
         return {
             ...store,
             country,
-            currency,
+            locationLevels,
             products,
             count: totalCount,
             meta: {

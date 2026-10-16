@@ -4,6 +4,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Wilaya } from "./entity/wilaya.entity";
 import { Repository, In } from "typeorm";
 import { ShippingCommuneRule } from "./entity/shipping-commune-rule.entity";
+import { fetchCountries } from "./countries.util";
 import { Commune } from "./entity/commune.entity";
 import { CommuneDto } from "./dto/commune.dto";
 import { Shipping } from "./entity/shipping.entity";
@@ -42,10 +43,18 @@ export class ShippingService {
         return this.wilayaRepo.find({ where: { country: country.toUpperCase() }, order: { id: "ASC" } })
     }
 
-    // الدول التي يمكن تسعير التوصيل فيها: التي لها مناطق في جدول wilayas
+    private async inactiveCountries(): Promise<Set<string>> {
+        return new Set((await fetchCountries()).filter((c) => c.active === false).map((c) => c.code));
+    }
+
+    // الدول التي يمكن تسعير التوصيل فيها: لها مناطق في جدول wilayas وغير معطّلة من الأدمن.
+    // الجزائر تبقى دائماً (كل المتاجر الحالية جزائرية).
     async shippingCountries(): Promise<string[]> {
         const rows: { country: string }[] = await this.wilayaRepo.createQueryBuilder('w').select('DISTINCT w.country', 'country').getRawMany();
-        return rows.map((r) => r.country).sort((a, b) => (a === 'DZ' ? -1 : b === 'DZ' ? 1 : a.localeCompare(b)));
+        const inactive = await this.inactiveCountries();
+        return rows.map((r) => r.country)
+            .filter((c) => c === 'DZ' || !inactive.has(c))
+            .sort((a, b) => (a === 'DZ' ? -1 : b === 'DZ' ? 1 : a.localeCompare(b)));
     }
 
     /*communes */
@@ -96,7 +105,7 @@ export class ShippingService {
     async listProfiles(userId: string) {
         const defaultId = (await this.getDefaultProfile(userId)).id;
         const profiles = await this.profileRepo.find({ where: { userId }, order: { isDefault: 'DESC', createdAt: 'ASC' } });
-        const stores = await this.storeRepo.find({ where: { user: { id: userId } }, select: ['id', 'name', 'shippingProfileId'] });
+        const stores = await this.storeRepo.find({ where: { user: { id: userId } }, select: ['id', 'name', 'shippingProfileId', 'country'] });
         const counts = await this.shippingRepo
             .createQueryBuilder('s')
             .select('s.profileId', 'profileId')
@@ -114,14 +123,36 @@ export class ShippingService {
             // المتاجر التي تستعمل هذا الحساب (بدون اختيار = الافتراضي)
             stores: stores
                 .filter((st) => (st.shippingProfileId ?? defaultId) === p.id)
-                .map((st) => ({ id: st.id, name: st.name })),
+                .map((st) => ({ id: st.id, name: st.name, country: st.country || 'DZ' })),
         }));
     }
 
     // حساب جديد يبدأ بنسخة من أسعار حساب موجود (الافتراضي إن لم يُحدَّد) ليعدّلها التاجر بعد ذلك
+    // حد حسابات الشحن حسب خطة التاجر (شاملاً الحساب الافتراضي)
+    async profileLimit(userId: string): Promise<{ used: number; limit: number }> {
+        const [plan] = await this.profileRepo.manager.query(
+            `SELECT f."shippingProfileNumber" AS "limit"
+               FROM subscriptions s
+               JOIN plans p ON p.id = s."planId"
+               JOIN plan_features f ON f.id = p."featuresId"
+              WHERE s."userId"::text = $1 AND s.status = 'active' AND s."endDate" > now()
+              ORDER BY s."startDate" DESC
+              LIMIT 1`,
+            [userId],
+        ).catch(() => []);
+        const used = await this.profileRepo.count({ where: { userId } });
+        return { used, limit: plan ? Number(plan.limit) || 1 : 1 };
+    }
+
+    private async assertProfileLimit(userId: string) {
+        const { used, limit } = await this.profileLimit(userId);
+        if (used >= limit) throw new BadRequestException(`وصلت إلى حد خطتك: ${limit} حسابات شحن — رقِّ خطتك لإضافة المزيد`);
+    }
+
     async createProfile(userId: string, name: string, copyFromId?: string, country = 'DZ') {
         const trimmed = name?.trim();
         if (!trimmed) throw new BadRequestException('اسم الحساب مطلوب');
+        await this.assertProfileLimit(userId);
         const cc = (country || 'DZ').toUpperCase();
         if (!(await this.shippingCountries()).includes(cc)) throw new BadRequestException(`التوصيل في الدولة ${cc} غير مدعوم بعد`);
         const source = await this.resolveProfile(userId, copyFromId);
@@ -168,7 +199,12 @@ export class ShippingService {
     async setStoreProfile(userId: string, storeId: string, profileId?: string | null) {
         const store = await this.storeRepo.findOne({ where: { id: storeId, user: { id: userId } } });
         if (!store) throw new NotFoundException('المتجر غير موجود');
-        const profile = profileId ? await this.resolveProfile(userId, profileId) : null;
+        const profile = profileId ? await this.resolveProfile(userId, profileId) : await this.getDefaultProfile(userId);
+        // حساب الشحن يجب أن يكون من دولة المتجر (حساب تونسي لمتجر تونسي فقط)
+        const storeCountry = store.country || 'DZ';
+        if ((profile.country || 'DZ') !== storeCountry) {
+            throw new BadRequestException(`هذا الحساب لدولة ${profile.country || 'DZ'} والمتجر لدولة ${storeCountry} — اختر حساب شحن من نفس الدولة`);
+        }
         await this.storeRepo.update(store.id, { shippingProfileId: profile && !profile.isDefault ? profile.id : null });
         return { storeId: store.id, shippingProfileId: profile && !profile.isDefault ? profile.id : null };
     }

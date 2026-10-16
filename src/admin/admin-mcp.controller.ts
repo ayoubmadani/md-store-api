@@ -13,6 +13,7 @@ import { SuperAdminApiKeyService } from './super-admin-api-key.service';
 import { SuperAdminAuthService } from './super-admin-auth.service';
 import { ThemeCodeService } from './theme-code.service';
 import { LocationsAdminService } from './locations-admin.service';
+import { SetRegionsDto, UpsertCountryDto, UpsertRegionDto } from './dto/locations.dto';
 
 class PinProofDto {
   @IsString()
@@ -79,45 +80,18 @@ class PlanThemesWithPinDto extends PinProofDto {
 }
 
 
-/* المواقع (خدمة mdstore-locations) */
-class LevelNamesDto {
-  @IsString() @IsNotEmpty() @MaxLength(60) ar: string;
-  @IsOptional() @IsString() @MaxLength(60) fr?: string;
-  @IsOptional() @IsString() @MaxLength(60) en?: string;
+/* المواقع (خدمة mdstore-locations) — نسخ PIN للـ MCP */
+class UpsertCountryWithPinDto extends UpsertCountryDto {
+  @IsString() @IsNotEmpty() challenge_token: string;
+  @Matches(/^\d{6}$/, { message: 'رمز PIN يجب أن يكون 6 أرقام' }) pin: string;
 }
-class CountryLevelsDto {
-  @ValidateNested() @Type(() => LevelNamesDto) region: LevelNamesDto;
-  @ValidateNested() @Type(() => LevelNamesDto) locality: LevelNamesDto;
+class SetRegionsWithPinDto extends SetRegionsDto {
+  @IsString() @IsNotEmpty() challenge_token: string;
+  @Matches(/^\d{6}$/, { message: 'رمز PIN يجب أن يكون 6 أرقام' }) pin: string;
 }
-class UpsertCountryWithPinDto extends PinProofDto {
-  @Matches(/^[A-Z]{2}$/, { message: 'رمز الدولة: حرفان كبيران ISO (مثل MA)' }) code: string;
-  @IsString() @IsNotEmpty() @MaxLength(80) name: string;
-  @IsString() @IsNotEmpty() @MaxLength(80) ar_name: string;
-  @IsOptional() @IsString() @MaxLength(80) fr_name?: string;
-  @Matches(/^[A-Z]{3}$/, { message: 'العملة: رمز ISO من 3 أحرف (مثل MAD)' }) currency: string;
-  @Matches(/^\+\d{1,4}$/, { message: 'مفتاح الهاتف مثل +212' }) phone_prefix: string;
-  @IsOptional() @IsString() @MaxLength(120) phone_pattern?: string;
-  @ValidateNested() @Type(() => CountryLevelsDto) levels: CountryLevelsDto;
-  @IsBoolean() active: boolean;
-}
-class LocalityDto {
-  @IsInt() @Min(1) id: number;
-  @IsString() @IsNotEmpty() @MaxLength(120) name: string;
-  @IsString() @IsNotEmpty() @MaxLength(120) ar_name: string;
-  @IsOptional() @IsString() @MaxLength(20) post_code?: string;
-}
-class RegionDto {
-  @IsInt() @Min(1) id: number;
-  @IsOptional() @IsString() @MaxLength(20) code?: string;
-  @IsString() @IsNotEmpty() @MaxLength(120) name: string;
-  @IsString() @IsNotEmpty() @MaxLength(120) ar_name: string;
-  @IsArray() @ArrayNotEmpty() @ArrayMaxSize(2000) @ValidateNested({ each: true }) @Type(() => LocalityDto) localities: LocalityDto[];
-}
-class SetRegionsWithPinDto extends PinProofDto {
-  @IsArray() @ArrayNotEmpty() @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => RegionDto) regions: RegionDto[];
-}
-class UpsertRegionWithPinDto extends PinProofDto {
-  @ValidateNested() @Type(() => RegionDto) region: RegionDto;
+class UpsertRegionWithPinDto extends UpsertRegionDto {
+  @IsString() @IsNotEmpty() challenge_token: string;
+  @Matches(/^\d{6}$/, { message: 'رمز PIN يجب أن يكون 6 أرقام' }) pin: string;
 }
 
 class CreateAdminKeyDto {
@@ -286,5 +260,37 @@ export class AdminMcpKeysController {
   @Delete(':id')
   revoke(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
     return this.keys.revoke(req.superAdmin.id, id);
+  }
+}
+
+// إدارة المواقع من لوحة الأدمن (جلسة الأدمن بعد PIN) — نفس خدمة أدوات MCP
+@Controller('admin/locations')
+@UseGuards(SuperAdminGuard)
+export class AdminLocationsController {
+  constructor(private readonly locations: LocationsAdminService) { }
+
+  @Get('countries')
+  countries() {
+    return this.locations.listCountries();
+  }
+
+  @Get('countries/:cc/regions')
+  regions(@Param('cc') cc: string, @Query('regionId') regionId?: string) {
+    return this.locations.listRegions(cc, regionId ? Number(regionId) : undefined);
+  }
+
+  @Post('countries')
+  upsertCountry(@Body() dto: UpsertCountryDto) {
+    return this.locations.upsertCountry(dto as any);
+  }
+
+  @Post('countries/:cc/regions')
+  setRegions(@Param('cc') cc: string, @Body() dto: SetRegionsDto) {
+    return this.locations.setRegions(cc, dto.regions as any);
+  }
+
+  @Post('countries/:cc/region')
+  upsertRegion(@Param('cc') cc: string, @Body() dto: UpsertRegionDto) {
+    return this.locations.upsertRegion(cc, dto.region as any);
   }
 }

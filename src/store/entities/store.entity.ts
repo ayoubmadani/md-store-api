@@ -41,6 +41,10 @@ export class Store {
   @Column({ default: 'DZD' })
   currency: string;
 
+  // دولة المتجر (ISO alpha-2) — لا يستعمل إلا حساب شحن من نفس الدولة
+  @Column({ type: 'varchar', length: 2, default: 'DZ' })
+  country: string;
+
   @Column({ default: 'ar' })
   language: string;
 

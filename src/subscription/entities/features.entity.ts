@@ -36,6 +36,10 @@ export class FeaturesEntity {
     @Column({ type: 'int', default: 10 })
     aliexpressImportsPerDay: number;
 
+    // عدد حسابات الشحن (مجموعات أسعار التوصيل) شاملاً الحساب الافتراضي — 1 = الافتراضي فقط
+    @Column({ type: 'int', default: 3 })
+    shippingProfileNumber: number;
+
     @Column({ type: 'int', default: 0 })
     pixelTiktokNumber: number; // تصحيح إملائي: Pixel
 
