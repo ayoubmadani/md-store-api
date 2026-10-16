@@ -491,9 +491,21 @@ export class StoreService {
             where: { store: { id: store.id }, isActive: true }
         });
 
+        // دولة المتجر = دولة حساب الشحن الذي يستعمله (الجزائر افتراضياً)، وعملته تتبعها خارج الجزائر
+        const [loc] = await this.storeRepository.manager.query(
+            `SELECT p.country FROM shipping_profiles p
+              WHERE p.id = COALESCE($1, (SELECT p2.id FROM shipping_profiles p2 WHERE p2."userId"::text = $2 AND p2."isDefault" LIMIT 1))`,
+            [store.shippingProfileId ?? null, String((store as any).user?.id ?? '')],
+        ).catch(() => []);
+        const country: string = loc?.country || 'DZ';
+        const CURRENCIES: Record<string, string> = { DZ: 'DZD', TN: 'TND', MA: 'MAD' };
+        const currency = country === 'DZ' ? store.currency : (CURRENCIES[country] ?? store.currency);
+
         // 5. دمج النتائج النهائية وإرسالها
         return {
             ...store,
+            country,
+            currency,
             products,
             count: totalCount,
             meta: {

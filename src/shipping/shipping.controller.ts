@@ -1,9 +1,10 @@
 import { SuperAdminGuard } from '../admin/guard/super-admin.guard';
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ShippingService } from "./shipping.service";
 import { WilayaDto } from "./dto/wilaya.dto";
 import { CommuneDto } from "./dto/commune.dto";
 import { DeleteShippingDto } from "./dto/delete-shipping.dto";
+import { SetCommuneRulesDto } from "./dto/commune-rules.dto";
 import { AddMissingShippingDto } from "./dto/add-missing-shipping.dto";
 import { AuthGuard } from "../auth/guard/auth.guard";
 import { GetUser } from "../user/decorator/get-user.decorator";
@@ -24,8 +25,14 @@ export class ShippingController {
     }
 
     @Get('wilayas')
-    getAllWilayas() {
-        return this.shippingService.getAllWilayas()
+    getAllWilayas(@Query('country') country?: string) {
+        return this.shippingService.getAllWilayas(country || 'DZ')
+    }
+
+    // الدول المتاحة للتوصيل (لها مناطق في المنصة)
+    @Get('countries')
+    getShippingCountries() {
+        return this.shippingService.shippingCountries()
     }
 
     @Post('add-communes')
@@ -34,9 +41,29 @@ export class ShippingController {
         return this.shippingService.createCommunes(communes)
     }
 
+    // storeId اختياري: يُخفي البلديات التي عطّلها التاجر، ويضيف homeEnabled/officeEnabled للمقيّدة جزئياً
     @Get('get-communes/:wilayaId')
-    getAllCommunesById(@Param('wilayaId') wilayaId: string) {
-        return this.shippingService.getAllCommunesById(+wilayaId)
+    async getAllCommunesById(@Param('wilayaId') wilayaId: string, @Query('storeId') storeId?: string, @Query('domain') domain?: string, @Headers('origin') origin?: string, @Headers('referer') referer?: string) {
+        // دومين المتجر: من المعامل (kit) وإلا من Origin/Referer (الثيمات القديمة)
+        let host: string | undefined = domain?.trim() || undefined;
+        if (!host) { try { host = new URL(origin || referer || '').hostname; } catch { host = undefined; } }
+        const sid = storeId || await this.shippingService.storeIdForHost(host);
+        return this.shippingService.getCommunesForStore(+wilayaId, sid)
+    }
+
+    /* بلديات ولاية داخل حساب شحن (تعطيل كلي أو للمنزل/المكتب) */
+    @Get('communes/:wilayaId')
+    @UseGuards(AuthGuard)
+    @AllowApiKey()
+    getCommuneRules(@GetUser() user: any, @Param('wilayaId') wilayaId: string, @Query('profileId') profileId?: string) {
+        return this.shippingService.getCommuneRules(user.sub || user.Id, +wilayaId, profileId)
+    }
+
+    @Post('communes/:wilayaId')
+    @UseGuards(AuthGuard)
+    @AllowApiKey()
+    setCommuneRules(@GetUser() user: any, @Param('wilayaId') wilayaId: string, @Body() dto: SetCommuneRulesDto, @Query('profileId') profileId?: string) {
+        return this.shippingService.setCommuneRules(user.sub || user.Id, +wilayaId, dto.communes, profileId)
     }
 
     /* حسابات الشحن — profileId اختياري في كل المسارات أدناه (الافتراضي إن لم يُرسل) */
@@ -52,7 +79,7 @@ export class ShippingController {
     @UseGuards(AuthGuard)
     @AllowApiKey()
     createProfile(@GetUser() user: any, @Body() dto: CreateShippingProfileDto) {
-        return this.shippingService.createProfile(user.sub || user.Id, dto.name, dto.copyFromId)
+        return this.shippingService.createProfile(user.sub || user.Id, dto.name, dto.copyFromId, dto.country)
     }
 
     @Patch('profiles/:id')

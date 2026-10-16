@@ -12,6 +12,7 @@ import { SuperAdminGuard } from './guard/super-admin.guard';
 import { SuperAdminApiKeyService } from './super-admin-api-key.service';
 import { SuperAdminAuthService } from './super-admin-auth.service';
 import { ThemeCodeService } from './theme-code.service';
+import { LocationsAdminService } from './locations-admin.service';
 
 class PinProofDto {
   @IsString()
@@ -77,6 +78,48 @@ class PlanThemesWithPinDto extends PinProofDto {
   themeIds: string[];
 }
 
+
+/* المواقع (خدمة mdstore-locations) */
+class LevelNamesDto {
+  @IsString() @IsNotEmpty() @MaxLength(60) ar: string;
+  @IsOptional() @IsString() @MaxLength(60) fr?: string;
+  @IsOptional() @IsString() @MaxLength(60) en?: string;
+}
+class CountryLevelsDto {
+  @ValidateNested() @Type(() => LevelNamesDto) region: LevelNamesDto;
+  @ValidateNested() @Type(() => LevelNamesDto) locality: LevelNamesDto;
+}
+class UpsertCountryWithPinDto extends PinProofDto {
+  @Matches(/^[A-Z]{2}$/, { message: 'رمز الدولة: حرفان كبيران ISO (مثل MA)' }) code: string;
+  @IsString() @IsNotEmpty() @MaxLength(80) name: string;
+  @IsString() @IsNotEmpty() @MaxLength(80) ar_name: string;
+  @IsOptional() @IsString() @MaxLength(80) fr_name?: string;
+  @Matches(/^[A-Z]{3}$/, { message: 'العملة: رمز ISO من 3 أحرف (مثل MAD)' }) currency: string;
+  @Matches(/^\+\d{1,4}$/, { message: 'مفتاح الهاتف مثل +212' }) phone_prefix: string;
+  @IsOptional() @IsString() @MaxLength(120) phone_pattern?: string;
+  @ValidateNested() @Type(() => CountryLevelsDto) levels: CountryLevelsDto;
+  @IsBoolean() active: boolean;
+}
+class LocalityDto {
+  @IsInt() @Min(1) id: number;
+  @IsString() @IsNotEmpty() @MaxLength(120) name: string;
+  @IsString() @IsNotEmpty() @MaxLength(120) ar_name: string;
+  @IsOptional() @IsString() @MaxLength(20) post_code?: string;
+}
+class RegionDto {
+  @IsInt() @Min(1) id: number;
+  @IsOptional() @IsString() @MaxLength(20) code?: string;
+  @IsString() @IsNotEmpty() @MaxLength(120) name: string;
+  @IsString() @IsNotEmpty() @MaxLength(120) ar_name: string;
+  @IsArray() @ArrayNotEmpty() @ArrayMaxSize(2000) @ValidateNested({ each: true }) @Type(() => LocalityDto) localities: LocalityDto[];
+}
+class SetRegionsWithPinDto extends PinProofDto {
+  @IsArray() @ArrayNotEmpty() @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => RegionDto) regions: RegionDto[];
+}
+class UpsertRegionWithPinDto extends PinProofDto {
+  @ValidateNested() @Type(() => RegionDto) region: RegionDto;
+}
+
 class CreateAdminKeyDto {
   @IsString()
   @IsNotEmpty()
@@ -103,6 +146,7 @@ export class AdminMcpController {
     private readonly themeCode: ThemeCodeService,
     private readonly admin: AdminService,
     private readonly plans: PlansService,
+    private readonly locations: LocationsAdminService,
   ) { }
 
   @Post('pin-challenge')
@@ -179,6 +223,40 @@ export class AdminMcpController {
       }
     }
     return { planId, action: dto.action, results };
+  }
+
+  /* المواقع: الدول ← المناطق ← البلديات (تُقرأ من خدمة mdstore-locations) */
+
+  @Get('locations/countries')
+  listCountries() {
+    return this.locations.listCountries();
+  }
+
+  @Get('locations/countries/:cc/regions')
+  listRegions(@Param('cc') cc: string, @Query('regionId') regionId?: string) {
+    return this.locations.listRegions(cc, regionId ? Number(regionId) : undefined);
+  }
+
+  @Post('locations/countries')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async upsertCountry(@Req() req: any, @Body() dto: UpsertCountryWithPinDto) {
+    await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
+    const { pin: _pin, challenge_token: _token, ...meta } = dto;
+    return this.locations.upsertCountry(meta as any);
+  }
+
+  @Post('locations/countries/:cc/regions')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async setRegions(@Req() req: any, @Param('cc') cc: string, @Body() dto: SetRegionsWithPinDto) {
+    await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
+    return this.locations.setRegions(cc, dto.regions as any);
+  }
+
+  @Post('locations/countries/:cc/region')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  async upsertRegion(@Req() req: any, @Param('cc') cc: string, @Body() dto: UpsertRegionWithPinDto) {
+    await this.auth.consumePin(req.superAdmin.id, dto.challenge_token, dto.pin);
+    return this.locations.upsertRegion(cc, dto.region as any);
   }
 
   @Post('themes')

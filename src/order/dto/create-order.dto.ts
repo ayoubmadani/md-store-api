@@ -122,8 +122,9 @@ export class CreateOrderDto {
 
   @IsNotEmpty({ message: 'رقم الهاتف مطلوب' })
   @IsString()
-  @Matches(/^(05|06|07)\d{8}$/, {
-    message: 'يرجى إدخال رقم هاتف جزائري صحيح (10 أرقام)',
+  // الصيغة الدقيقة حسب دولة المتجر تُفحص في OrdersService (الجزائر 10 أرقام، تونس 8…)
+  @Matches(/^\+?\d{8,15}$/, {
+    message: 'يرجى إدخال رقم هاتف صحيح',
   })
   customerPhone: string;
 

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNotEmpty, MaxLength, IsUUID, ValidateIf } from "class-validator";
+import { IsOptional, IsString, IsNotEmpty, MaxLength, IsUUID, ValidateIf, Matches } from "class-validator";
 
 export class CreateShippingProfileDto {
     @IsString()
@@ -10,6 +10,11 @@ export class CreateShippingProfileDto {
     @IsOptional()
     @IsUUID()
     copyFromId?: string;
+
+    // دولة الحساب (ISO alpha-2) — الجزائر افتراضياً
+    @IsOptional()
+    @Matches(/^[A-Z]{2}$/, { message: 'رمز الدولة: حرفان كبيران (مثل DZ)' })
+    country?: string;
 }
 
 export class RenameShippingProfileDto {

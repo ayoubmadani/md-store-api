@@ -22,6 +22,10 @@ export class ShippingProfile {
     @Column({ default: false })
     isDefault: boolean;
 
+    // الدولة (ISO alpha-2) — مناطقها وبلدياتها من خدمة mdstore-locations
+    @Column({ type: 'varchar', length: 2, default: 'DZ' })
+    country: string;
+
     @OneToMany(() => Shipping, (s) => s.profile)
     rates: Shipping[];
 

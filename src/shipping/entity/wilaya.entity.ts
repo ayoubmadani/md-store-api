@@ -15,6 +15,10 @@ export class Wilaya{
     @Column()
     ar_name:string;
 
+    // دولة المنطقة (ISO alpha-2) — الأرقام فريدة عبر كل الدول (انظر خدمة mdstore-locations)
+    @Column({ type: 'varchar', length: 2, default: 'DZ' })
+    country:string;
+
     @OneToMany(()=> Commune , (communes)=> communes.wilaya)
     communes:Commune[]
 

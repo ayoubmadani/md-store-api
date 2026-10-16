@@ -3,6 +3,7 @@ import { WilayaDto } from "./dto/wilaya.dto";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Wilaya } from "./entity/wilaya.entity";
 import { Repository, In } from "typeorm";
+import { ShippingCommuneRule } from "./entity/shipping-commune-rule.entity";
 import { Commune } from "./entity/commune.entity";
 import { CommuneDto } from "./dto/commune.dto";
 import { Shipping } from "./entity/shipping.entity";
@@ -18,6 +19,7 @@ export class ShippingService {
         @InjectRepository(Shipping) private readonly shippingRepo: Repository<Shipping>,
         @InjectRepository(ShippingProfile) private readonly profileRepo: Repository<ShippingProfile>,
         @InjectRepository(Store) private readonly storeRepo: Repository<Store>,
+        @InjectRepository(ShippingCommuneRule) private readonly communeRuleRepo: Repository<ShippingCommuneRule>,
     ) { }
 
     /* wilayas */
@@ -35,8 +37,15 @@ export class ShippingService {
         await Promise.all(creationPromises);
     }
 
-    async getAllWilayas() {
-        return this.wilayaRepo.find({ order: { id: "ASC" } })
+    // ولايات دولة واحدة (الجزائر افتراضياً — كل الواجهات الحالية جزائرية)
+    async getAllWilayas(country = 'DZ') {
+        return this.wilayaRepo.find({ where: { country: country.toUpperCase() }, order: { id: "ASC" } })
+    }
+
+    // الدول التي يمكن تسعير التوصيل فيها: التي لها مناطق في جدول wilayas
+    async shippingCountries(): Promise<string[]> {
+        const rows: { country: string }[] = await this.wilayaRepo.createQueryBuilder('w').select('DISTINCT w.country', 'country').getRawMany();
+        return rows.map((r) => r.country).sort((a, b) => (a === 'DZ' ? -1 : b === 'DZ' ? 1 : a.localeCompare(b)));
     }
 
     /*communes */
@@ -100,6 +109,7 @@ export class ShippingService {
             id: p.id,
             name: p.name,
             isDefault: p.isDefault,
+            country: p.country || 'DZ',
             activeWilayas: activeBy.get(p.id) ?? 0,
             // المتاجر التي تستعمل هذا الحساب (بدون اختيار = الافتراضي)
             stores: stores
@@ -109,12 +119,16 @@ export class ShippingService {
     }
 
     // حساب جديد يبدأ بنسخة من أسعار حساب موجود (الافتراضي إن لم يُحدَّد) ليعدّلها التاجر بعد ذلك
-    async createProfile(userId: string, name: string, copyFromId?: string) {
+    async createProfile(userId: string, name: string, copyFromId?: string, country = 'DZ') {
         const trimmed = name?.trim();
         if (!trimmed) throw new BadRequestException('اسم الحساب مطلوب');
+        const cc = (country || 'DZ').toUpperCase();
+        if (!(await this.shippingCountries()).includes(cc)) throw new BadRequestException(`التوصيل في الدولة ${cc} غير مدعوم بعد`);
         const source = await this.resolveProfile(userId, copyFromId);
-        const profile = await this.profileRepo.save(this.profileRepo.create({ userId, name: trimmed, isDefault: false }));
-        const rates = await this.shippingRepo.find({ where: { profileId: source.id } });
+        const profile = await this.profileRepo.save(this.profileRepo.create({ userId, name: trimmed, isDefault: false, country: cc }));
+        // النسخ فقط من حساب بنفس الدولة، وإلا يبدأ الحساب فارغاً بمناطق دولته
+        const sameCountry = (source.country || 'DZ') === cc;
+        const rates = sameCountry ? await this.shippingRepo.find({ where: { profileId: source.id } }) : [];
         if (rates.length) {
             await this.shippingRepo.insert(rates.map((r) => ({
                 userId, profileId: profile.id, wilayaId: r.wilayaId, isActive: r.isActive,
@@ -123,6 +137,13 @@ export class ShippingService {
             })));
         } else {
             await this.createShipping(userId, [], profile.id);
+        }
+        // نسخ البلديات المعطّلة/المقيّدة أيضاً
+        const rules = sameCountry ? await this.communeRuleRepo.find({ where: { profileId: source.id } }).catch(() => [] as ShippingCommuneRule[]) : [];
+        if (rules.length) {
+            await this.communeRuleRepo.insert(rules.map((r) => ({
+                profileId: profile.id, communeId: r.communeId, wilayaId: r.wilayaId, homeEnabled: r.homeEnabled, officeEnabled: r.officeEnabled,
+            })));
         }
         return profile;
     }
@@ -159,7 +180,7 @@ export class ShippingService {
         let shippingData: any[];
 
         if (jsonWilayas.length === 0) {
-            const wilayas = await this.wilayaRepo.find({ order: { id: 'ASC' } });
+            const wilayas = await this.wilayaRepo.find({ where: { country: profile.country || 'DZ' }, order: { id: 'ASC' } });
             shippingData = wilayas.map((wilaya) => ({
                 userId, profileId: profile.id, wilayaId: wilaya.id,
                 priceHome: 0, priceOffice: 0, priceReturn: 0,
@@ -183,6 +204,7 @@ export class ShippingService {
     private toPublicRows(rows: Shipping[]) {
         return rows.map(w => ({
             id: w.wilaya.id,
+            country: w.wilaya.country || 'DZ',
             ar_name: w.wilaya.ar_name,
             name: w.wilaya.name,
             livraisonHome: w.priceHome,
@@ -201,7 +223,90 @@ export class ShippingService {
             relations: ['wilaya'],
             order: { wilayaId: 'ASC' },
         });
-        return this.toPublicRows(rows);
+        // عدد البلديات المقيّدة في كل ولاية (لعرضه في صفحة الأسعار)
+        const counts: { wilayaId: number; n: string }[] = await this.communeRuleRepo.createQueryBuilder('r')
+            .select('r.wilayaId', 'wilayaId').addSelect('COUNT(*)', 'n')
+            .where('r.profileId = :pid', { pid: profile.id }).groupBy('r.wilayaId').getRawMany()
+            .catch(() => []); // قبل تشغيل migration الجدول غير موجود — لا نكسر صفحة الأسعار
+        const byWilaya = new Map(counts.map((c) => [Number(c.wilayaId), Number(c.n)]));
+        return this.toPublicRows(rows).map((r) => ({ ...r, restrictedCommunes: byWilaya.get(r.id) ?? 0 }));
+    }
+
+    /* استثناءات البلديات (تعطيل بلدية كلياً أو للمنزل/المكتب فقط) */
+
+    // بلديات ولاية مع حالة كل منها في حساب الشحن (للوحة التاجر)
+    async getCommuneRules(userId: string, wilayaId: number, profileId?: string) {
+        const profile = await this.resolveProfile(userId, profileId);
+        const [communes, rules] = await Promise.all([
+            this.communesRepo.find({ where: { wilayaId }, order: { id: 'ASC' } }),
+            this.communeRuleRepo.find({ where: { profileId: profile.id, wilayaId } }).catch(() => [] as ShippingCommuneRule[]),
+        ]);
+        const byId = new Map(rules.map((r) => [r.communeId, r]));
+        return communes.map((c) => {
+            const r = byId.get(c.id);
+            return { id: c.id, name: c.name, ar_name: c.ar_name, post_code: c.post_code, homeEnabled: r ? r.homeEnabled : true, officeEnabled: r ? r.officeEnabled : true };
+        });
+    }
+
+    // يحفظ حالة بلديات ولاية: المفعّلة للنوعين تُحذف من الجدول (تتبع الولاية)، والباقي يُحفظ كاستثناء
+    async setCommuneRules(userId: string, wilayaId: number, items: { communeId: number; homeEnabled: boolean; officeEnabled: boolean }[], profileId?: string) {
+        const profile = await this.resolveProfile(userId, profileId);
+        const valid = new Set((await this.communesRepo.find({ where: { wilayaId }, select: ['id'] })).map((c) => c.id));
+        const bad = items.filter((i) => !valid.has(i.communeId)).map((i) => i.communeId);
+        if (bad.length) throw new BadRequestException(`بلديات لا تنتمي لهذه الولاية: ${bad.slice(0, 10).join(', ')}`);
+        const enable = items.filter((i) => i.homeEnabled && i.officeEnabled).map((i) => i.communeId);
+        const restrict = items.filter((i) => !(i.homeEnabled && i.officeEnabled));
+        if (enable.length) await this.communeRuleRepo.delete({ profileId: profile.id, communeId: In(enable) });
+        if (restrict.length) {
+            await this.communeRuleRepo.upsert(
+                restrict.map((i) => ({ profileId: profile.id, communeId: i.communeId, wilayaId, homeEnabled: !!i.homeEnabled, officeEnabled: !!i.officeEnabled })),
+                ['profileId', 'communeId'],
+            );
+        }
+        return { profileId: profile.id, wilayaId, restricted: await this.communeRuleRepo.count({ where: { profileId: profile.id, wilayaId } }) };
+    }
+
+    // حساب الشحن الفعلي لمتجر (من المتجر وحده — للواجهات العامة والتحقق من الطلب)
+    async profileIdForStoreId(storeId: string): Promise<string | undefined> {
+        const store = await this.storeRepo.findOne({ where: { id: storeId }, relations: ['user'], select: { id: true, shippingProfileId: true, user: { id: true } } as any });
+        if (!store) return undefined;
+        if (store.shippingProfileId) return store.shippingProfileId;
+        return (await this.profileRepo.findOne({ where: { userId: (store as any).user?.id, isDefault: true } }))?.id;
+    }
+
+    // المتجر من نطاق الطلب (Origin/Referer) — كل الثيمات تجلب البلديات من المتصفح على دومين المتجر
+    private storeByHost = new Map<string, { id: string | null; at: number }>();
+    async storeIdForHost(host?: string): Promise<string | undefined> {
+        const h = (host || '').toLowerCase().replace(/^www\./, '');
+        if (!h || h === 'localhost') return undefined;
+        const hit = this.storeByHost.get(h);
+        if (hit && Date.now() - hit.at < 60_000) return hit.id ?? undefined;
+        const [row] = await this.storeRepo.manager.query(
+            `SELECT "storeId" FROM domains WHERE lower(domain) = $1 AND "deletedAt" IS NULL LIMIT 1`, [h],
+        ).catch(() => []);
+        this.storeByHost.set(h, { id: row?.storeId ?? null, at: Date.now() });
+        return row?.storeId;
+    }
+
+    // للمتجر: بلديات الولاية بدون المعطّلة كلياً، مع أنواع التوصيل المتاحة في كل بلدية
+    async getCommunesForStore(wilayaId: number, storeId?: string) {
+        const communes = await this.communesRepo.find({ where: { wilayaId } });
+        if (!storeId) return communes;
+        const profileId = await this.profileIdForStoreId(storeId).catch(() => undefined);
+        if (!profileId) return communes;
+        const rules = await this.communeRuleRepo.find({ where: { profileId, wilayaId } }).catch(() => [] as ShippingCommuneRule[]);
+        if (!rules.length) return communes;
+        const byId = new Map(rules.map((r) => [r.communeId, r]));
+        return communes
+            .filter((c) => { const r = byId.get(c.id); return !r || r.homeEnabled || r.officeEnabled; })
+            .map((c) => { const r = byId.get(c.id); return r ? { ...c, homeEnabled: r.homeEnabled, officeEnabled: r.officeEnabled } : c; });
+    }
+
+    // للتحقق عند الطلب: null = لا قيود على هذه البلدية
+    async communeRule(storeId: string, communeId: number) {
+        const profileId = await this.profileIdForStoreId(storeId);
+        if (!profileId) return null;
+        return this.communeRuleRepo.findOne({ where: { profileId, communeId } });
     }
 
     // الحساب الذي يستعمله المتجر، أو الافتراضي للتاجر
@@ -254,7 +359,7 @@ export class ShippingService {
     async addMissingWilayas(userId: string, wilayaIds?: number[], profileId?: string) {
         const profile = await this.resolveProfile(userId, profileId);
         const [allWilayas, existingRows] = await Promise.all([
-            this.wilayaRepo.find({ order: { id: 'ASC' } }),
+            this.wilayaRepo.find({ where: { country: profile.country || 'DZ' }, order: { id: 'ASC' } }),
             this.shippingRepo.find({ where: { profileId: profile.id }, select: ['wilayaId'] }),
         ]);
 

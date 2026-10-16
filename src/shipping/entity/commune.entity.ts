@@ -19,6 +19,9 @@ export class Commune {
     @Column({ nullable: true })
     post_code: string;
 
+    @Column({ type: 'varchar', length: 2, default: 'DZ' })
+    country: string;
+
     // إضافة الحقل كـ Column ليسهل عليك التعامل مع الـ ID مباشرة
     @Column()
     wilayaId: number;

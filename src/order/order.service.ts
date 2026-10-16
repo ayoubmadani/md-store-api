@@ -39,6 +39,28 @@ export class OrdersService {
     private fmt = (name: string, limit = 15) =>
         name.length > limit ? name.slice(0, limit) + '...' : name;
 
+    // صيغة الهاتف حسب الدولة — دولة الولاية المختارة، وإلا دولة حساب الشحن، وإلا الجزائر
+    private static readonly PHONE_RULES: Record<string, { re: RegExp; msg: string }> = {
+        DZ: { re: /^(05|06|07)\d{8}$/, msg: 'يرجى إدخال رقم هاتف جزائري صحيح (10 أرقام)' },
+        TN: { re: /^[2459]\d{7}$/, msg: 'يرجى إدخال رقم هاتف تونسي صحيح (8 أرقام)' },
+    };
+
+    private async assertPhoneForCountry(store: Store, dto: CreateOrderDto) {
+        const wilayaId = Number(dto.customerWilayaId ?? dto.customerWelaya);
+        let country: string | undefined;
+        if (wilayaId) {
+            country = (await this.shippingRepo.manager.query(`SELECT country FROM wilayas WHERE id = $1`, [wilayaId]).catch(() => []))[0]?.country;
+        }
+        if (!country) {
+            country = (await this.shippingRepo.manager.query(
+                `SELECT p.country FROM shipping_profiles p WHERE p.id = COALESCE($1, (SELECT p2.id FROM shipping_profiles p2 JOIN stores s ON s."userId"::text = p2."userId"::text WHERE s.id = $2 AND p2."isDefault" LIMIT 1))`,
+                [store.shippingProfileId ?? null, store.id],
+            ).catch(() => []))[0]?.country;
+        }
+        const rule = OrdersService.PHONE_RULES[country || 'DZ'];
+        if (rule && !rule.re.test(String(dto.customerPhone ?? '').trim())) throw new BadRequestException(rule.msg);
+    }
+
     private async assertDeliveryTypeAllowed(store: Store, dto: CreateOrderDto) {
         const wilayaId = Number(dto.customerWilayaId ?? dto.customerWelaya);
         if (!wilayaId) return;
@@ -50,10 +72,20 @@ export class OrdersService {
             ))[0]?.id;
         if (!profileId) return;
         const rate = await this.shippingRepo.findOne({ where: { profileId, wilayaId } });
-        if (!rate) return;
-        if ((type === TypeShipEnum.OFFICE && rate.officeEnabled === false) || (type === TypeShipEnum.HOME && rate.homeEnabled === false)) {
+        if (rate && ((type === TypeShipEnum.OFFICE && rate.officeEnabled === false) || (type === TypeShipEnum.HOME && rate.homeEnabled === false))) {
             throw new BadRequestException(type === TypeShipEnum.OFFICE ? 'التوصيل للمكتب غير متاح لهذه الولاية' : 'التوصيل للمنزل غير متاح لهذه الولاية');
         }
+        // البلدية: استثناءات التاجر داخل الولاية
+        const communeId = Number(dto.customerCommuneId ?? dto.customerCommune);
+        if (!communeId) return;
+        const [rule] = await this.shippingRepo.manager.query(
+            `SELECT "homeEnabled", "officeEnabled" FROM shipping_commune_rules WHERE "profileId" = $1 AND "communeId" = $2 LIMIT 1`,
+            [profileId, communeId],
+        ).catch(() => []);
+        if (!rule) return;
+        if (!rule.homeEnabled && !rule.officeEnabled) throw new BadRequestException('التوصيل غير متاح لهذه البلدية');
+        if (type === TypeShipEnum.OFFICE && !rule.officeEnabled) throw new BadRequestException('التوصيل للمكتب غير متاح لهذه البلدية');
+        if (type === TypeShipEnum.HOME && !rule.homeEnabled) throw new BadRequestException('التوصيل للمنزل غير متاح لهذه البلدية');
     }
 
     // ─── CREATE ───────────────────────────────────────────────────────────────
@@ -111,6 +143,7 @@ export class OrdersService {
 
         // نوع التوصيل يجب أن يكون مفعّلاً لهذه الولاية في حساب الشحن الذي يستعمله المتجر
         if (!isDigital) await this.assertDeliveryTypeAllowed(store, first);
+        await this.assertPhoneForCountry(store, first);
 
         const shipPrice = isDigital ? 0 : Number(first.priceShip ?? first.priceLivraison ?? 0);
 
