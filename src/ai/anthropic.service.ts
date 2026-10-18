@@ -78,6 +78,8 @@ const PAGE_TREE_SCHEMA = {
 export class AnthropicService {
   private client: Anthropic | null = null;
   private model: string;
+  // صفحات الصور: نموذج أرخص منفصل (IMAGE_PAGE_MODEL) — باقي الإنشاء يبقى على ANTHROPIC_MODEL
+  private imagePageModel: string;
 
   // Deliberately does NOT throw here if the key is missing — this service is
   // constructor-injected into BuilderPagesService, which NestJS instantiates
@@ -88,6 +90,7 @@ export class AnthropicService {
   // is actually called, so that's where it's now checked.
   constructor(private configService: ConfigService) {
     this.model = this.configService.get<string>('ANTHROPIC_MODEL') || 'claude-opus-4-8';
+    this.imagePageModel = this.configService.get<string>('IMAGE_PAGE_MODEL') || 'claude-haiku-5-5';
   }
 
   private getClient(): Anthropic {
@@ -106,7 +109,7 @@ export class AnthropicService {
     let response: Anthropic.Message;
     try {
       response = await client.messages.create({
-        model: this.model,
+        model: this.imagePageModel,
         max_tokens: 16000,
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         output_config: { format: { type: 'json_schema', schema: IMAGE_PAGE_SCHEMA as any } },
