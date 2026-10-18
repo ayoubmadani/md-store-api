@@ -86,4 +86,9 @@ describe('IMAGE_PAGE_SCHEMA', () => {
   it('form keys are exactly the productForm block keys', () => {
     expect(Object.keys((IMAGE_PAGE_SCHEMA as any).properties.form.properties).sort()).toEqual([...BLOCK_FIELD_KEYS.productForm].sort());
   });
+  it('asks for compact output to keep cost low', () => {
+    const p = buildImagePageSystemPrompt('ar');
+    expect(p).toContain('بدون تعليقات');
+    expect(p).toContain('بدون مسافات بادئة');
+  });
 });

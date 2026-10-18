@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, UnprocessableEntityException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { BuilderBlock, BLOCK_SYSTEM_PROMPT, languageNote } from './block-schema';
@@ -77,6 +77,7 @@ const PAGE_TREE_SCHEMA = {
 @Injectable()
 export class AnthropicService {
   private client: Anthropic | null = null;
+  private readonly logger = new Logger('AnthropicService');
   private model: string;
   // صفحات الصور: نموذج أرخص منفصل (IMAGE_PAGE_MODEL) — باقي الإنشاء يبقى على ANTHROPIC_MODEL
   private imagePageModel: string;
@@ -110,7 +111,7 @@ export class AnthropicService {
     try {
       response = await client.messages.create({
         model: this.imagePageModel,
-        max_tokens: 16000,
+        max_tokens: 12000,
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         output_config: { format: { type: 'json_schema', schema: IMAGE_PAGE_SCHEMA as any } },
         messages: [{ role: 'user', content: user }],
@@ -118,6 +119,9 @@ export class AnthropicService {
     } catch (error) {
       throw new InternalServerErrorException(`فشل تصميم الصفحة عبر الذكاء الاصطناعي: ${error.message}`);
     }
+    // تكلفة كل صفحة في السجل: الخروج هو معظمها
+    const u = response.usage;
+    this.logger.log(`image-page ${this.imagePageModel} in=${u.input_tokens} cacheRead=${u.cache_read_input_tokens ?? 0} cacheWrite=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`);
     if (response.stop_reason === 'refusal') {
       throw new InternalServerErrorException('تعذر توليد المحتوى لهذا الوصف، حاول صياغة مختلفة.');
     }
