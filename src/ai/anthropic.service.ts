@@ -1,7 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { BuilderBlock, BLOCK_SYSTEM_PROMPT, languageNote } from './block-schema';
+import { IMAGE_PAGE_SCHEMA } from '../builder-pages/image-page/image-page-prompt';
 
 // Mirrors dashboard/src/pages/editor/blocks/componentsMap.js exactly — the
 // generated tree is rendered by that same registry, so field names/types
@@ -97,6 +98,38 @@ export class AnthropicService {
     }
     this.client = new Anthropic({ apiKey });
     return this.client;
+  }
+
+  // صفحة صور: HTML كامل + ألوان النموذج. البرومبت يُبنى في builder-pages/image-page.
+  async generateImagePage(system: string, user: string): Promise<{ html: string; form: Record<string, string>; formAfter: number }> {
+    const client = this.getClient();
+    let response: Anthropic.Message;
+    try {
+      response = await client.messages.create({
+        model: this.model,
+        max_tokens: 16000,
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        output_config: { format: { type: 'json_schema', schema: IMAGE_PAGE_SCHEMA as any } },
+        messages: [{ role: 'user', content: user }],
+      });
+    } catch (error) {
+      throw new InternalServerErrorException(`فشل تصميم الصفحة عبر الذكاء الاصطناعي: ${error.message}`);
+    }
+    if (response.stop_reason === 'refusal') {
+      throw new InternalServerErrorException('تعذر توليد المحتوى لهذا الوصف، حاول صياغة مختلفة.');
+    }
+    if (response.stop_reason === 'max_tokens') {
+      throw new UnprocessableEntityException('الصفحة الناتجة طويلة جداً، حاول مرة أخرى.');
+    }
+    const textBlock = response.content.find((block) => block.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new InternalServerErrorException('لم يتم إرجاع محتوى صالح من الذكاء الاصطناعي');
+    }
+    try {
+      return JSON.parse(textBlock.text);
+    } catch {
+      throw new InternalServerErrorException('تعذر تحليل استجابة الذكاء الاصطناعي كـ JSON');
+    }
   }
 
   async generatePageTree(productDescription: string, language: 'ar' | 'fr' | 'en' = 'ar'): Promise<BuilderBlock[]> {

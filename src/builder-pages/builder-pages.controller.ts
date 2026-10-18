@@ -1,9 +1,12 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { IsOptional, IsUUID, ValidateIf } from 'class-validator';
 import { BuilderPagesService } from './builder-pages.service';
 import { CreateBuilderPageDto } from './dto/create-builder-page.dto';
 import { UpdateTreeDto } from './dto/update-tree.dto';
 import { GenerateBuilderPageDto } from './dto/generate-builder-page.dto';
+import { GenerateImagePageDto } from './dto/generate-image-page.dto';
+import { ImagePageService } from './image-page/image-page.service';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
 import { AllowApiKey } from '../auth/decorator/allow-api-key.decorator';
@@ -22,7 +25,10 @@ class UpdatePageProductDto {
 
 @Controller('builder-pages')
 export class BuilderPagesController {
-  constructor(private readonly builderPagesService: BuilderPagesService) {}
+  constructor(
+    private readonly builderPagesService: BuilderPagesService,
+    private readonly imagePageService: ImagePageService,
+  ) {}
 
   // Every @UseGuards(AuthGuard) route below only proves the request carries
   // *a* valid token — it says nothing about whether that user owns the page
@@ -80,6 +86,13 @@ export class BuilderPagesController {
     return this.builderPagesService.generateImageFromPrompt(prompt);
   }
 
+  // صفحات الصور: الاستعمال هذا الشهر — قبل مسارات :id حتى لا تُقرأ "image-pages" كمعرّف
+  @Get('image-pages/usage')
+  @UseGuards(AuthGuard)
+  imagePagesUsage(@GetUser() user: any) {
+    return this.imagePageService.usage(this.getUserId(user));
+  }
+
   // Public — the storefront's productForm block needs this for real,
   // live pricing/stock/variants, the same way the editor's own preview does.
   @Get('product-info/:productId')
@@ -112,6 +125,25 @@ export class BuilderPagesController {
   @UseGuards(AuthGuard)
   generate(@Param('id') id: string, @Body() dto: GenerateBuilderPageDto, @GetUser() user: any) {
     return this.builderPagesService.generate(id, dto, this.getUserId(user));
+  }
+
+  // تصميم صفحة صور: HTML + ألوان النموذج (التصوير والرفع في المتصفح)
+  @Post(':id/generate-image-page')
+  @UseGuards(AuthGuard)
+  generateImagePage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: GenerateImagePageDto, @GetUser() user: any) {
+    return this.imagePageService.generate(id, dto, this.getUserId(user));
+  }
+
+  @Post(':id/image-page-sections')
+  @UseGuards(AuthGuard)
+  @UseInterceptors(FilesInterceptor('files', 6, { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadImagePageSections(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('generationId') generationId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @GetUser() user: any,
+  ) {
+    return this.imagePageService.uploadSections(id, generationId, files, this.getUserId(user));
   }
 
   // POST, not GET like the older landing-page module's equivalent route —
