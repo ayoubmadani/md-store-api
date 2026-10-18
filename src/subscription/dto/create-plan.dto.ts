@@ -43,6 +43,10 @@ export class CreateFeaturesDto {
   @IsOptional()
   shippingProfileNumber?: number;
 
+  @IsInt() @Min(0)
+  @IsOptional()
+  imagePagesPerMonth?: number;
+
   @IsBoolean()
   isNtfy: boolean;
 

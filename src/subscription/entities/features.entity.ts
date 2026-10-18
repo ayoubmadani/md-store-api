@@ -40,6 +40,10 @@ export class FeaturesEntity {
     @Column({ type: 'int', default: 3 })
     shippingProfileNumber: number;
 
+    // صفحات الصور بالذكاء الاصطناعي شهرياً — 0 = غير متاحة
+    @Column({ type: 'int', default: 0 })
+    imagePagesPerMonth: number;
+
     @Column({ type: 'int', default: 0 })
     pixelTiktokNumber: number; // تصحيح إملائي: Pixel
 

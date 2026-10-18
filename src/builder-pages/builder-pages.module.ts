@@ -12,6 +12,7 @@ import { AiModule } from '../ai/ai.module';
 import { ImageModule } from '../image/image.module';
 import { IMAGE_PAGE_SECRET, ImagePageService } from './image-page/image-page.service';
 import { ImagePageQuotaService } from './image-page/image-page-quota.service';
+import { ImagePageGeneration } from './image-page/image-page-generation.entity';
 
 @Module({
   controllers: [BuilderPagesController],
@@ -22,6 +23,6 @@ import { ImagePageQuotaService } from './image-page/image-page-quota.service';
     { provide: IMAGE_PAGE_SECRET, inject: [ConfigService], useFactory: (c: ConfigService) => c.get<string>('JWT_SECRET') || '' },
   ],
   exports: [BuilderPagesService],
-  imports: [TypeOrmModule.forFeature([BuilderPage, Product, StorePixel, Domain, Store]), AiModule, ImageModule],
+  imports: [TypeOrmModule.forFeature([BuilderPage, Product, StorePixel, Domain, Store, ImagePageGeneration]), AiModule, ImageModule],
 })
 export class BuilderPagesModule {}
