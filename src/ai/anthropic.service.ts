@@ -111,7 +111,7 @@ export class AnthropicService {
     try {
       response = await client.messages.create({
         model: this.imagePageModel,
-        max_tokens: 12000,
+        max_tokens: 16000,
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         output_config: { format: { type: 'json_schema', schema: IMAGE_PAGE_SCHEMA as any } },
         messages: [{ role: 'user', content: user }],
