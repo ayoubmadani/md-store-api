@@ -11,6 +11,6 @@ export class ImagePageQuotaService {
   }
 
   async usage(_userId: string): Promise<{ used: number; limit: number }> {
-    return { used: 0, limit: 0 };
+    return { used: 0, limit: 10 }; // مؤقت للتجربة المحلية
   }
 }
