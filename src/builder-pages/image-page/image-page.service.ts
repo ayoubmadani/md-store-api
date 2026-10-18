@@ -88,6 +88,21 @@ export class ImagePageService {
     return { urls: uploaded.map((u) => u.url) };
   }
 
+  // صور المنتج الحالية للمتصفح (R2 بلا CORS): صورة واحدة لكل طلب، فقط من منتج تابع لمتجر الصفحة
+  async productPhoto(pageId: string, productId: string, index: number, userId: string): Promise<{ buffer: Buffer; contentType: string }> {
+    const page = await this.pages.findOne(pageId, userId);
+    const product = await this.productRepo.findOne({ where: { id: productId }, relations: ['store', 'imagesProduct'] });
+    if (!product || product.store?.id !== page.storeId) throw new NotFoundException('المنتج غير موجود');
+    const url = product.imagesProduct?.[index]?.imageUrl;
+    if (!url || !/^https?:\/\//.test(url)) throw new NotFoundException('الصورة غير موجودة');
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) }).catch(() => null);
+    const contentType = res?.headers.get('content-type') || '';
+    if (!res?.ok || !contentType.startsWith('image/')) throw new NotFoundException('الصورة غير موجودة');
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length > 4 * 1024 * 1024) throw new BadRequestException('الصورة كبيرة جداً، ارفعها يدوياً');
+    return { buffer, contentType };
+  }
+
   private async buildInput(dto: GenerateImagePageDto, storeId: string): Promise<ImagePageInput> {
     const base = { language: dto.language, palette: dto.palette, cutouts: dto.cutouts, details: dto.details ?? 0, shipsAllWilayas: false };
     if (dto.productId) {

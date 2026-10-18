@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query, Res, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import type { Response } from 'express';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { IsOptional, IsUUID, ValidateIf } from 'class-validator';
 import { BuilderPagesService } from './builder-pages.service';
@@ -132,6 +133,19 @@ export class BuilderPagesController {
   @UseGuards(AuthGuard)
   generateImagePage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: GenerateImagePageDto, @GetUser() user: any) {
     return this.imagePageService.generate(id, dto, this.getUserId(user));
+  }
+
+  @Get(':id/image-page-product-photo')
+  @UseGuards(AuthGuard)
+  async imagePageProductPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('productId', ParseUUIDPipe) productId: string,
+    @Query('n', ParseIntPipe) n: number,
+    @GetUser() user: any,
+    @Res() res: Response,
+  ) {
+    const { buffer, contentType } = await this.imagePageService.productPhoto(id, productId, n, this.getUserId(user));
+    res.set({ 'Content-Type': contentType, 'Cache-Control': 'private, max-age=300' }).send(buffer);
   }
 
   @Post(':id/image-page-sections')

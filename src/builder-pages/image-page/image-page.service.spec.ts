@@ -88,3 +88,22 @@ describe('ImagePageService.uploadSections chunks', () => {
     await expect(svc.uploadSections('p1', generationId, [file, file], 'u1', 5)).rejects.toThrow('من 1 إلى 6 صور');
   });
 });
+
+describe('ImagePageService.productPhoto', () => {
+  const product = { id: 'pr', store: { id: 's1' }, imagesProduct: [{ imageUrl: 'https://cdn/a.jpg' }, { imageUrl: 'https://cdn/b.png' }] };
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns the nth product image bytes', async () => {
+    const { svc } = setup([], product);
+    jest.spyOn(global, 'fetch').mockResolvedValue(new Response(Buffer.from('img'), { headers: { 'content-type': 'image/png' } }));
+    const out = await svc.productPhoto('p1', 'pr', 1, 'u1');
+    expect(global.fetch).toHaveBeenCalledWith('https://cdn/b.png', expect.anything());
+    expect(out.contentType).toBe('image/png');
+    expect(out.buffer.toString()).toBe('img');
+  });
+
+  it('rejects a product from another store or a missing index', async () => {
+    await expect(setup([], { ...product, store: { id: 'other' } }).svc.productPhoto('p1', 'pr', 0, 'u1')).rejects.toThrow('المنتج غير موجود');
+    await expect(setup([], product).svc.productPhoto('p1', 'pr', 5, 'u1')).rejects.toThrow('الصورة غير موجودة');
+  });
+});
