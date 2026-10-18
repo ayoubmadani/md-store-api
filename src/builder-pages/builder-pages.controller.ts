@@ -140,10 +140,11 @@ export class BuilderPagesController {
   uploadImagePageSections(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('generationId') generationId: string,
+    @Body('startIndex') startIndex: string,
     @UploadedFiles() files: Express.Multer.File[],
     @GetUser() user: any,
   ) {
-    return this.imagePageService.uploadSections(id, generationId, files, this.getUserId(user));
+    return this.imagePageService.uploadSections(id, generationId, files, this.getUserId(user), Number(startIndex) || 0);
   }
 
   // POST, not GET like the older landing-page module's equivalent route —

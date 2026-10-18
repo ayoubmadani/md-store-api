@@ -14,6 +14,8 @@ export const IMAGE_PAGE_SECRET = 'IMAGE_PAGE_SECRET';
 const AUTO_STYLES = ['auto', 'تلقائي'];
 const SECTION_TYPES: Record<string, string> = { 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png' };
 const MAX_SECTION_BYTES = 2 * 1024 * 1024;
+// دالة Vercel تُقطع عند 300 ثانية: لا نعيد المحاولة إن أخذت الأولى أكثر من دقيقتين
+const RETRY_BUDGET_MS = 120_000;
 
 // «تلقائي» ← طابع من فئة المنتج
 export function styleForCategory(category?: string | null): string {
@@ -50,8 +52,12 @@ export class ImagePageService {
     const user = buildImagePageUserMessage(input, pickVariation());
 
     const result = await this.quota.consume(userId, { storeId: page.storeId, builderPageId: page.id, language: input.language, style: input.style }, async () => {
+      const startedAt = Date.now();
       let out = await this.anthropic.generateImagePage(system, user);
       let check = validateImagePageHtml(out.html, input.cutouts, input.details);
+      if (!check.ok && Date.now() - startedAt > RETRY_BUDGET_MS) {
+        throw new UnprocessableEntityException(`تعذّر تصميم صفحة صالحة، حاول مرة أخرى (${check.reason})`);
+      }
       if (!check.ok) {
         // محاولة واحدة فقط مع سبب الرفض، ثم فشل لا يُحتسب
         out = await this.anthropic.generateImagePage(system, `${user}\n\n## المحاولة السابقة رُفضت\n${check.reason}\nأعد الصفحة كاملة مع تصحيح ذلك.`);
@@ -66,17 +72,19 @@ export class ImagePageService {
     return { generationId: this.signGeneration(userId, page.id), html: result.html, form: result.form, formAfter };
   }
 
-  async uploadSections(pageId: string, generationId: string, files: Express.Multer.File[], userId: string) {
+  // startIndex: الرفع على دفعات (حد جسم الطلب 4.5MB في Vercel) مع ترقيم متصل
+  async uploadSections(pageId: string, generationId: string, files: Express.Multer.File[], userId: string, startIndex = 0) {
     const page = await this.pages.findOne(pageId, userId);
     const uuid = this.verifyGeneration(generationId, userId, page.id);
-    if (!files?.length || files.length > 6) throw new BadRequestException('من 1 إلى 6 صور');
+    const start = Math.max(0, Math.trunc(Number(startIndex) || 0));
+    if (!files?.length || start + files.length > 6) throw new BadRequestException('من 1 إلى 6 صور');
     for (const f of files) {
       if (!SECTION_TYPES[f.mimetype]) throw new BadRequestException('الصيغ المقبولة: webp و jpeg و png');
       if (f.size > MAX_SECTION_BYTES) throw new BadRequestException('حجم الصورة أكبر من 2MB');
     }
     // لا تُحسب من totalImagesNumber: جزء من صفحة الصور نفسها
     const uploaded = await Promise.all(files.map((f, i) =>
-      this.s3.uploadBuffer(f.buffer, `image-pages/${page.storeId}/${uuid}/${i + 1}.${SECTION_TYPES[f.mimetype]}`, f.mimetype)));
+      this.s3.uploadBuffer(f.buffer, `image-pages/${page.storeId}/${uuid}/${start + i + 1}.${SECTION_TYPES[f.mimetype]}`, f.mimetype)));
     return { urls: uploaded.map((u) => u.url) };
   }
 

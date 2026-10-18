@@ -36,6 +36,16 @@ describe('ImagePageService.generate', () => {
     expect(consumedResult).toBe('not-called');
   });
 
+  it('no retry when the first attempt was too slow (Vercel 300s limit)', async () => {
+    const { svc, anthropic } = setup([{ html: bad }, { html: good }]);
+    let t = 1_000_000;
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => t);
+    anthropic.generateImagePage.mockReset().mockImplementationOnce(async () => { t += 150_000; return { html: bad, form, formAfter: 0 }; });
+    await expect(svc.generate('p1', dto, 'u1')).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(anthropic.generateImagePage).toHaveBeenCalledTimes(1);
+    now.mockRestore();
+  });
+
   it('style auto maps from category', () => {
     expect(styleForCategory('Sport & fitness')).toBe('رياضي');
     expect(styleForCategory('ألعاب الأطفال')).toBe('أطفال');
@@ -65,5 +75,16 @@ describe('ImagePageService.uploadSections', () => {
     expect(s3.uploadBuffer.mock.calls[1][1]).toMatch(/\/2\.jpg$/);
     await expect(svc.uploadSections('p1', generationId, files, 'other-user')).rejects.toBeInstanceOf(ForbiddenException);
     await expect(svc.uploadSections('p1', generationId.replace(/.$/, 'x'), files, 'u1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('ImagePageService.uploadSections chunks', () => {
+  it('numbers files from startIndex and caps the total at 6', async () => {
+    const { svc, s3 } = setup([{ html: good }]);
+    const { generationId } = await svc.generate('p1', dto, 'u1');
+    const file = { buffer: Buffer.from('a'), mimetype: 'image/webp', size: 10 } as any;
+    await svc.uploadSections('p1', generationId, [file, file], 'u1', 3);
+    expect(s3.uploadBuffer.mock.calls.map((c: any[]) => c[1].split('/').pop())).toEqual(['4.webp', '5.webp']);
+    await expect(svc.uploadSections('p1', generationId, [file, file], 'u1', 5)).rejects.toThrow('من 1 إلى 6 صور');
   });
 });
