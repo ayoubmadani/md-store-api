@@ -105,7 +105,12 @@ describe('pickVariation', () => {
 });
 
 describe('IMAGE_PAGE_SCHEMA', () => {
-  it('form keys are exactly the productForm block keys', () => {
-    expect(Object.keys((IMAGE_PAGE_SCHEMA as any).properties.form.properties).sort()).toEqual([...BLOCK_FIELD_KEYS.productForm].sort());
+  it('form keys are the productForm block keys plus borderRadius', () => {
+    const props = (IMAGE_PAGE_SCHEMA as any).properties.form.properties;
+    expect(Object.keys(props).sort()).toEqual([...BLOCK_FIELD_KEYS.productForm, 'borderRadius'].sort());
+    expect(props.borderRadius.type).toBe('integer');
+  });
+  it('asks for a corner radius that matches the design', () => {
+    expect(buildImagePageSystemPrompt('ar')).toContain('borderRadius');
   });
 });

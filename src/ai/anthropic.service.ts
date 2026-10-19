@@ -105,7 +105,7 @@ export class AnthropicService {
   }
 
   // صفحة صور: HTML كامل + ألوان النموذج. البرومبت يُبنى في builder-pages/image-page.
-  async generateImagePage(system: string, user: string): Promise<{ html: string; form: Record<string, string>; formAfter: number }> {
+  async generateImagePage(system: string, user: string): Promise<{ html: string; form: Record<string, string | number>; formAfter: number }> {
     const client = this.getClient();
     let response: Anthropic.Message;
     try {

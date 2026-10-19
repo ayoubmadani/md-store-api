@@ -70,7 +70,8 @@ export class ImagePageService {
 
     const sections = (result.html.match(/<section\b[^>]*class\s*=\s*["'][^"']*\bs\b[^"']*["']/gi) || []).length;
     const formAfter = Math.min(Math.max(0, Math.trunc(Number(result.formAfter) || 0)), sections - 1);
-    return { generationId: this.signGeneration(userId, page.id), html: result.html, form: result.form, formAfter };
+    const radius = Math.min(32, Math.max(0, Math.round(Number((result.form as any)?.borderRadius) || 0)));
+    return { generationId: this.signGeneration(userId, page.id), html: result.html, form: { ...result.form, borderRadius: radius }, formAfter };
   }
 
   // startIndex: الرفع على دفعات (حد جسم الطلب 4.5MB في Vercel) مع ترقيم متصل

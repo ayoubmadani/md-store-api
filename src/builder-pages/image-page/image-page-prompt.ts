@@ -86,6 +86,7 @@ export function buildImagePageSystemPrompt(language: ImagePageLanguage): string 
 
 ## نموذج الطلب
 النموذج حقيقي ويأتي بعد الصور. أرجع ألوانه في form بنفس ألوان الصفحة (قيم hex)، وtitle قصير وbuttonText قصير بنفس اللغة.
+borderRadius = انحناء زوايا النموذج وحقوله وأزراره بالبكسل، مطابق لأسلوب الصفحة: 0 لتصميم حاد الزوايا، ومن 8 إلى 20 لتصميم دائري.
 formAfter = ترتيب القسم (من 0) الذي يوضع النموذج بعده، عادة آخر قسم.
 
 ## شكل الإخراج
@@ -150,8 +151,11 @@ export const IMAGE_PAGE_SCHEMA = {
     form: {
       type: 'object',
       additionalProperties: false,
-      required: [...BLOCK_FIELD_KEYS.productForm],
-      properties: Object.fromEntries(BLOCK_FIELD_KEYS.productForm.map((k) => [k, { type: 'string' }])),
+      required: [...BLOCK_FIELD_KEYS.productForm, 'borderRadius'],
+      properties: {
+        ...Object.fromEntries(BLOCK_FIELD_KEYS.productForm.map((k) => [k, { type: 'string' }])),
+        borderRadius: { type: 'integer' },
+      },
     },
     formAfter: { type: 'integer' },
   },

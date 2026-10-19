@@ -46,6 +46,14 @@ describe('ImagePageService.generate', () => {
     now.mockRestore();
   });
 
+  it('clamps the form corner radius to 0..32', async () => {
+    const { svc, anthropic } = setup([]);
+    anthropic.generateImagePage.mockResolvedValueOnce({ html: good, form: { ...form, borderRadius: 99 }, formAfter: 3 });
+    expect((await svc.generate('p1', dto, 'u1')).form.borderRadius).toBe(32);
+    anthropic.generateImagePage.mockResolvedValueOnce({ html: good, form: { ...form, borderRadius: -4 }, formAfter: 3 });
+    expect((await svc.generate('p1', dto, 'u1')).form.borderRadius).toBe(0);
+  });
+
   it('style auto maps from category', () => {
     expect(styleForCategory('Sport & fitness')).toBe('رياضي');
     expect(styleForCategory('ألعاب الأطفال')).toBe('أطفال');
