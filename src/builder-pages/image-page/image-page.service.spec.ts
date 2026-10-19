@@ -1,8 +1,8 @@
 import { ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
 import { ImagePageService, styleForCategory } from './image-page.service';
 
-const good = `<!doctype html><html><body>${'<section class="s" id="a">x</section>'.repeat(4)}</body></html>`;
-const bad = `<!doctype html><html><body><section class="s">x</section></body></html>`;
+const good = `<!doctype html><html><body>${'<section class="s" id="page">x</section>'}</body></html>`;
+const bad = `<!doctype html><html><body><section class="s">x</section><section class="s">y</section></body></html>`;
 const form = { title: 't', buttonText: 'b', backgroundColor: '#fff', textColor: '#000', buttonBackgroundColor: '#f00', buttonTextColor: '#fff', inputBackgroundColor: '#fff', inputBorderColor: '#ccc', inputTextColor: '#000', containerBackgroundColor: '#eee' };
 
 function setup(outputs: { html: string }[], product: any = null) {
@@ -24,7 +24,7 @@ describe('ImagePageService.generate', () => {
     expect(anthropic.generateImagePage).toHaveBeenCalledTimes(2);
     expect(anthropic.generateImagePage.mock.calls[1][1]).toContain('عدد الأقسام');
     expect(res.html).toBe(good);
-    expect(res.formAfter).toBe(3);
+    expect(res.formAfter).toBe(0); // قسم واحد: النموذج بعد الصورة
     expect(res.generationId).toMatch(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]+$/);
   });
 
@@ -82,6 +82,9 @@ describe('ImagePageService.uploadSections chunks', () => {
   it('numbers files from startIndex and caps the total at 6', async () => {
     const { svc, s3 } = setup([{ html: good }]);
     const { generationId } = await svc.generate('p1', dto, 'u1');
+    const big = { buffer: Buffer.from('a'), mimetype: 'image/webp', size: 3.5 * 1024 * 1024 } as any;
+    await expect(svc.uploadSections('p1', generationId, [big], 'u1')).resolves.toEqual({ urls: [expect.any(String)] }); // صورة طويلة واحدة
+    s3.uploadBuffer.mockClear();
     const file = { buffer: Buffer.from('a'), mimetype: 'image/webp', size: 10 } as any;
     await svc.uploadSections('p1', generationId, [file, file], 'u1', 3);
     expect(s3.uploadBuffer.mock.calls.map((c: any[]) => c[1].split('/').pop())).toEqual(['4.webp', '5.webp']);

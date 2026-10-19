@@ -150,7 +150,7 @@ export class BuilderPagesController {
 
   @Post(':id/image-page-sections')
   @UseGuards(AuthGuard)
-  @UseInterceptors(FilesInterceptor('files', 6, { limits: { fileSize: 2 * 1024 * 1024 } }))
+  @UseInterceptors(FilesInterceptor('files', 6, { limits: { fileSize: 4 * 1024 * 1024 } }))
   uploadImagePageSections(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('generationId') generationId: string,

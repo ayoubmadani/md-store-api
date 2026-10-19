@@ -13,7 +13,8 @@ import { ImagePageInput, buildImagePageSystemPrompt, buildImagePageUserMessage, 
 export const IMAGE_PAGE_SECRET = 'IMAGE_PAGE_SECRET';
 const AUTO_STYLES = ['auto', 'تلقائي'];
 const SECTION_TYPES: Record<string, string> = { 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png' };
-const MAX_SECTION_BYTES = 2 * 1024 * 1024;
+// الصفحة صورة طويلة واحدة — أقل من حد جسم الطلب في Vercel (4.5MB)
+const MAX_SECTION_BYTES = 4 * 1024 * 1024;
 // دالة Vercel تُقطع عند 300 ثانية: لا نعيد المحاولة إن أخذت الأولى أكثر من دقيقتين
 const RETRY_BUDGET_MS = 120_000;
 
@@ -80,7 +81,7 @@ export class ImagePageService {
     if (!files?.length || start + files.length > 6) throw new BadRequestException('من 1 إلى 6 صور');
     for (const f of files) {
       if (!SECTION_TYPES[f.mimetype]) throw new BadRequestException('الصيغ المقبولة: webp و jpeg و png');
-      if (f.size > MAX_SECTION_BYTES) throw new BadRequestException('حجم الصورة أكبر من 2MB');
+      if (f.size > MAX_SECTION_BYTES) throw new BadRequestException('حجم الصورة أكبر من 4MB');
     }
     // لا تُحسب من totalImagesNumber: جزء من صفحة الصور نفسها
     const uploaded = await Promise.all(files.map((f, i) =>

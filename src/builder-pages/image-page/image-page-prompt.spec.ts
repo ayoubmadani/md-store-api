@@ -12,36 +12,33 @@ const page = (n: number, extra = '') =>
   `<!doctype html><html dir="rtl" lang="ar"><head><style>:root{--a:#000}</style></head><body>${Array.from({ length: n }, () => section()).join('')}${extra}</body></html>`;
 
 describe('validateImagePageHtml', () => {
-  it('accepts 3..4 sections', () => {
-    expect(validateImagePageHtml(page(3), 2, 2)).toEqual({ ok: true });
-    expect(validateImagePageHtml(page(4), 2, 2)).toEqual({ ok: true });
+  it('accepts exactly one section', () => {
+    expect(validateImagePageHtml(page(1), 2, 2)).toEqual({ ok: true });
   });
-  it('rejects 2 sections', () => {
+  it('rejects 0 or 2 sections', () => {
+    expect(validateImagePageHtml(page(0), 2, 2).ok).toBe(false);
     expect(validateImagePageHtml(page(2), 2, 2).ok).toBe(false);
   });
-  it('rejects 5 sections (cost cap)', () => {
-    expect(validateImagePageHtml(page(5), 2, 2).ok).toBe(false);
-  });
   it('rejects script', () => {
-    expect(validateImagePageHtml(page(3, '<script>alert(1)</script>'), 2, 2).ok).toBe(false);
+    expect(validateImagePageHtml(page(1, '<script>alert(1)</script>'), 2, 2).ok).toBe(false);
   });
   it('rejects onclick=', () => {
-    expect(validateImagePageHtml(page(3, '<div onclick="x()">a</div>'), 2, 2).ok).toBe(false);
+    expect(validateImagePageHtml(page(1, '<div onclick="x()">a</div>'), 2, 2).ok).toBe(false);
   });
   it('rejects external url in src', () => {
-    expect(validateImagePageHtml(page(3, '<img src="https://evil.com/a.png">'), 2, 2).ok).toBe(false);
+    expect(validateImagePageHtml(page(1, '<img src="https://evil.com/a.png">'), 2, 2).ok).toBe(false);
   });
   it('rejects external url in css url()', () => {
-    expect(validateImagePageHtml(page(3, '<div style="background:url(http://x.com/a.png)"></div>'), 2, 2).ok).toBe(false);
+    expect(validateImagePageHtml(page(1, '<div style="background:url(http://x.com/a.png)"></div>'), 2, 2).ok).toBe(false);
   });
   it('rejects position:fixed', () => {
-    expect(validateImagePageHtml(page(3, '<div style="position: fixed">a</div>'), 2, 2).ok).toBe(false);
+    expect(validateImagePageHtml(page(1, '<div style="position: fixed">a</div>'), 2, 2).ok).toBe(false);
   });
   it('rejects unknown placeholder {{IMG_4}} when cutouts=3', () => {
-    expect(validateImagePageHtml(page(3, '<img src="{{IMG_4}}">'), 3, 0).ok).toBe(false);
+    expect(validateImagePageHtml(page(1, '<img src="{{IMG_4}}">'), 3, 0).ok).toBe(false);
   });
   it('accepts known placeholders', () => {
-    expect(validateImagePageHtml(page(3, '<img src="{{IMG_1}}"><img src="{{DETAIL_2}}">'), 1, 2)).toEqual({ ok: true });
+    expect(validateImagePageHtml(page(1, '<img src="{{IMG_1}}"><img src="{{DETAIL_2}}">'), 1, 2)).toEqual({ ok: true });
   });
 });
 
@@ -86,12 +83,9 @@ describe('IMAGE_PAGE_SCHEMA', () => {
   it('form keys are exactly the productForm block keys', () => {
     expect(Object.keys((IMAGE_PAGE_SCHEMA as any).properties.form.properties).sort()).toEqual([...BLOCK_FIELD_KEYS.productForm].sort());
   });
-  it('asks for compact output to keep cost low', () => {
+  it('asks for one continuous section', () => {
     const p = buildImagePageSystemPrompt('ar');
-    expect(p).toContain('بدون تعليقات');
-    expect(p).toContain('بدون مسافات بادئة');
-  });
-  it('asks for 3 to 4 sections only', () => {
-    expect(buildImagePageSystemPrompt('ar')).toContain('من 3 إلى 4 أقسام فقط');
+    expect(p).toContain('قسم واحد فقط');
+    expect(p).not.toContain('بدون تعليقات');
   });
 });
