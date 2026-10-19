@@ -1,8 +1,8 @@
 import { ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
 import { ImagePageService, styleForCategory } from './image-page.service';
 
-const good = `<!doctype html><html><body>${'<section class="s" id="page">x</section>'}</body></html>`;
-const bad = `<!doctype html><html><body><section class="s">x</section><section class="s">y</section></body></html>`;
+const good = `<!doctype html><html><body>${'<section class="s" id="a">x</section>'.repeat(4)}</body></html>`;
+const bad = `<!doctype html><html><body><section class="s">x</section></body></html>`;
 const form = { title: 't', buttonText: 'b', backgroundColor: '#fff', textColor: '#000', buttonBackgroundColor: '#f00', buttonTextColor: '#fff', inputBackgroundColor: '#fff', inputBorderColor: '#ccc', inputTextColor: '#000', containerBackgroundColor: '#eee' };
 
 function setup(outputs: { html: string }[], product: any = null) {
@@ -24,7 +24,7 @@ describe('ImagePageService.generate', () => {
     expect(anthropic.generateImagePage).toHaveBeenCalledTimes(2);
     expect(anthropic.generateImagePage.mock.calls[1][1]).toContain('عدد الأقسام');
     expect(res.html).toBe(good);
-    expect(res.formAfter).toBe(0); // قسم واحد: النموذج بعد الصورة
+    expect(res.formAfter).toBe(3);
     expect(res.generationId).toMatch(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]+$/);
   });
 
