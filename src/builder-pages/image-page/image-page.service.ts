@@ -105,7 +105,7 @@ export class ImagePageService {
   }
 
   private async buildInput(dto: GenerateImagePageDto, storeId: string): Promise<ImagePageInput> {
-    const base = { language: dto.language, palette: dto.palette, cutouts: dto.cutouts, details: dto.details ?? 0, shipsAllWilayas: false };
+    const base = { language: dto.language, palette: dto.palette, backgroundPalette: dto.backgroundPalette, cutouts: dto.cutouts, details: dto.details ?? 0, shipsAllWilayas: false };
     if (dto.productId) {
       const product = await this.productRepo.findOne({ where: { id: dto.productId }, relations: ['store', 'category', 'attributes', 'attributes.variants'] });
       if (!product || product.store?.id !== storeId) throw new NotFoundException('المنتج غير موجود');

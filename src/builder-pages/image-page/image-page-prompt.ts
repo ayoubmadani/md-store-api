@@ -14,6 +14,7 @@ export type ImagePageInput = {
   language: ImagePageLanguage;
   style: string;
   palette: string[];
+  backgroundPalette?: string[];
   cutouts: number;
   details: number;
   shipsAllWilayas: boolean;
@@ -70,7 +71,12 @@ export function buildImagePageSystemPrompt(language: ImagePageLanguage): string 
 - صور DETAIL صور أصلية للتفاصيل: اعرضها بإطار أو زوايا مستديرة مع object-fit: cover.
 
 ## الألوان
-ابنِ كل الألوان من القائمة المعطاة، ويمكنك إضافة لون فاتح ولون داكن للنص فقط. استعمل متغيرات CSS داخل :root.
+اختر لوحة ألوان جميلة تُبرز المنتج، من أحد هذه المصادر أو بمزجها:
+- ألوان المنتج: للمسات صغيرة تربط التصميم بالمنتج (أزرار، شارات، خطوط).
+- ألوان خلفية الصورة الأصلية: غالباً مناسبة كخلفية هادئة.
+- ألوان تقترحها أنت حسب نوع المنتج وفئته وطابعه (مثلاً: أطفال ← ألوان فاتحة مرحة، فاخر ← داكن مع ذهبي، طبي ← أبيض وأزرق هادئ).
+قاعدة إلزامية: لا تجعل لون المنتج الرئيسي خلفية القسم الذي يظهر فيه المنتج؛ الخلفية يجب أن تتباين معه حتى يبرز بوضوح.
+تباين النص مع خلفيته واضح دائماً. استعمل متغيرات CSS داخل :root.
 
 ## قواعد تقنية
 - ملف HTML واحد، الأنماط داخل <style>، بدون JavaScript، بدون on* events.
@@ -102,8 +108,9 @@ export function buildImagePageUserMessage(input: ImagePageInput, variation: { he
 - صور المنتج بدون خلفية: ${cut}
 - صور تفاصيل: ${det}
 
-## الألوان المستخرجة من صورة المنتج
-${input.palette.join('، ')}
+## الألوان
+- ألوان المنتج: ${input.palette.join('، ')}
+- ألوان خلفية الصورة الأصلية: ${input.backgroundPalette?.length ? input.backgroundPalette.join('، ') : 'غير متوفرة'}
 
 ## الطابع والتخطيط المطلوب
 - الطابع العام: ${input.style}

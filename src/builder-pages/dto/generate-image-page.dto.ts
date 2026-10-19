@@ -33,6 +33,13 @@ export class GenerateImagePageDto {
   @Matches(/^#[0-9a-fA-F]{6}$/, { each: true })
   palette: string[];
 
+  // ألوان خلفية الصورة الأصلية (قبل إزالتها) — Claude يختار منها أو من ألوان المنتج أو يقترح
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(6)
+  @Matches(/^#[0-9a-fA-F]{6}$/, { each: true })
+  backgroundPalette?: string[];
+
   @Type(() => Number)
   @IsInt()
   @Min(1)

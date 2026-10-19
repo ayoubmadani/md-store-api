@@ -75,6 +75,28 @@ describe('buildImagePageUserMessage', () => {
   });
 });
 
+describe('colors', () => {
+  const input = { productName: 'x', description: '', price: 1, language: 'ar' as const, style: 'أطفال', cutouts: 1, details: 0, shipsAllWilayas: false };
+
+  it('sends product and original-background colors separately', () => {
+    const m = buildImagePageUserMessage({ ...input, palette: ['#e8410c'], backgroundPalette: ['#f2e6d8'] }, { heroLayout: 'H', decor: 'D' });
+    expect(m).toContain('ألوان المنتج: #e8410c');
+    expect(m).toContain('ألوان خلفية الصورة الأصلية: #f2e6d8');
+  });
+
+  it('works without background colors', () => {
+    const m = buildImagePageUserMessage({ ...input, palette: ['#e8410c'] }, { heroLayout: 'H', decor: 'D' });
+    expect(m).toContain('ألوان خلفية الصورة الأصلية: غير متوفرة');
+  });
+
+  it('lets the model choose colors that make the product stand out', () => {
+    const p = buildImagePageSystemPrompt('ar');
+    expect(p).toContain('حسب نوع المنتج');
+    expect(p).toContain('لا تجعل لون المنتج الرئيسي خلفية');
+    expect(p).not.toContain('ابنِ كل الألوان من القائمة المعطاة');
+  });
+});
+
 describe('pickVariation', () => {
   it('is deterministic with a stubbed rand', () => {
     expect(pickVariation(() => 0)).toEqual(pickVariation(() => 0));
