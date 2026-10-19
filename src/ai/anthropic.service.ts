@@ -91,7 +91,7 @@ export class AnthropicService {
   // is actually called, so that's where it's now checked.
   constructor(private configService: ConfigService) {
     this.model = this.configService.get<string>('ANTHROPIC_MODEL') || 'claude-opus-4-8';
-    this.imagePageModel = this.configService.get<string>('IMAGE_PAGE_MODEL') || 'claude-haiku-5-5';
+    this.imagePageModel = this.configService.get<string>('IMAGE_PAGE_MODEL') || 'claude-sonnet-5-5';
   }
 
   private getClient(): Anthropic {
