@@ -12,15 +12,15 @@ const page = (n: number, extra = '') =>
   `<!doctype html><html dir="rtl" lang="ar"><head><style>:root{--a:#000}</style></head><body>${Array.from({ length: n }, () => section()).join('')}${extra}</body></html>`;
 
 describe('validateImagePageHtml', () => {
-  it('accepts 3..6 sections', () => {
+  it('accepts 3..4 sections', () => {
     expect(validateImagePageHtml(page(3), 2, 2)).toEqual({ ok: true });
-    expect(validateImagePageHtml(page(6), 2, 2)).toEqual({ ok: true });
+    expect(validateImagePageHtml(page(4), 2, 2)).toEqual({ ok: true });
   });
   it('rejects 2 sections', () => {
     expect(validateImagePageHtml(page(2), 2, 2).ok).toBe(false);
   });
-  it('rejects 7 sections', () => {
-    expect(validateImagePageHtml(page(7), 2, 2).ok).toBe(false);
+  it('rejects 5 sections (cost cap)', () => {
+    expect(validateImagePageHtml(page(5), 2, 2).ok).toBe(false);
   });
   it('rejects script', () => {
     expect(validateImagePageHtml(page(3, '<script>alert(1)</script>'), 2, 2).ok).toBe(false);
@@ -90,5 +90,8 @@ describe('IMAGE_PAGE_SCHEMA', () => {
     const p = buildImagePageSystemPrompt('ar');
     expect(p).toContain('بدون تعليقات');
     expect(p).toContain('بدون مسافات بادئة');
+  });
+  it('asks for 3 to 4 sections only', () => {
+    expect(buildImagePageSystemPrompt('ar')).toContain('من 3 إلى 4 أقسام فقط');
   });
 });

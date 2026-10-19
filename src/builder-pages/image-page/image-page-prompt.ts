@@ -32,11 +32,10 @@ export function buildImagePageSystemPrompt(language: ImagePageLanguage): string 
 مهمتك: كتابة قالب HTML واحد يحتوي على أقسام صفحة هبوط، كل قسم سيُحوَّل إلى صورة مستقلة، مع ألوان نموذج الطلب الذي يأتي بعد الصور.
 
 ## الأقسام المطلوبة بالترتيب
-1. القسم الرئيسي: عنوان قوي، صورة المنتج، السعر.
-2. الفوائد: من 3 إلى 4 فوائد مع أيقونات SVG بسيطة.
-3. التفاصيل: صور التفاصيل المقربة مع شرح قصير لكل واحدة (فقط إذا وُجدت صور تفاصيل).
-4. المقاسات أو الخيارات: فقط إذا كانت موجودة في المعلومات.
-5. الثقة: الدفع عند الاستلام، التوصيل، المعاينة قبل الدفع، ثم دعوة لملء الاستمارة أسفل الصور.
+1. القسم الرئيسي: عنوان قوي، صورة المنتج، السعر، والمقاسات أو الخيارات في سطر قصير إن وُجدت.
+2. الفوائد: 3 فوائد مع أيقونات SVG بسيطة.
+3. التفاصيل: صور التفاصيل مع شرح قصير لكل واحدة (فقط إذا وُجدت صور تفاصيل).
+4. الثقة: الدفع عند الاستلام، التوصيل، المعاينة قبل الدفع، ثم دعوة لملء الاستمارة أسفل الصور.
 لا تضف أي قسم آخر: لا آراء أو شهادات، ولا مقارنات نتائج.
 
 ## قواعد المقاسات (إلزامية)
@@ -45,7 +44,7 @@ export function buildImagePageSystemPrompt(language: ImagePageLanguage): string 
 - الهوامش الجانبية 32 بكسل على الأقل.
 - أصغر حجم خط 26 بكسل، والعناوين 48 بكسل فما فوق.
 - لا يخرج أي نص أو صورة عن حدود القسم (overflow: hidden على كل قسم).
-- من 3 إلى 6 أقسام فقط.
+- من 3 إلى 4 أقسام فقط.
 
 ## قواعد الخطوط
 الخطوط المتاحة فقط (محمّلة مسبقاً، لا تستوردها):
@@ -158,7 +157,7 @@ export const IMAGE_PAGE_SCHEMA = {
 
 export function validateImagePageHtml(html: string, cutouts: number, details: number): { ok: true } | { ok: false; reason: string } {
   const sections = (html.match(/<section\b[^>]*class\s*=\s*["'][^"']*\bs\b[^"']*["']/gi) || []).length;
-  if (sections < 3 || sections > 6) return { ok: false, reason: `عدد الأقسام ${sections} — المطلوب من 3 إلى 6 أقسام <section class="s">` };
+  if (sections < 3 || sections > 4) return { ok: false, reason: `عدد الأقسام ${sections} — المطلوب من 3 إلى 4 أقسام <section class="s">` };
   if (/<script\b/i.test(html)) return { ok: false, reason: 'ممنوع <script>' };
   if (/\son[a-z]+\s*=/i.test(html)) return { ok: false, reason: 'ممنوع on* events' };
   if (/(https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(html.replace(/xmlns(:\w+)?="[^"]*"/g, ''))) return { ok: false, reason: 'ممنوع أي رابط خارجي — استعمل الخانات فقط' };
