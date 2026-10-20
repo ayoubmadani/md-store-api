@@ -15,6 +15,7 @@ export type ImagePageInput = {
   style: string;
   palette: string[];
   backgroundPalette?: string[];
+  primaryColor?: string;
   cutouts: number;
   details: number;
   shipsAllWilayas: boolean;
@@ -76,6 +77,7 @@ export function buildImagePageSystemPrompt(language: ImagePageLanguage): string 
 - ألوان خلفية الصورة الأصلية: غالباً مناسبة كخلفية هادئة.
 - ألوان تقترحها أنت حسب نوع المنتج وفئته وطابعه (مثلاً: أطفال ← ألوان فاتحة مرحة، فاخر ← داكن مع ذهبي، طبي ← أبيض وأزرق هادئ).
 قاعدة إلزامية: لا تجعل لون المنتج الرئيسي خلفية القسم الذي يظهر فيه المنتج؛ الخلفية يجب أن تتباين معه حتى يبرز بوضوح.
+إذا أعطاك التاجر لوناً أساسياً فهو إلزامي: اجعله اللون الرئيسي للصفحة (الأزرار، العناوين المميزة، الشارات، زر النموذج)، ثم استنتج لوناً ثانوياً متناسقاً معه (مكمّل أو متجاور على عجلة الألوان) ولون خلفية هادئاً يُبرز المنتج.
 تباين النص مع خلفيته واضح دائماً. استعمل متغيرات CSS داخل :root.
 
 ## قواعد تقنية
@@ -113,7 +115,7 @@ export function buildImagePageUserMessage(input: ImagePageInput, variation: { he
 
 ## الألوان
 - ألوان المنتج: ${input.palette.join('، ')}
-- ألوان خلفية الصورة الأصلية: ${input.backgroundPalette?.length ? input.backgroundPalette.join('، ') : 'غير متوفرة'}
+- ألوان خلفية الصورة الأصلية: ${input.backgroundPalette?.length ? input.backgroundPalette.join('، ') : 'غير متوفرة'}${input.primaryColor ? `\n- اللون الأساسي الذي اختاره التاجر: ${input.primaryColor} (إلزامي — استنتج منه الثانوي)` : ''}
 
 ## الطابع والتخطيط المطلوب
 - الطابع العام: ${input.style}

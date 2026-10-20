@@ -40,6 +40,11 @@ export class GenerateImagePageDto {
   @Matches(/^#[0-9a-fA-F]{6}$/, { each: true })
   backgroundPalette?: string[];
 
+  // لون التاجر الأساسي (اختياري) — Claude يستنتج منه اللون الثانوي
+  @IsOptional()
+  @Matches(/^#[0-9a-fA-F]{6}$/)
+  primaryColor?: string;
+
   @Type(() => Number)
   @IsInt()
   @Min(1)

@@ -89,6 +89,17 @@ describe('colors', () => {
     expect(m).toContain('ألوان خلفية الصورة الأصلية: غير متوفرة');
   });
 
+  it('merchant primary color: sent as the main color, secondary is derived', () => {
+    const m = buildImagePageUserMessage({ ...input, palette: ['#e8410c'], primaryColor: '#0a7d4f' }, { heroLayout: 'H', decor: 'D' });
+    expect(m).toContain('اللون الأساسي الذي اختاره التاجر: #0a7d4f');
+    expect(buildImagePageSystemPrompt('ar')).toContain('استنتج لوناً ثانوياً');
+  });
+
+  it('no primary color line when the merchant did not pick one', () => {
+    const m = buildImagePageUserMessage({ ...input, palette: ['#e8410c'] }, { heroLayout: 'H', decor: 'D' });
+    expect(m).not.toContain('اللون الأساسي الذي اختاره التاجر');
+  });
+
   it('lets the model choose colors that make the product stand out', () => {
     const p = buildImagePageSystemPrompt('ar');
     expect(p).toContain('حسب نوع المنتج');
