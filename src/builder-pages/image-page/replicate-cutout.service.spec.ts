@@ -45,4 +45,15 @@ describe('ReplicateCutoutService', () => {
     jest.spyOn(global, 'fetch').mockResolvedValueOnce(json({ id: 'p', status: 'failed', error: 'oom' }));
     await expect(new ReplicateCutoutService(config).removeBackground(Buffer.from('x'), 'image/jpeg')).rejects.toBeInstanceOf(BadGatewayException);
   });
+
+  it('waits and retries when Replicate throttles (429, low credit)', async () => {
+    const out = await png();
+    const fetchMock = jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(json({ detail: 'Request was throttled', status: 429, retry_after: 1 }, 429))
+      .mockResolvedValueOnce(json({ id: 'p1', status: 'succeeded', output: 'https://replicate.delivery/x.png' }))
+      .mockResolvedValueOnce(new Response(new Uint8Array(out)));
+    const webp = await new ReplicateCutoutService(config, 0).removeBackground(Buffer.from('jpg'), 'image/jpeg');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect((await sharp(webp).metadata()).format).toBe('webp');
+  });
 });

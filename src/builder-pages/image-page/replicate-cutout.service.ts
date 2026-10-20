@@ -7,6 +7,8 @@ import sharp from 'sharp';
 export const BIREFNET_VERSION = '21f2c4a9159af128ab9b9126401eebe7f8c5310841ed628b74a4c462df00da67'; // sprited/birefnet
 const API = 'https://api.replicate.com/v1/predictions';
 const DEADLINE_MS = 90_000;
+// رصيد أقل من 5$: Replicate يقبل طلباً واحداً في المرة (6 في الدقيقة) ويرد 429 — ننتظر ونعيد
+const THROTTLE_BUDGET_MS = 45_000;
 
 type Prediction = { id?: string; status?: string; output?: string | string[]; error?: string; urls?: { get?: string } };
 
@@ -23,11 +25,23 @@ export class ReplicateCutoutService {
     return { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
   }
 
+  // pollMs = 0 في الاختبارات: بلا انتظار فعلي
+  private sleep(ms: number) {
+    return new Promise((r) => setTimeout(r, this.pollMs ? ms : 0));
+  }
+
   private async call(url: string, init?: RequestInit): Promise<Prediction> {
-    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(70_000) }).catch(() => null);
-    const body = (await res?.json().catch(() => null)) as Prediction & { detail?: string } | null;
-    if (!res?.ok || !body) throw new BadGatewayException(`تعذّرت إزالة الخلفية${body?.detail ? `: ${body.detail}` : ''}`);
-    return body;
+    const started = Date.now();
+    for (;;) {
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(70_000) }).catch(() => null);
+      const body = (await res?.json().catch(() => null)) as (Prediction & { detail?: string; retry_after?: number }) | null;
+      if (res?.status === 429 && Date.now() - started < THROTTLE_BUDGET_MS) {
+        await this.sleep(Math.max(1, Number(body?.retry_after) || 2) * 1000 + 250);
+        continue;
+      }
+      if (!res?.ok || !body) throw new BadGatewayException(`تعذّرت إزالة الخلفية${body?.detail ? `: ${body.detail}` : ''}`);
+      return body;
+    }
   }
 
   async removeBackground(image: Buffer, mime: string): Promise<Buffer> {
@@ -43,7 +57,7 @@ export class ReplicateCutoutService {
     const started = Date.now();
     while (p.status !== 'succeeded' && p.status !== 'failed' && p.status !== 'canceled') {
       if (!p.urls?.get || Date.now() - started > DEADLINE_MS) throw new BadGatewayException('انتهت مهلة إزالة الخلفية، حاول مرة أخرى');
-      await new Promise((r) => setTimeout(r, this.pollMs));
+      await this.sleep(this.pollMs);
       p = await this.call(p.urls.get, { headers });
     }
     const url = Array.isArray(p.output) ? p.output[0] : p.output;
