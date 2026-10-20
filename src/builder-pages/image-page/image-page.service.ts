@@ -7,6 +7,7 @@ import { Product } from '../../product/entities/product.entity';
 import { AnthropicService } from '../../ai/anthropic.service';
 import { S3Service } from '../../image/s3.service';
 import { ImagePageQuotaService } from './image-page-quota.service';
+import { ReplicateCutoutService } from './replicate-cutout.service';
 import { GenerateImagePageDto } from '../dto/generate-image-page.dto';
 import { ImagePageInput, buildImagePageSystemPrompt, buildImagePageUserMessage, pickVariation, validateImagePageHtml } from './image-page-prompt';
 
@@ -40,6 +41,7 @@ export class ImagePageService {
     private readonly s3: S3Service,
     private readonly quota: ImagePageQuotaService,
     @Inject(IMAGE_PAGE_SECRET) private readonly secret: string,
+    private readonly cutter: ReplicateCutoutService,
   ) { }
 
   usage(userId: string) {
@@ -88,6 +90,16 @@ export class ImagePageService {
     const uploaded = await Promise.all(files.map((f, i) =>
       this.s3.uploadBuffer(f.buffer, `image-pages/${page.storeId}/${uuid}/${start + i + 1}.${SECTION_TYPES[f.mimetype]}`, f.mimetype)));
     return { urls: uploaded.map((u) => u.url) };
+  }
+
+  // إزالة خلفية صورة واحدة (BiRefNet على الخادم). فقط لمن خطته فيها صفحات صور — حتى لا يُستهلك رصيد Replicate مجاناً
+  async cutout(pageId: string, file: Express.Multer.File, userId: string): Promise<Buffer> {
+    await this.pages.findOne(pageId, userId);
+    if (!file || !/^image\/(jpeg|png|webp)$/.test(file.mimetype)) throw new BadRequestException('أرسل صورة JPG أو PNG أو WebP');
+    if (file.size > MAX_SECTION_BYTES) throw new BadRequestException('حجم الصورة أكبر من 4MB');
+    const { limit } = await this.quota.usage(userId);
+    if (!limit) throw new ForbiddenException('صفحات الصور غير متاحة في خطتك — رقِّ خطتك');
+    return this.cutter.removeBackground(file.buffer, file.mimetype);
   }
 
   // صور المنتج الحالية للمتصفح (R2 بلا CORS): صورة واحدة لكل طلب، فقط من منتج تابع لمتجر الصفحة

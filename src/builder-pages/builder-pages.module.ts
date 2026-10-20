@@ -13,6 +13,7 @@ import { ImageModule } from '../image/image.module';
 import { IMAGE_PAGE_SECRET, ImagePageService } from './image-page/image-page.service';
 import { ImagePageQuotaService } from './image-page/image-page-quota.service';
 import { ImagePageGeneration } from './image-page/image-page-generation.entity';
+import { ReplicateCutoutService } from './image-page/replicate-cutout.service';
 
 @Module({
   controllers: [BuilderPagesController],
@@ -20,6 +21,7 @@ import { ImagePageGeneration } from './image-page/image-page-generation.entity';
     BuilderPagesService,
     ImagePageService,
     ImagePageQuotaService,
+    ReplicateCutoutService,
     { provide: IMAGE_PAGE_SECRET, inject: [ConfigService], useFactory: (c: ConfigService) => c.get<string>('JWT_SECRET') || '' },
   ],
   exports: [BuilderPagesService],

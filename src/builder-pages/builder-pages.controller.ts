@@ -1,6 +1,6 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query, Res, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query, Res, UploadedFile, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
 import type { Response } from 'express';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { IsOptional, IsUUID, ValidateIf } from 'class-validator';
 import { BuilderPagesService } from './builder-pages.service';
 import { CreateBuilderPageDto } from './dto/create-builder-page.dto';
@@ -133,6 +133,20 @@ export class BuilderPagesController {
   @UseGuards(AuthGuard)
   generateImagePage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: GenerateImagePageDto, @GetUser() user: any) {
     return this.imagePageService.generate(id, dto, this.getUserId(user));
+  }
+
+  // إزالة خلفية صورة منتج لصفحة الصور → WebP شفاف
+  @Post(':id/image-page-cutout')
+  @UseGuards(AuthGuard)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 4 * 1024 * 1024 } }))
+  async imagePageCutout(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @GetUser() user: any,
+    @Res() res: Response,
+  ) {
+    const webp = await this.imagePageService.cutout(id, file, this.getUserId(user));
+    res.set({ 'Content-Type': 'image/webp', 'Cache-Control': 'no-store' }).send(webp);
   }
 
   @Get(':id/image-page-product-photo')

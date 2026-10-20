@@ -11,9 +11,10 @@ function setup(outputs: { html: string }[], product: any = null) {
   const pages = { findOne: jest.fn().mockResolvedValue({ id: 'p1', storeId: 's1' }) };
   const productRepo = { findOne: jest.fn().mockResolvedValue(product) };
   const s3 = { uploadBuffer: jest.fn().mockImplementation((_b: Buffer, key: string) => Promise.resolve({ key, url: `https://cdn/${key}` })) };
-  const quota = { consume: jest.fn().mockImplementation((_u: string, _m: any, run: () => Promise<any>) => run()) };
-  const svc = new ImagePageService(pages as any, productRepo as any, anthropic as any, s3 as any, quota as any, 'secret');
-  return { svc, anthropic, quota, s3, productRepo };
+  const quota = { consume: jest.fn().mockImplementation((_u: string, _m: any, run: () => Promise<any>) => run()), usage: jest.fn().mockResolvedValue({ used: 0, limit: 5 }) };
+  const cutter = { removeBackground: jest.fn().mockResolvedValue(Buffer.from('webp')) };
+  const svc = new ImagePageService(pages as any, productRepo as any, anthropic as any, s3 as any, quota as any, 'secret', cutter as any);
+  return { svc, anthropic, quota, s3, productRepo, cutter };
 }
 const dto = { description: 'فستان قطني', language: 'ar' as const, style: 'فاخر', palette: ['#112233'], cutouts: 2, details: 1 };
 
@@ -116,5 +117,25 @@ describe('ImagePageService.productPhoto', () => {
   it('rejects a product from another store or a missing index', async () => {
     await expect(setup([], { ...product, store: { id: 'other' } }).svc.productPhoto('p1', 'pr', 0, 'u1')).rejects.toThrow('المنتج غير موجود');
     await expect(setup([], product).svc.productPhoto('p1', 'pr', 5, 'u1')).rejects.toThrow('الصورة غير موجودة');
+  });
+});
+
+describe('ImagePageService.cutout', () => {
+  const file = { buffer: Buffer.from('jpg'), mimetype: 'image/jpeg', size: 1000 } as any;
+
+  it('removes the background when the feature is enabled', async () => {
+    const { svc, cutter } = setup([]);
+    expect((await svc.cutout('p1', file, 'u1')).toString()).toBe('webp');
+    expect(cutter.removeBackground).toHaveBeenCalledWith(file.buffer, 'image/jpeg');
+  });
+
+  it('refuses when the plan has no image pages, or a bad file', async () => {
+    const off = setup([]);
+    off.quota.usage.mockResolvedValue({ used: 0, limit: 0 });
+    await expect(off.svc.cutout('p1', file, 'u1')).rejects.toThrow('غير متاحة');
+    expect(off.cutter.removeBackground).not.toHaveBeenCalled();
+    const { svc } = setup([]);
+    await expect(svc.cutout('p1', { ...file, mimetype: 'application/pdf' }, 'u1')).rejects.toThrow('صورة');
+    await expect(svc.cutout('p1', { ...file, size: 5 * 1024 * 1024 }, 'u1')).rejects.toThrow('4MB');
   });
 });
