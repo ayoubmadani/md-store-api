@@ -87,6 +87,8 @@ export function buildImagePageSystemPrompt(language: ImagePageLanguage): string 
 ## نموذج الطلب
 النموذج حقيقي ويأتي بعد الصور. أرجع ألوانه في form بنفس ألوان الصفحة (قيم hex)، وtitle قصير وbuttonText قصير بنفس اللغة.
 borderRadius = انحناء زوايا النموذج وحقوله وأزراره بالبكسل، مطابق لأسلوب الصفحة: 0 لتصميم حاد الزوايا، ومن 8 إلى 20 لتصميم دائري.
+labelPosition = "above" لعنوان فوق كل حقل (أوضح، مناسب للطابع الكلاسيكي أو الطبي)، أو "inside" لاسم الحقل داخله (أبسط وأخف).
+fieldVariant = "outlined" حقول بإطار، أو "filled" حقول ممتلئة بلون فاتح بلا إطار (عصري ناعم)، أو "underline" خط سفلي فقط (فاخر وأنيق). اختر ما يناسب طابع الصفحة.
 formAfter = ترتيب القسم (من 0) الذي يوضع النموذج بعده، عادة آخر قسم.
 
 ## شكل الإخراج
@@ -151,10 +153,12 @@ export const IMAGE_PAGE_SCHEMA = {
     form: {
       type: 'object',
       additionalProperties: false,
-      required: [...BLOCK_FIELD_KEYS.productForm, 'borderRadius'],
+      required: [...BLOCK_FIELD_KEYS.productForm, 'borderRadius', 'labelPosition', 'fieldVariant'],
       properties: {
         ...Object.fromEntries(BLOCK_FIELD_KEYS.productForm.map((k) => [k, { type: 'string' }])),
         borderRadius: { type: 'integer' },
+        labelPosition: { type: 'string', enum: ['inside', 'above'] },
+        fieldVariant: { type: 'string', enum: ['outlined', 'filled', 'underline'] },
       },
     },
     formAfter: { type: 'integer' },

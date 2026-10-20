@@ -107,10 +107,13 @@ describe('pickVariation', () => {
 describe('IMAGE_PAGE_SCHEMA', () => {
   it('form keys are the productForm block keys plus borderRadius', () => {
     const props = (IMAGE_PAGE_SCHEMA as any).properties.form.properties;
-    expect(Object.keys(props).sort()).toEqual([...BLOCK_FIELD_KEYS.productForm, 'borderRadius'].sort());
+    expect(Object.keys(props).sort()).toEqual([...BLOCK_FIELD_KEYS.productForm, 'borderRadius', 'labelPosition', 'fieldVariant'].sort());
     expect(props.borderRadius.type).toBe('integer');
+    expect(props.labelPosition.enum).toEqual(['inside', 'above']);
+    expect(props.fieldVariant.enum).toEqual(['outlined', 'filled', 'underline']);
   });
-  it('asks for a corner radius that matches the design', () => {
-    expect(buildImagePageSystemPrompt('ar')).toContain('borderRadius');
+  it('asks for a corner radius and form style that match the design', () => {
+    const p = buildImagePageSystemPrompt('ar');
+    for (const k of ['borderRadius', 'labelPosition', 'fieldVariant']) expect(p).toContain(k);
   });
 });
