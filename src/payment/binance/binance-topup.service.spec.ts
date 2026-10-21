@@ -7,17 +7,18 @@ const settings = {
     usdtRateDzd: 260,
     binanceTrc20Address: 'TXyz1234567890123456789012345678901',
     binanceBep20Address: '0x' + 'a'.repeat(40),
+    binanceUid: '535950835',
   }),
 };
 
-function setup(deposits: any[] = [], failedLastHour = 0) {
+function setup(deposits: any[] = [], failedLastHour = 0, payTxs: any[] = []) {
   const rows: any[] = [];
   const repo = {
     count: jest.fn(async () => failedLastHour),
     save: jest.fn(async (d: any) => { rows.push(d); return d; }),
     create: jest.fn((d: any) => ({ ...d })),
   };
-  const binance = { listUsdtDeposits: jest.fn().mockResolvedValue(deposits) };
+  const binance = { listUsdtDeposits: jest.fn().mockResolvedValue(deposits), listPayTransactions: jest.fn().mockResolvedValue(payTxs) };
   const credited: any[] = [];
   const payment = {
     handleWalletBalance: jest.fn(async (userId: string, amount: number, _a: string, _t: string, _m: unknown, providerId: string) => {
@@ -36,7 +37,7 @@ const dep = (over: any = {}) => ({ txId: 'Off-chain transfer 98765', coin: 'USDT
 describe('BinanceTopupService.publicConfig', () => {
   it('returns rate and addresses when enabled', async () => {
     const { svc } = setup();
-    expect(await svc.publicConfig()).toMatchObject({ enabled: true, rate: 260, addresses: { TRX: expect.any(String), BSC: expect.any(String) } });
+    expect(await svc.publicConfig()).toMatchObject({ enabled: true, rate: 260, uid: '535950835', addresses: { TRX: expect.any(String), BSC: expect.any(String) } });
   });
 });
 
@@ -86,5 +87,22 @@ describe('BinanceTopupService.claim (transfer code only)', () => {
     const { svc } = setup([dep()]);
     settings.getAll.mockResolvedValueOnce({ binanceEnabled: false, usdtRateDzd: 260, binanceTrc20Address: '', binanceBep20Address: '' });
     await expect(svc.claim('u1', '98765')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('Binance Pay to UID: credits received USDT by the Pay transaction id', async () => {
+    const pay = { transactionId: 'M_P_71505104267788288', amount: '5', currency: 'USDT', orderType: 'C2C', transactionTime: Date.now() };
+    const { svc, credited } = setup([], 0, [pay]);
+    const res = await svc.claim('u1', 'M_P_71505104267788288');
+    expect(res).toMatchObject({ amountDzd: 1300, amountUsdt: 5 });
+    expect(credited[0].providerId).toBe('binancepay:M_P_71505104267788288');
+  });
+
+  it('Binance Pay: money sent out (negative) or another coin is rejected', async () => {
+    for (const bad of [{ amount: '-5' }, { currency: 'BTC' }]) {
+      const pay = { transactionId: 'P1', amount: '5', currency: 'USDT', orderType: 'C2C', transactionTime: Date.now(), ...bad };
+      const { svc, credited } = setup([], 0, [pay]);
+      await expect(svc.claim('u1', 'P1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(credited).toHaveLength(0);
+    }
   });
 });

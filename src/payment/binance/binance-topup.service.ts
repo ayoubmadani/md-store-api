@@ -13,6 +13,7 @@ import { PlatformSettingsService } from '../../platform-settings/platform-settin
 const NETWORKS = ['TRX', 'BSC'];
 const OK_STATUSES = [1, 6]; // 1 = مكتمل، 6 = وصل (قيد الإفراج للسحب)
 const LOOKBACK_MS = 7 * 24 * 3600_000; // تحويلات آخر 7 أيام
+// Binance Pay: رقم المعاملة (مثل M_P_…) — نقبل USDT المستلَم فقط
 const MAX_FAILED_PER_HOUR = 5;
 
 const normalizeTxId = (v: string) => String(v || '').trim().replace(/^(off-chain|internal)\s+transfer\s+/i, '');
@@ -32,14 +33,15 @@ export class BinanceTopupService {
     const addresses = Object.fromEntries(
       [['TRX', s.binanceTrc20Address], ['BSC', s.binanceBep20Address]].filter(([, v]) => v),
     ) as Record<'TRX' | 'BSC', string>;
-    const enabled = !!(s.binanceEnabled && s.usdtRateDzd && Object.keys(addresses).length);
-    return { enabled, rate: Number(s.usdtRateDzd), addresses };
+    const uid = s.binanceUid || '';
+    const enabled = !!(s.binanceEnabled && s.usdtRateDzd && (Object.keys(addresses).length || uid));
+    return { enabled, rate: Number(s.usdtRateDzd), addresses, uid };
   }
 
   // للواجهة: هل الطريقة متاحة، السعر، وعناوين الإيداع
   async publicConfig() {
     const c = await this.config();
-    return c.enabled ? { enabled: true, rate: c.rate, addresses: c.addresses } : { enabled: false, rate: null, addresses: {} };
+    return c.enabled ? { enabled: true, rate: c.rate, addresses: c.addresses, uid: c.uid || null } : { enabled: false, rate: null, addresses: {}, uid: null };
   }
 
   private failed(userId: string, txId: string, network: string | null = null) {
@@ -66,18 +68,29 @@ export class BinanceTopupService {
       await this.failed(uid, code, dep?.network ?? null);
       throw new Err(message);
     };
-    if (!dep) return reject('رقم التحويل غير موجود في حساب المنصة — تأكد من الرقم ومن التحويل إلى العنوان الصحيح', NotFoundException);
+    if (!dep) {
+      // إرسال عبر Binance Pay إلى UID المنصة
+      const pays = await this.binance.listPayTransactions(Date.now() - LOOKBACK_MS);
+      const pay = pays.find((p) => String(p.transactionId).trim() === String(rawCode || '').trim());
+      if (!pay) return reject('رقم التحويل غير موجود في حساب المنصة — تأكد من الرقم ومن الإرسال إلى العنوان أو الـ UID الصحيح', NotFoundException);
+      if (pay.currency !== 'USDT') return reject('العملة ليست USDT');
+      if (!(Number(pay.amount) > 0)) return reject('هذه معاملة إرسال وليست استلاماً');
+      return this.credit(uid, Number(pay.amount), rate, `binancepay:${pay.transactionId}`, pay.transactionId, 'PAY');
+    }
     if (Number(dep.transferType) !== 1) return reject('نقبل حالياً التحويل من حساب Binance فقط (Internal transfer)');
     if (dep.coin !== 'USDT') return reject('العملة ليست USDT');
     if (!NETWORKS.includes(dep.network)) return reject('الشبكة غير مقبولة — TRC20 أو BEP20');
     if (!OK_STATUSES.includes(Number(dep.status))) return reject('التحويل لم يكتمل بعد، أعد المحاولة بعد دقائق');
 
-    const amountUsdt = Number(dep.amount);
-    const amountDzd = Math.round(amountUsdt * rate * 100) / 100;
-    if (!(amountDzd > 0)) return reject('مبلغ التحويل غير صالح');
+    if (!(Number(dep.amount) > 0)) return reject('مبلغ التحويل غير صالح');
+    return this.credit(uid, Number(dep.amount), rate, `binance:${dep.txId}`, dep.txId, dep.network);
+  }
 
+  // شحن المحفظة بالدينار: المبلغ المستلَم × السعر — مرة واحدة لكل معاملة
+  private async credit(uid: string, amountUsdt: number, rate: number, providerId: string, txId: string, network: string) {
+    const amountDzd = Math.round(amountUsdt * rate * 100) / 100;
     await this.dataSource.transaction(async (manager) => {
-      const res: any = await this.payment.handleWalletBalance(uid, amountDzd, 'ADD', TransactionType.TOP_UP, manager, `binance:${dep.txId}`);
+      const res: any = await this.payment.handleWalletBalance(uid, amountDzd, 'ADD', TransactionType.TOP_UP, manager, providerId);
       if (res?.message === 'Transaction already processed') throw new BadRequestException('رقم التحويل هذا استُعمل من قبل');
       await manager.save(CryptoTopup, {
         userId: uid,
@@ -85,8 +98,8 @@ export class BinanceTopupService {
         amountUsdt: amountUsdt.toFixed(4),
         rate: rate.toFixed(2),
         status: 'paid',
-        txId: dep.txId,
-        network: dep.network,
+        txId,
+        network,
         expiresAt: new Date(),
         paidAt: new Date(),
       });

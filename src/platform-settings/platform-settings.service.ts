@@ -50,6 +50,11 @@ const SETTINGS = {
     default: '',
     parse: (v: unknown) => address(v, /^T[1-9A-HJ-NP-Za-km-z]{33}$/, 'binanceTrc20Address: عنوان TRC20 يبدأ بـ T (34 حرفاً)'),
   },
+  // Binance UID للإرسال عبر Binance Pay (أسهل للتاجر: فوري وبلا رسوم)
+  binanceUid: {
+    default: '',
+    parse: (v: unknown) => address(v, /^\d{6,12}$/, 'binanceUid: أرقام فقط (6 إلى 12)'),
+  },
   binanceBep20Address: {
     default: '',
     parse: (v: unknown) => address(v, /^0x[0-9a-fA-F]{40}$/, 'binanceBep20Address: عنوان BEP20 يبدأ بـ 0x (42 حرفاً)'),
