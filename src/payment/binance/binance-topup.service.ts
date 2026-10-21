@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, MoreThan, Repository } from 'typeorm';
 import { CryptoTopup } from './crypto-topup.entity';
@@ -7,28 +7,15 @@ import { PaymentService } from '../payment.service';
 import { TransactionType } from '../entities/transaction.entity';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 
-const NETWORKS = ['TRX', 'BSC'] as const; // TRC20 و BEP20
-const OK_STATUSES = [1, 6]; // 1 = مكتمل، 6 = وصل (قيد الإفراج للسحب) — المال في الحساب في الحالتين
-const PAY_WINDOW_MS = 60 * 60_000; // مدة الدفع المعروضة للتاجر
-const CONFIRM_GRACE_MS = 24 * 3600_000; // التأكيد مقبول حتى 24 ساعة (تأخر الشبكة/نسيان)
-const MIN_DZD = 500;
-// حالياً: من Binance إلى Binance فقط — بلا رسوم شبكة، فيصل المبلغ الفريد كاملاً
-const INTERNAL_ONLY = true;
+// شحن المحفظة بـ USDT: التاجر يحوّل من حسابه في Binance إلى عنوان المنصة، ثم يُدخل رقم التحويل فقط.
+// نقبل التحويل الداخلي (Binance → Binance) فقط: لا يظهر على البلوكتشين العام، فرقمه لا يعرفه إلا المرسل
+// — لذلك لا حاجة لمبلغ فريد. حماية من تخمين الأرقام: 5 محاولات فاشلة في الساعة لكل تاجر.
+const NETWORKS = ['TRX', 'BSC'];
+const OK_STATUSES = [1, 6]; // 1 = مكتمل، 6 = وصل (قيد الإفراج للسحب)
+const LOOKBACK_MS = 7 * 24 * 3600_000; // تحويلات آخر 7 أيام
+const MAX_FAILED_PER_HOUR = 5;
 
-// رقم التحويل الداخلي يظهر «Off-chain transfer 123…» أو «Internal transfer 123…» — نقبل النص كاملاً أو الرقم فقط
 const normalizeTxId = (v: string) => String(v || '').trim().replace(/^(off-chain|internal)\s+transfer\s+/i, '');
-const MAX_DZD = 500_000;
-
-// مبلغ USDT فريد: المبلغ الأساسي (سنتان) + كسر من 4 أرقام لا يستعمله طلب معلّق آخر
-export function uniqueUsdtAmount(base: number, taken: Set<string>, rand: () => number = Math.random): string {
-  const start = Math.floor(rand() * 99) + 1; // 0.0001 .. 0.0099
-  for (let i = 0; i < 99; i++) {
-    const suffix = ((start - 1 + i) % 99) + 1;
-    const value = (Math.round(base * 100) / 100 + suffix / 10_000).toFixed(4);
-    if (!taken.has(value)) return value;
-  }
-  throw new BadRequestException('طلبات كثيرة بنفس المبلغ الآن، غيّر المبلغ قليلاً أو حاول بعد دقائق');
-}
 
 @Injectable()
 export class BinanceTopupService {
@@ -42,78 +29,68 @@ export class BinanceTopupService {
 
   private async config() {
     const s = await this.settings.getAll();
-    if (!s.binanceEnabled || !s.usdtRateDzd || (!s.binanceTrc20Address && !s.binanceBep20Address)) {
-      throw new ForbiddenException('الدفع بـ Binance غير متاح حالياً');
-    }
-    return { rate: Number(s.usdtRateDzd), addresses: { TRX: s.binanceTrc20Address, BSC: s.binanceBep20Address } };
+    const addresses = Object.fromEntries(
+      [['TRX', s.binanceTrc20Address], ['BSC', s.binanceBep20Address]].filter(([, v]) => v),
+    ) as Record<'TRX' | 'BSC', string>;
+    const enabled = !!(s.binanceEnabled && s.usdtRateDzd && Object.keys(addresses).length);
+    return { enabled, rate: Number(s.usdtRateDzd), addresses };
   }
 
-  // للواجهة: هل الطريقة متاحة وبأي سعر (بدون رمي خطأ)
+  // للواجهة: هل الطريقة متاحة، السعر، وعناوين الإيداع
   async publicConfig() {
-    const s = await this.settings.getAll();
-    const enabled = !!(s.binanceEnabled && s.usdtRateDzd && (s.binanceTrc20Address || s.binanceBep20Address));
-    return { enabled, rate: enabled ? Number(s.usdtRateDzd) : null, minDzd: MIN_DZD, maxDzd: MAX_DZD };
+    const c = await this.config();
+    return c.enabled ? { enabled: true, rate: c.rate, addresses: c.addresses } : { enabled: false, rate: null, addresses: {} };
   }
 
-  async createRequest(userId: string, amountDzd: number) {
-    const amount = Math.round(Number(amountDzd) * 100) / 100;
-    if (!Number.isFinite(amount) || amount < MIN_DZD || amount > MAX_DZD) {
-      throw new BadRequestException(`المبلغ بين ${MIN_DZD} و ${MAX_DZD} د.ج`);
+  private failed(userId: string, txId: string, network: string | null = null) {
+    return this.repo.save(this.repo.create({
+      userId, amountDzd: '0', amountUsdt: '0', rate: '0', status: 'failed' as any, txId: null, network, expiresAt: new Date(),
+    })).catch(() => undefined);
+  }
+
+  async claim(userId: string, rawCode: string) {
+    const uid = String(userId);
+    const code = normalizeTxId(rawCode);
+    if (!code || code.length > 128) throw new BadRequestException('أدخل رقم التحويل');
+    const { enabled, rate } = await this.config();
+    if (!enabled) throw new ForbiddenException('الدفع بـ Binance غير متاح حالياً');
+
+    const recentFails = await this.repo.count({ where: { userId: uid, status: 'failed' as any, createdAt: MoreThan(new Date(Date.now() - 3600_000)) } });
+    if (recentFails >= MAX_FAILED_PER_HOUR) {
+      throw new HttpException('محاولات كثيرة غير صحيحة — حاول بعد ساعة', HttpStatus.TOO_MANY_REQUESTS);
     }
-    const { rate, addresses } = await this.config();
-    // المبالغ المحجوزة: كل طلب معلّق ما زال يُقبل تأكيده
-    const pending = await this.repo.find({ where: { status: 'pending', createdAt: MoreThan(new Date(Date.now() - CONFIRM_GRACE_MS - PAY_WINDOW_MS)) } });
-    const amountUsdt = uniqueUsdtAmount(amount / rate, new Set(pending.map((p) => Number(p.amountUsdt).toFixed(4))));
-    const saved = await this.repo.save(this.repo.create({
-      userId: String(userId),
-      amountDzd: amount.toFixed(2),
-      amountUsdt,
-      rate: rate.toFixed(2),
-      status: 'pending',
-      expiresAt: new Date(Date.now() + PAY_WINDOW_MS),
-    }));
-    return {
-      id: saved.id,
-      amountDzd: amount,
-      amountUsdt,
-      rate,
-      addresses: Object.fromEntries(Object.entries(addresses).filter(([, v]) => v)) as Record<'TRX' | 'BSC', string>,
-      expiresAt: saved.expiresAt,
+
+    const deposits = await this.binance.listUsdtDeposits(Date.now() - LOOKBACK_MS);
+    const dep = deposits.find((d) => normalizeTxId(d.txId) === code);
+    const reject = async (message: string, Err: typeof BadRequestException | typeof NotFoundException = BadRequestException) => {
+      await this.failed(uid, code, dep?.network ?? null);
+      throw new Err(message);
     };
-  }
+    if (!dep) return reject('رقم التحويل غير موجود في حساب المنصة — تأكد من الرقم ومن التحويل إلى العنوان الصحيح', NotFoundException);
+    if (Number(dep.transferType) !== 1) return reject('نقبل حالياً التحويل من حساب Binance فقط (Internal transfer)');
+    if (dep.coin !== 'USDT') return reject('العملة ليست USDT');
+    if (!NETWORKS.includes(dep.network)) return reject('الشبكة غير مقبولة — TRC20 أو BEP20');
+    if (!OK_STATUSES.includes(Number(dep.status))) return reject('التحويل لم يكتمل بعد، أعد المحاولة بعد دقائق');
 
-  async confirm(userId: string, requestId: string, rawTxId: string) {
-    const txId = String(rawTxId || '').trim();
-    if (!txId || txId.length > 128) throw new BadRequestException('أدخل رقم المعاملة (TxID)');
-    const req = await this.repo.findOne({ where: { id: requestId } });
-    if (!req || req.userId !== String(userId)) throw new NotFoundException('طلب الشحن غير موجود');
-    if (req.status === 'paid') return { status: 'paid' as const, amountDzd: Number(req.amountDzd) };
-
-    const created = new Date(req.createdAt).getTime();
-    if (Date.now() > created + PAY_WINDOW_MS + CONFIRM_GRACE_MS) throw new BadRequestException('انتهت صلاحية طلب الشحن، أنشئ طلباً جديداً');
-
-    const deposits = await this.binance.listUsdtDeposits(created - 5 * 60_000);
-    const dep = deposits.find((d) => normalizeTxId(d.txId) === normalizeTxId(txId));
-    if (!dep) throw new NotFoundException('المعاملة غير موجودة بعد في حساب Binance — انتظر تأكيد الشبكة ثم أعد المحاولة');
-    if (dep.coin !== 'USDT') throw new BadRequestException('العملة ليست USDT');
-    if (INTERNAL_ONLY && Number(dep.transferType) !== 1) {
-      throw new BadRequestException('نقبل حالياً التحويل من حساب Binance فقط (سحب من Binance إلى العنوان) — التحويل من محفظة أو منصة أخرى غير مقبول');
-    }
-    if (!NETWORKS.includes(dep.network as (typeof NETWORKS)[number])) throw new BadRequestException('الشبكة غير مقبولة — استعمل TRC20 أو BEP20');
-    if (!OK_STATUSES.includes(Number(dep.status))) throw new BadRequestException('المعاملة لم تكتمل بعد، أعد المحاولة بعد دقائق');
-    // المبلغ الفريد يربط الإيداع بهذا الطلب: TxID منسوخ من معاملة غيرك لن يطابق
-    if (Math.abs(Number(dep.amount) - Number(req.amountUsdt)) > 0.00005) {
-      throw new BadRequestException(`المبلغ لا يطابق الطلب: المطلوب ${req.amountUsdt} USDT بالضبط`);
-    }
-    if (dep.insertTime < created - 5 * 60_000 || dep.insertTime > created + PAY_WINDOW_MS + CONFIRM_GRACE_MS) {
-      throw new BadRequestException('وقت المعاملة خارج مدة هذا الطلب');
-    }
+    const amountUsdt = Number(dep.amount);
+    const amountDzd = Math.round(amountUsdt * rate * 100) / 100;
+    if (!(amountDzd > 0)) return reject('مبلغ التحويل غير صالح');
 
     await this.dataSource.transaction(async (manager) => {
-      const res: any = await this.payment.handleWalletBalance(String(userId), Number(req.amountDzd), 'ADD', TransactionType.TOP_UP, manager, `binance:${dep.txId}`);
-      if (res?.message === 'Transaction already processed') throw new BadRequestException('هذه المعاملة استُعملت من قبل');
-      await manager.save(CryptoTopup, { ...req, status: 'paid', txId: dep.txId, network: dep.network, paidAt: new Date() });
+      const res: any = await this.payment.handleWalletBalance(uid, amountDzd, 'ADD', TransactionType.TOP_UP, manager, `binance:${dep.txId}`);
+      if (res?.message === 'Transaction already processed') throw new BadRequestException('رقم التحويل هذا استُعمل من قبل');
+      await manager.save(CryptoTopup, {
+        userId: uid,
+        amountDzd: amountDzd.toFixed(2),
+        amountUsdt: amountUsdt.toFixed(4),
+        rate: rate.toFixed(2),
+        status: 'paid',
+        txId: dep.txId,
+        network: dep.network,
+        expiresAt: new Date(),
+        paidAt: new Date(),
+      });
     });
-    return { status: 'paid' as const, amountDzd: Number(req.amountDzd) };
+    return { status: 'paid' as const, amountDzd, amountUsdt };
   }
 }

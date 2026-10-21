@@ -94,16 +94,11 @@ export class PaymentController {
     return this.binanceTopup.publicConfig();
   }
 
-  @Post('binance/request')
+  // التاجر يحوّل من حسابه في Binance ثم يُدخل رقم التحويل فقط
+  @Post('binance/claim')
   @UseGuards(AuthGuard)
-  binanceRequest(@GetUser() user: any, @Body('amount') amount: any) {
-    return this.binanceTopup.createRequest(user.sub || user.id, Number(amount));
-  }
-
-  @Post('binance/confirm')
-  @UseGuards(AuthGuard)
-  binanceConfirm(@GetUser() user: any, @Body('requestId') requestId: string, @Body('txId') txId: string) {
-    return this.binanceTopup.confirm(user.sub || user.id, String(requestId || ''), txId);
+  binanceClaim(@GetUser() user: any, @Body('txId') txId: string) {
+    return this.binanceTopup.claim(user.sub || user.id, txId);
   }
 
   @Post('top-up')

@@ -21,7 +21,7 @@ export class CryptoTopup {
   rate: string;
 
   @Column({ type: 'varchar', length: 10, default: 'pending' })
-  status: 'pending' | 'paid';
+  status: 'pending' | 'paid' | 'failed'; // failed = محاولة فاشلة (لحدّ التخمين)
 
   @Column({ type: 'varchar', length: 128, nullable: true, unique: true })
   txId: string | null;
