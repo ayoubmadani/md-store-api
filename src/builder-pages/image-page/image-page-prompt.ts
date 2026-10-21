@@ -97,7 +97,9 @@ formAfter = ترتيب القسم (من 0) الذي يوضع النموذج بع
 JSON فقط مطابق للمخطط: { html, form, formAfter }. html يبدأ بـ <!doctype html>.`;
 }
 
-export function buildImagePageUserMessage(input: ImagePageInput, variation: { heroLayout: string; decor: string }): string {
+export type ImagePageVariation = { direction?: string; heroLayout: string; decor: string; benefitsLayout?: string; backgroundStyle?: string };
+
+export function buildImagePageUserMessage(input: ImagePageInput, variation: ImagePageVariation): string {
   const cut = Array.from({ length: input.cutouts }, (_, i) => `{{IMG_${i + 1}}}`).join('، ') || 'لا يوجد';
   const det = Array.from({ length: input.details }, (_, i) => `{{DETAIL_${i + 1}}}`).join('، ') || 'لا يوجد';
   return `## معلومات المنتج
@@ -117,10 +119,11 @@ export function buildImagePageUserMessage(input: ImagePageInput, variation: { he
 - ألوان المنتج: ${input.palette.join('، ')}
 - ألوان خلفية الصورة الأصلية: ${input.backgroundPalette?.length ? input.backgroundPalette.join('، ') : 'غير متوفرة'}${input.primaryColor ? `\n- اللون الأساسي الذي اختاره التاجر: ${input.primaryColor} (إلزامي — استنتج منه الثانوي)` : ''}
 
-## الطابع والتخطيط المطلوب
-- الطابع العام: ${input.style}
+## اتجاه التصميم (إلزامي — هو ما يجعل هذه الصفحة مختلفة عن غيرها)
+${variation.direction ? `- الأسلوب: ${variation.direction}\n` : ''}- الطابع العام: ${input.style}
 - تخطيط القسم الرئيسي: ${variation.heroLayout}
-- شكل الزخارف: ${variation.decor}
+${variation.benefitsLayout ? `- تخطيط قسم الفوائد: ${variation.benefitsLayout}\n` : ''}${variation.backgroundStyle ? `- الخلفيات: ${variation.backgroundStyle}\n` : ''}- شكل الزخارف: ${variation.decor}
+طبّق هذا الأسلوب على كل الأقسام: الخطوط وأحجامها، توزيع العناصر، الزوايا، الظلال، والمسافات — لا تكتفِ بتغيير الألوان.
 التزم بهذه الاختيارات تماماً، حتى لا تتشابه الصفحات بين التجار.`;
 }
 
@@ -141,9 +144,44 @@ const DECORS = [
   'شرائط مائلة',
 ];
 
-export function pickVariation(rand: () => number = Math.random): { heroLayout: string; decor: string } {
+// اتجاهات تصميم مختلفة جذرياً — كل صفحة تأخذ واحداً، فتختلف البنية لا الألوان فقط
+const DIRECTIONS = [
+  'ملصق إعلاني جريء: عناوين ضخمة جداً تملأ العرض، تباين قوي، كتل لونية كاملة، زوايا حادة، لا ظلال ناعمة',
+  'مجلة أنيقة: مساحات بيضاء واسعة، عناوين متوسطة مع أرقام كبيرة للترتيب، خطوط فاصلة رفيعة، صور بإطارات رفيعة',
+  'فاخر بسيط: خلفيات داكنة أو كريمية، لمسات ذهبية أو معدنية، عناصر قليلة جداً، تباعد كبير بين الأسطر',
+  'مرح وملصقات: أشكال منحنية وفقاعات، عناصر مائلة قليلاً كأنها ملصقات، زوايا دائرية كبيرة، ظلال ملونة صلبة',
+  'متجر عصري ببطاقات: كل معلومة داخل بطاقة بيضاء بظل ناعم وزوايا دائرية، شبكة منتظمة، أيقونات داخل دوائر ملونة',
+  'إعلان سوشيال ميديا: شرائط مائلة، شارات «عرض محدود» و«الأكثر طلباً»، أسهم توجيه، حركة وطاقة عالية',
+  'طبيعي هادئ: ألوان ترابية ناعمة، أشكال عضوية كأوراق الشجر، خطوط منحنية، ملمس ورقي خفيف',
+  'تقني حديث: خطوط شبكية رفيعة، تدرجات لونية لامعة، زوايا مشطوفة، أرقام ومواصفات بخط عريض',
+  'كلاسيكي تقليدي: زخارف وإطارات مزخرفة، عناوين في أشرطة، تناظر في التوزيع، ألوان دافئة عميقة',
+  'كتالوج نظيف: خلفيات فاتحة موحدة، المنتج بطل كل قسم بحجم كبير، نص قليل جداً، تسميات صغيرة تشير لأجزاء المنتج',
+];
+const BENEFITS_LAYOUTS = [
+  'شبكة 2×2 من البطاقات، كل بطاقة أيقونة وعنوان قصير',
+  'قائمة عمودية: أيقونة كبيرة على جانب وجملة على الجانب الآخر، بخط فاصل بين كل فائدة',
+  'المنتج في الوسط والفوائد حوله بخطوط تشير إليه',
+  'أرقام كبيرة مرقمة 01 02 03 مع جملة تحت كل رقم',
+  'شريط أفقي من الدوائر الملونة فيها الأيقونات وتحت كل دائرة كلمتان',
+  'فوائد على شكل علامات صح ✓ داخل شريط ملون عريض',
+];
+const BACKGROUND_STYLES = [
+  'كل قسم بلون خلفية مختلف من اللوحة، بالتناوب فاتح/داكن',
+  'خلفية واحدة فاتحة لكل الأقسام مع كتل لونية خلف المنتج فقط',
+  'تدرجات لونية ناعمة تتغير من قسم لآخر',
+  'خلفية داكنة لكل الصفحة مع عناصر مضيئة',
+  'أنماط خفيفة (نقاط أو خطوط) فوق لون ثابت',
+];
+
+export function pickVariation(rand: () => number = Math.random): Required<ImagePageVariation> {
   const at = (list: string[]) => list[Math.min(list.length - 1, Math.floor(rand() * list.length))];
-  return { heroLayout: at(HERO_LAYOUTS), decor: at(DECORS) };
+  return {
+    direction: at(DIRECTIONS),
+    heroLayout: at(HERO_LAYOUTS),
+    decor: at(DECORS),
+    benefitsLayout: at(BENEFITS_LAYOUTS),
+    backgroundStyle: at(BACKGROUND_STYLES),
+  };
 }
 
 export const IMAGE_PAGE_SCHEMA = {

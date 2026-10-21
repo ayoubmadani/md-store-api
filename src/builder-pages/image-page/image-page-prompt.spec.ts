@@ -113,6 +113,35 @@ describe('pickVariation', () => {
     expect(pickVariation(() => 0)).toEqual(pickVariation(() => 0));
     expect(pickVariation(() => 0)).not.toEqual(pickVariation(() => 0.99));
   });
+
+  it('picks a whole design direction plus benefits layout and background style', () => {
+    const v = pickVariation(() => 0.5);
+    for (const k of ['direction', 'heroLayout', 'decor', 'benefitsLayout', 'backgroundStyle'] as const) expect(v[k]).toEqual(expect.any(String));
+  });
+
+  it('offers many distinct directions so pages do not look alike', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 100; i++) seen.add(pickVariation(() => i / 100).direction);
+    expect(seen.size).toBeGreaterThanOrEqual(8);
+  });
+
+  it('dimensions are drawn independently (not all from the same index)', () => {
+    let n = 0;
+    const seq = [0.5, 0, 0.99, 0.2, 0.8];
+    const v = pickVariation(() => seq[n++ % seq.length]);
+    expect(n).toBe(5);
+    expect(v.direction).not.toEqual(pickVariation(() => 0).direction);
+  });
+});
+
+describe('buildImagePageUserMessage design direction', () => {
+  it('includes the direction, benefits layout and background style', () => {
+    const m = buildImagePageUserMessage(
+      { productName: 'x', description: '', price: 1, language: 'ar', style: 'أطفال', palette: ['#111111'], cutouts: 1, details: 0, shipsAllWilayas: false },
+      { direction: 'DIR-X', heroLayout: 'H', decor: 'D', benefitsLayout: 'BEN-Y', backgroundStyle: 'BG-Z' },
+    );
+    for (const k of ['DIR-X', 'BEN-Y', 'BG-Z']) expect(m).toContain(k);
+  });
 });
 
 describe('IMAGE_PAGE_SCHEMA', () => {
