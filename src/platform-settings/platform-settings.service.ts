@@ -55,6 +55,11 @@ const SETTINGS = {
     default: '',
     parse: (v: unknown) => address(v, /^\d{6,12}$/, 'binanceUid: أرقام فقط (6 إلى 12)'),
   },
+  // رابط استلام Binance Pay (التطبيق: Pay ← Receive ← Share) — يُعرض كـ QR وزر للتاجر
+  binancePayLink: {
+    default: '',
+    parse: (v: unknown) => address(v, /^https:\/\/([a-z0-9-]+\.)*binance\.(com|me)\/\S+$/i, 'binancePayLink: رابط https من binance.com'),
+  },
   binanceBep20Address: {
     default: '',
     parse: (v: unknown) => address(v, /^0x[0-9a-fA-F]{40}$/, 'binanceBep20Address: عنوان BEP20 يبدأ بـ 0x (42 حرفاً)'),

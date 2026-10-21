@@ -34,14 +34,15 @@ export class BinanceTopupService {
       [['TRX', s.binanceTrc20Address], ['BSC', s.binanceBep20Address]].filter(([, v]) => v),
     ) as Record<'TRX' | 'BSC', string>;
     const uid = s.binanceUid || '';
+    const payLink = s.binancePayLink || '';
     const enabled = !!(s.binanceEnabled && s.usdtRateDzd && (Object.keys(addresses).length || uid));
-    return { enabled, rate: Number(s.usdtRateDzd), addresses, uid };
+    return { enabled, rate: Number(s.usdtRateDzd), addresses, uid, payLink };
   }
 
   // للواجهة: هل الطريقة متاحة، السعر، وعناوين الإيداع
   async publicConfig() {
     const c = await this.config();
-    return c.enabled ? { enabled: true, rate: c.rate, addresses: c.addresses, uid: c.uid || null } : { enabled: false, rate: null, addresses: {}, uid: null };
+    return c.enabled ? { enabled: true, rate: c.rate, addresses: c.addresses, uid: c.uid || null, payLink: c.payLink || null } : { enabled: false, rate: null, addresses: {}, uid: null, payLink: null };
   }
 
   private failed(userId: string, txId: string, network: string | null = null) {

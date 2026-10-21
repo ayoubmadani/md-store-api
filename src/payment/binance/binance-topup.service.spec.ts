@@ -8,6 +8,7 @@ const settings = {
     binanceTrc20Address: 'TXyz1234567890123456789012345678901',
     binanceBep20Address: '0x' + 'a'.repeat(40),
     binanceUid: '535950835',
+    binancePayLink: 'https://app.binance.com/qr/dplk123',
   }),
 };
 
@@ -37,7 +38,7 @@ const dep = (over: any = {}) => ({ txId: 'Off-chain transfer 98765', coin: 'USDT
 describe('BinanceTopupService.publicConfig', () => {
   it('returns rate and addresses when enabled', async () => {
     const { svc } = setup();
-    expect(await svc.publicConfig()).toMatchObject({ enabled: true, rate: 260, uid: '535950835', addresses: { TRX: expect.any(String), BSC: expect.any(String) } });
+    expect(await svc.publicConfig()).toMatchObject({ enabled: true, rate: 260, uid: '535950835', payLink: 'https://app.binance.com/qr/dplk123', addresses: { TRX: expect.any(String), BSC: expect.any(String) } });
   });
 });
 
