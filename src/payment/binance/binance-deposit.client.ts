@@ -2,7 +2,8 @@ import { BadGatewayException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
 
-export type BinanceDeposit = { txId: string; coin: string; status: number; network: string; amount: string; insertTime: number };
+// transferType: 1 = تحويل داخلي من حساب Binance آخر (مجاني وفوري)، 0 = من الشبكة الخارجية
+export type BinanceDeposit = { txId: string; coin: string; status: number; network: string; amount: string; insertTime: number; transferType?: number };
 
 // سجل إيداعات USDT في حساب Binance الخاص بالمنصة (مفتاح قراءة فقط).
 // Binance يحظر طلبات الولايات المتحدة (451) — الـ API يجب أن يعمل من منطقة أوروبية (fra1).

@@ -12,6 +12,11 @@ const OK_STATUSES = [1, 6]; // 1 = مكتمل، 6 = وصل (قيد الإفرا�
 const PAY_WINDOW_MS = 60 * 60_000; // مدة الدفع المعروضة للتاجر
 const CONFIRM_GRACE_MS = 24 * 3600_000; // التأكيد مقبول حتى 24 ساعة (تأخر الشبكة/نسيان)
 const MIN_DZD = 500;
+// حالياً: من Binance إلى Binance فقط — بلا رسوم شبكة، فيصل المبلغ الفريد كاملاً
+const INTERNAL_ONLY = true;
+
+// رقم التحويل الداخلي يظهر «Off-chain transfer 123…» أو «Internal transfer 123…» — نقبل النص كاملاً أو الرقم فقط
+const normalizeTxId = (v: string) => String(v || '').trim().replace(/^(off-chain|internal)\s+transfer\s+/i, '');
 const MAX_DZD = 500_000;
 
 // مبلغ USDT فريد: المبلغ الأساسي (سنتان) + كسر من 4 أرقام لا يستعمله طلب معلّق آخر
@@ -88,9 +93,12 @@ export class BinanceTopupService {
     if (Date.now() > created + PAY_WINDOW_MS + CONFIRM_GRACE_MS) throw new BadRequestException('انتهت صلاحية طلب الشحن، أنشئ طلباً جديداً');
 
     const deposits = await this.binance.listUsdtDeposits(created - 5 * 60_000);
-    const dep = deposits.find((d) => String(d.txId).trim() === txId);
+    const dep = deposits.find((d) => normalizeTxId(d.txId) === normalizeTxId(txId));
     if (!dep) throw new NotFoundException('المعاملة غير موجودة بعد في حساب Binance — انتظر تأكيد الشبكة ثم أعد المحاولة');
     if (dep.coin !== 'USDT') throw new BadRequestException('العملة ليست USDT');
+    if (INTERNAL_ONLY && Number(dep.transferType) !== 1) {
+      throw new BadRequestException('نقبل حالياً التحويل من حساب Binance فقط (سحب من Binance إلى العنوان) — التحويل من محفظة أو منصة أخرى غير مقبول');
+    }
     if (!NETWORKS.includes(dep.network as (typeof NETWORKS)[number])) throw new BadRequestException('الشبكة غير مقبولة — استعمل TRC20 أو BEP20');
     if (!OK_STATUSES.includes(Number(dep.status))) throw new BadRequestException('المعاملة لم تكتمل بعد، أعد المحاولة بعد دقائق');
     // المبلغ الفريد يربط الإيداع بهذا الطلب: TxID منسوخ من معاملة غيرك لن يطابق
@@ -102,9 +110,9 @@ export class BinanceTopupService {
     }
 
     await this.dataSource.transaction(async (manager) => {
-      const res: any = await this.payment.handleWalletBalance(String(userId), Number(req.amountDzd), 'ADD', TransactionType.TOP_UP, manager, `binance:${txId}`);
+      const res: any = await this.payment.handleWalletBalance(String(userId), Number(req.amountDzd), 'ADD', TransactionType.TOP_UP, manager, `binance:${dep.txId}`);
       if (res?.message === 'Transaction already processed') throw new BadRequestException('هذه المعاملة استُعملت من قبل');
-      await manager.save(CryptoTopup, { ...req, status: 'paid', txId, network: dep.network, paidAt: new Date() });
+      await manager.save(CryptoTopup, { ...req, status: 'paid', txId: dep.txId, network: dep.network, paidAt: new Date() });
     });
     return { status: 'paid' as const, amountDzd: Number(req.amountDzd) };
   }

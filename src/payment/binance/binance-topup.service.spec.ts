@@ -37,7 +37,7 @@ function setup(deposits: any[] = []) {
   return { svc, rows, binance, payment, credited };
 }
 
-const dep = (over: any = {}) => ({ txId: 'TX1', coin: 'USDT', status: 1, network: 'TRX', amount: '10.0371', insertTime: Date.now(), ...over });
+const dep = (over: any = {}) => ({ txId: 'TX1', coin: 'USDT', status: 1, network: 'TRX', amount: '10.0371', insertTime: Date.now(), transferType: 1, ...over });
 
 describe('uniqueUsdtAmount', () => {
   it('adds a 4-decimal suffix that no other pending request uses', () => {
@@ -103,6 +103,20 @@ describe('BinanceTopupService.confirm', () => {
     const { svc, r, payment } = await pending([dep({ amount: undefined })]);
     payment.handleWalletBalance.mockResolvedValueOnce({ success: true, message: 'Transaction already processed' });
     await expect(svc.confirm('u1', r.id, 'TX1')).rejects.toThrow('استُعملت');
+  });
+
+  it('only Binance-to-Binance (internal) transfers are accepted for now', async () => {
+    const { svc, r, credited } = await pending([dep({ amount: undefined, transferType: 0 })]);
+    await expect(svc.confirm('u1', r.id, 'TX1')).rejects.toThrow('Binance');
+    expect(credited).toHaveLength(0);
+  });
+
+  it('internal transfer id accepted with or without the "Off-chain transfer" prefix', async () => {
+    for (const pasted of ['Off-chain transfer 98765', '98765']) {
+      const { svc, r, credited } = await pending([dep({ amount: undefined, txId: 'Off-chain transfer 98765' })]);
+      await svc.confirm('u1', r.id, pasted);
+      expect(credited[0].providerId).toBe('binance:Off-chain transfer 98765');
+    }
   });
 
   it('unknown txId → not found yet', async () => {
