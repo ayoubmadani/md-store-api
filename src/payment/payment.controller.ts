@@ -2,6 +2,7 @@ import { Controller, Post, Req, Res, Headers, HttpStatus, Get, UseGuards, Body, 
 import type { Request, Response } from 'express';
 import { verifySignature } from '@chargily/chargily-pay';
 import { PaymentService } from './payment.service';
+import { BinanceTopupService } from './binance/binance-topup.service';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../auth/guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
@@ -10,6 +11,7 @@ import { GetUser } from '../user/decorator/get-user.decorator';
 export class PaymentController {
   constructor(
     private readonly paymentService: PaymentService,
+    private readonly binanceTopup: BinanceTopupService,
     private readonly config: ConfigService
   ) { }
 
@@ -84,6 +86,25 @@ export class PaymentController {
     return this.paymentService.paymentStatus(checkoutId , "Failed", 'confirm');
   }
   
+
+  // ---- شحن المحفظة بـ USDT (Binance) ----
+  @Get('binance/config')
+  @UseGuards(AuthGuard)
+  binanceConfig() {
+    return this.binanceTopup.publicConfig();
+  }
+
+  @Post('binance/request')
+  @UseGuards(AuthGuard)
+  binanceRequest(@GetUser() user: any, @Body('amount') amount: any) {
+    return this.binanceTopup.createRequest(user.sub || user.id, Number(amount));
+  }
+
+  @Post('binance/confirm')
+  @UseGuards(AuthGuard)
+  binanceConfirm(@GetUser() user: any, @Body('requestId') requestId: string, @Body('txId') txId: string) {
+    return this.binanceTopup.confirm(user.sub || user.id, String(requestId || ''), txId);
+  }
 
   @Post('top-up')
   @UseGuards(AuthGuard)

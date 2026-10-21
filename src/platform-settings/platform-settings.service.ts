@@ -36,7 +36,31 @@ const SETTINGS = {
     default: 2,
     parse: (v: unknown) => num(v, 0, 168, 'customThemeDelayHours'),
   },
+  // شحن المحفظة بـ USDT عبر Binance (إيداع ثم TxID)
+  binanceEnabled: {
+    default: false,
+    parse: (v: unknown) => v === true || v === 'true',
+  },
+  // سعر 1 USDT بالدينار — يحدده الأدمن
+  usdtRateDzd: {
+    default: 250,
+    parse: (v: unknown) => num(v, 1, 10_000, 'usdtRateDzd'),
+  },
+  binanceTrc20Address: {
+    default: '',
+    parse: (v: unknown) => address(v, /^T[1-9A-HJ-NP-Za-km-z]{33}$/, 'binanceTrc20Address: عنوان TRC20 يبدأ بـ T (34 حرفاً)'),
+  },
+  binanceBep20Address: {
+    default: '',
+    parse: (v: unknown) => address(v, /^0x[0-9a-fA-F]{40}$/, 'binanceBep20Address: عنوان BEP20 يبدأ بـ 0x (42 حرفاً)'),
+  },
 } as const;
+
+function address(v: unknown, re: RegExp, message: string) {
+  const s = String(v ?? '').trim();
+  if (s && !re.test(s)) throw new BadRequestException(message);
+  return s;
+}
 
 function num(v: unknown, min: number, max: number, key: string) {
   const n = Number(v);
