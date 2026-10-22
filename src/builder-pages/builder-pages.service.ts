@@ -48,8 +48,34 @@ export class BuilderPagesService {
     if (!store) throw new NotFoundException('الصفحة غير موجودة');
   }
 
+  // حد الخطة لصفحات الهبوط (plan_features.landingPageNumber) — لكل صفحات التاجر في كل متاجره
+  private async assertLandingPageLimit(userId: string) {
+    const [plan] = await this.builderPageRepo.manager.query(
+      `SELECT f."landingPageNumber" AS "limit"
+         FROM subscriptions s
+         JOIN plans p ON p.id = s."planId"
+         JOIN plan_features f ON f.id = p."featuresId"
+        WHERE s."userId"::text = $1 AND s.status = 'active' AND s."endDate" > now()
+        ORDER BY s."startDate" DESC
+        LIMIT 1`,
+      [userId],
+    ).catch(() => []);
+    const limit = plan ? Number(plan.limit) || 0 : 0;
+    const [{ count }] = await this.builderPageRepo.manager.query(
+      `SELECT count(*)::int AS count FROM builder_pages WHERE "storeId" IN (SELECT id::text FROM stores WHERE "userId"::text = $1)`,
+      [userId],
+    );
+    const used = Number(count) || 0;
+    if (used >= limit) {
+      throw new BadRequestException(
+        limit ? `وصلت إلى حد خطتك: ${limit} صفحات هبوط — رقِّ خطتك لإنشاء المزيد` : 'صفحات الهبوط غير متاحة في خطتك — رقِّ خطتك',
+      );
+    }
+  }
+
   async create(dto: CreateBuilderPageDto, userId: string) {
     await this.assertOwnsStore(dto.storeId, userId);
+    await this.assertLandingPageLimit(userId);
 
     if (dto.domain) {
       const existing = await this.builderPageRepo.findOne({ where: { domain: dto.domain } });
@@ -122,6 +148,7 @@ export class BuilderPagesService {
 
   async duplicate(id: string, userId: string) {
     const page = await this.findOne(id, userId);
+    await this.assertLandingPageLimit(userId);
     const randomNumber = Math.floor(Math.random() * 1000) + 1;
     const copy = this.builderPageRepo.create({
       name: `${page.name} (نسخة)`,
