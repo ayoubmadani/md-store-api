@@ -4,7 +4,8 @@ import { createHmac } from 'crypto';
 
 // transferType: 1 = تحويل داخلي من حساب Binance آخر (مجاني وفوري)، 0 = من الشبكة الخارجية
 // سجل Binance Pay (إرسال إلى UID): amount موجب = استلام، سالب = إرسال
-export type BinancePayTx = { transactionId: string; amount: string; currency: string; orderType: string; transactionTime: number };
+// orderId = الرقم الذي يراه المرسل في التطبيق «Order ID»؛ transactionId = معرّف Binance الداخلي (P_…)
+export type BinancePayTx = { transactionId: string; orderId?: string; amount: string; currency: string; orderType: string; transactionTime: number };
 
 export type BinanceDeposit = { txId: string; coin: string; status: number; network: string; amount: string; insertTime: number; transferType?: number };
 

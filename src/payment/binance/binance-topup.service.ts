@@ -72,7 +72,8 @@ export class BinanceTopupService {
     if (!dep) {
       // إرسال عبر Binance Pay إلى UID المنصة
       const pays = await this.binance.listPayTransactions(Date.now() - LOOKBACK_MS);
-      const pay = pays.find((p) => String(p.transactionId).trim() === String(rawCode || '').trim());
+      const pasted = String(rawCode || '').trim();
+      const pay = pays.find((p) => String(p.transactionId).trim() === pasted || String(p.orderId ?? '').trim() === pasted);
       if (!pay) return reject('رقم التحويل غير موجود في حساب المنصة — تأكد من الرقم ومن الإرسال إلى العنوان أو الـ UID الصحيح', NotFoundException);
       if (pay.currency !== 'USDT') return reject('العملة ليست USDT');
       if (!(Number(pay.amount) > 0)) return reject('هذه معاملة إرسال وليست استلاماً');

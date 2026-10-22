@@ -106,4 +106,12 @@ describe('BinanceTopupService.claim (transfer code only)', () => {
       expect(credited).toHaveLength(0);
     }
   });
+
+  it('Binance Pay: the app "Order ID" works too, recorded under the same transaction', async () => {
+    const pay = { transactionId: 'P_A25695BXV8S71114', orderId: '461369740212625408', amount: '0.46168321', currency: 'USDT', orderType: 'C2C', transactionTime: Date.now() };
+    const { svc, credited } = setup([], 0, [pay]);
+    const res = await svc.claim('u1', '461369740212625408');
+    expect(res.amountDzd).toBe(120.04); // 0.46168321 × 260
+    expect(credited[0].providerId).toBe('binancepay:P_A25695BXV8S71114');
+  });
 });
