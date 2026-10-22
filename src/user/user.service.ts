@@ -280,6 +280,18 @@ export class UserService {
         .execute();
     }
 
+    // صفحات محرر الصفحات (builder_pages) المفعّلة فوق الحد — تُطفأ كلها، مثل المتاجر
+    const [{ count: builderCount }] = await this.storeRepo.manager.query(
+      `SELECT count(*)::int AS count FROM builder_pages WHERE "isActive" = true AND "storeId" IN (SELECT id::text FROM stores WHERE "userId"::text = $1)`,
+      [userId],
+    );
+    if (Number(builderCount) > f.landingPageNumber) {
+      await this.storeRepo.manager.query(
+        `UPDATE builder_pages SET "isActive" = false WHERE "storeId" IN (SELECT id::text FROM stores WHERE "userId"::text = $1)`,
+        [userId],
+      );
+    }
+
     // 4. التحقق من صلاحية الثيمات (Theme Access Enforcement)
     // نفس المنطق المستخدم عند انتهاء الاشتراك — موحّد في مكان واحد بدل تكراره هنا
     await this.subscriptionService.revertUnauthorizedThemes(userId, sub.planId);
