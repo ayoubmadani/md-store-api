@@ -2,9 +2,9 @@ import { BadRequestException } from '@nestjs/common';
 import { BuilderPagesService } from './builder-pages.service';
 
 // حد الخطة لصفحات الهبوط (landingPageNumber) يُطبَّق على محرر الصفحات أيضاً
-function setup(limit: number | null, existing: number) {
+function setup(limit: number | null, existing: number, pageActive = true) {
   const builderPageRepo = {
-    findOne: jest.fn().mockResolvedValue({ id: 'p1', name: 'P', storeId: 's1', tree: [] }),
+    findOne: jest.fn().mockResolvedValue({ id: 'p1', name: 'P', storeId: 's1', tree: [], isActive: pageActive }),
     create: jest.fn((d: any) => d),
     save: jest.fn(async (d: any) => ({ id: 'new', ...d })),
     manager: {
@@ -44,5 +44,23 @@ it('counts the user pages across all stores with SQL (builder_pages has no store
   const { svc, builderPageRepo } = setup(10, 1);
   await svc.create({ name: 'x', storeId: 's1' } as any, 'u1');
   const sqls = builderPageRepo.manager.query.mock.calls.map((c: any[]) => c[0]);
-  expect(sqls.some((q: string) => /FROM builder_pages WHERE "storeId" IN \(SELECT id::text FROM stores WHERE "userId"/.test(q))).toBe(true);
+  expect(sqls.some((q: string) => /FROM builder_pages WHERE "isActive" = true AND "storeId" IN \(SELECT id::text FROM stores WHERE "userId"/.test(q))).toBe(true);
+});
+
+describe('toggleStatus and the limit', () => {
+  it('activating a page is blocked when active pages reached the limit', async () => {
+    const { svc, builderPageRepo } = setup(2, 2, false);
+    await expect(svc.toggleStatus('p1', 'u1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(builderPageRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('deactivating is always allowed, even over the limit', async () => {
+    const { svc } = setup(0, 9, true);
+    await expect(svc.toggleStatus('p1', 'u1')).resolves.toEqual({ isActive: false });
+  });
+
+  it('activating under the limit works', async () => {
+    const { svc } = setup(3, 2, false);
+    await expect(svc.toggleStatus('p1', 'u1')).resolves.toEqual({ isActive: true });
+  });
 });

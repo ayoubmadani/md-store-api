@@ -48,7 +48,8 @@ export class BuilderPagesService {
     if (!store) throw new NotFoundException('الصفحة غير موجودة');
   }
 
-  // حد الخطة لصفحات الهبوط (plan_features.landingPageNumber) — لكل صفحات التاجر في كل متاجره
+  // حد الخطة لصفحات الهبوط (plan_features.landingPageNumber) — الصفحات المفعّلة للتاجر في كل متاجره
+  // يُفحص عند الإنشاء والنسخ والتفعيل؛ التعطيل مسموح دائماً
   private async assertLandingPageLimit(userId: string) {
     const [plan] = await this.builderPageRepo.manager.query(
       `SELECT f."landingPageNumber" AS "limit"
@@ -62,7 +63,7 @@ export class BuilderPagesService {
     ).catch(() => []);
     const limit = plan ? Number(plan.limit) || 0 : 0;
     const [{ count }] = await this.builderPageRepo.manager.query(
-      `SELECT count(*)::int AS count FROM builder_pages WHERE "storeId" IN (SELECT id::text FROM stores WHERE "userId"::text = $1)`,
+      `SELECT count(*)::int AS count FROM builder_pages WHERE "isActive" = true AND "storeId" IN (SELECT id::text FROM stores WHERE "userId"::text = $1)`,
       [userId],
     );
     const used = Number(count) || 0;
@@ -110,6 +111,7 @@ export class BuilderPagesService {
 
   async toggleStatus(id: string, userId: string) {
     const page = await this.findOne(id, userId);
+    if (!page.isActive) await this.assertLandingPageLimit(userId);
     page.isActive = !page.isActive;
     await this.builderPageRepo.save(page);
     return { isActive: page.isActive };
