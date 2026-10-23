@@ -142,8 +142,10 @@ export class InventoryService {
       const threshold = Number(p.lowStockThreshold ?? 5);
       const cost = p.costPrice === null || p.costPrice === undefined ? null : Number(p.costPrice);
       const vs = (byProduct.get(String(p.id)) ?? []).map((v) => {
-        const label = Array.isArray(v.name) ? v.name.map((a: Row) => (a.displayMode === 'color' ? a.attrName : a.value)).join(' / ') : String(v.name ?? '');
-        return { id: v.id, label, stock: Number(v.stock), price: Number(v.price) > 0 ? Number(v.price) : Number(p.price), status: status(Number(v.stock), threshold) };
+        // أجزاء النسخة كما يراها الزبون: نص يُكتب، صورة/لون يُعرضان (قيمتهما رابط أو كود لون، لا اسم)
+        const parts = Array.isArray(v.name) ? v.name.map((a: Row) => ({ mode: a.displayMode || 'text', value: String(a.value ?? ''), attr: String(a.attrName ?? '') })) : [];
+        const label = parts.length ? parts.map((x) => (x.mode === 'text' ? x.value : x.attr)).join(' / ') : String(v.name ?? '');
+        return { id: v.id, label, parts, stock: Number(v.stock), price: Number(v.price) > 0 ? Number(v.price) : Number(p.price), status: status(Number(v.stock), threshold) };
       });
       const stock = vs.length ? vs.reduce((n, v) => n + v.stock, 0) : Number(p.stock);
       const lines = vs.length ? vs : [{ stock: Number(p.stock), price: Number(p.price) }];
