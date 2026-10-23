@@ -102,8 +102,10 @@ export class AuthController {
                     return (res as any).redirect(`${stockUrl}/handoff?code=${encodeURIComponent(code)}`);
                 }
                 return (res as any).redirect(`${stockUrl}/login?error=auth_failed`);
-            } catch {
-                return (res as any).redirect(`${stockUrl}/login?error=google_auth_error`);
+            } catch (error) {
+                // لا حساب بهذا البريد ≠ خطأ عابر — رسالة مختلفة في التطبيق
+                const reason = (error as any)?.status === 404 ? 'no_account' : 'google_auth_error';
+                return (res as any).redirect(`${stockUrl}/login?error=${reason}`);
             }
         }
         // state=confirm → جاء من تطبيق التأكيد، فيُعاد إليه بدل لوحة التحكم
