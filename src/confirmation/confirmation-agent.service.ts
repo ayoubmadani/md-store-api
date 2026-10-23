@@ -16,6 +16,7 @@ import { StoreConfirmationCompany } from './entities/store-confirmation-company.
 import { ConfirmationBillingService } from './confirmation-billing.service';
 import { ConfirmationService, QUEUE_STATUSES } from './confirmation.service';
 import { AgentEditOrderDto, AgentSetStatusDto } from './dto/confirmation.dto';
+import { InventoryService } from '../inventory/inventory.service';
 
 const LOCK_MINUTES = 15;          // طلب أخذه موظف ولم يكمله يرجع للقائمة بعد 15 دقيقة
 const RETRY_AFTER_HOURS = 2;      // محاولة فاشلة → يظهر مرة أخرى بعد ساعتين
@@ -32,7 +33,8 @@ export class ConfirmationAgentService {
     private readonly shipping: ShippingProviderService,
     private readonly dataSource: DataSource,
     private readonly billing: ConfirmationBillingService,
-  ) {}
+        private readonly inventory: InventoryService,
+    ) {}
 
   // ══════════════════════════════════════════════════════════════════════════
   // القائمة المشتركة
@@ -542,6 +544,7 @@ export class ConfirmationAgentService {
       await qb.execute();
     }
     await this.log(orderId, member, ConfirmationAction.STATUS, { fromStatus: from, toStatus: dto.status, note: dto.note });
+    await this.inventory.safeReconcile(orderId);
 
     let upload: { uploaded: boolean; tracking?: string | null; error?: string } | null = null;
     if (dto.status === StatusEnum.CONFIRMED && !order.isDigital) {

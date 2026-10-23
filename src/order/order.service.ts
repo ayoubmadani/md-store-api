@@ -12,6 +12,7 @@ import { Store } from "../store/entities/store.entity";
 import { NtfyService } from "../ntfy/ntfy.service";
 import { Shipping } from "../shipping/entity/shipping.entity";
 import { ConfirmationService } from "../confirmation/confirmation.service";
+import { InventoryService } from '../inventory/inventory.service';
 
 // الإضافات المختارة كما هي معرّفة في المنتج وقت الطلب (المفعّلة فقط) — لا نثق باسم أو سعر يرسله العميل
 function pickAddons(product: Product | undefined, ids: string[]) {
@@ -32,6 +33,7 @@ export class OrdersService {
 
         private readonly ntfyService: NtfyService,
         private readonly confirmationService: ConfirmationService,
+        private readonly inventory: InventoryService,
     ) { }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
@@ -340,6 +342,7 @@ export class OrdersService {
     // طلبية أكدتها شركة تأكيد: الحالة فقط، بدون أي تعديل آخر
     if (this.merchantEditMode(order, first['status'] as StatusEnum) === 'shippingOnly') {
         await this.ordersRepo.update(order.id, { status: first['status'] as StatusEnum });
+        await this.inventory.safeReconcile(order.id);
         return this.getOne(order.id);
     }
 
@@ -398,6 +401,9 @@ export class OrdersService {
     await this.ordersRepo.update(order.id, { 
         totalPrice: totalCartPrice + currentPriceShip 
     });
+
+    // المخزون: الحالة أو العناصر تغيّرت — يُطبَّق الفرق فقط
+    await this.inventory.safeReconcile(order.id);
 
 
     // إرجاع الطلب المحدث بالكامل
@@ -476,6 +482,7 @@ export class OrdersService {
         if (!order) throw new NotFoundException('Order not found');
         this.merchantEditMode(order, status);
         await this.ordersRepo.update(order.id, { status });
+        await this.inventory.safeReconcile(order.id);
         return { id: order.id, status };
     }
 
@@ -499,6 +506,8 @@ export class OrdersService {
         if (order.confirmationCompanyId) {
             throw new ForbiddenException('لا يمكن حذف طلبية أُرسلت لشركة تأكيد');
         }
+        // طلب كان يحجز مخزوناً: يرجع المخزون قبل الحذف
+        await this.inventory.safeReconcile(order.id, { releaseAll: true });
         // الـ items تُحذف تلقائياً بسبب onDelete: CASCADE على الـ entity
         return this.ordersRepo.remove(order);
     }

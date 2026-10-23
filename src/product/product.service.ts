@@ -23,6 +23,7 @@ import { StatusEnum } from '../order/entities/order.entity';
 import { LandingPage } from '../landing-page/entities/landing-page.entity';
 import { BuilderPage } from '../builder-pages/entities/builder-page.entity';
 import { Show } from '../show/entity/show.entity';
+import { InventoryService } from '../inventory/inventory.service';
 
 export interface VariantAttributeEntry {
   attrId: string;
@@ -137,6 +138,7 @@ export class ProductService {
     private readonly dataSource: DataSource,
     private readonly subscriptionService: SubscriptionService,
     private readonly imageService: ImageService,
+    private readonly inventory: InventoryService,
   ) { }
 
   // ─── helper: قراءة الحد من features.productNumber ──────────────────────────
@@ -476,6 +478,7 @@ export class ProductService {
     }
     if (dto.images?.length) await this.assertProductImagesLimitNotReached(userId, dto.images.length);
 
+    const stockBefore = Number(product.stock);
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -603,6 +606,8 @@ export class ProductService {
       }
 
       await queryRunner.commitTransaction();
+      // سجل المخزون: تعديل الرقم من صفحة المنتج
+      if (dto.stock !== undefined) await this.inventory.recordChange(storeId, id, null, stockBefore, Number(dto.stock), userId);
       return this.findOne(id, storeId, userId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -681,8 +686,11 @@ export class ProductService {
     await this.storeService.verifyOwnership(storeId, userId);
     const product = await this.findOne(id, storeId, userId);
     if (quantity < 0) throw new BadRequestException('الكمية يجب أن تكون موجبة');
+    const before = Number(product.stock);
     product.stock = quantity;
-    return this.productRepository.save(product);
+    const saved = await this.productRepository.save(product);
+    await this.inventory.recordChange(storeId, id, null, before, quantity, userId);
+    return saved;
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -928,8 +936,11 @@ export class ProductService {
     });
     if (!variant) throw new NotFoundException('المتغير غير موجود');
     if (dto.price !== undefined) variant.price = Number(dto.price);
+    const before = Number(variant.stock);
     if (dto.stock !== undefined) variant.stock = Number(dto.stock);
-    return this.variantDetailRepository.save(variant);
+    const saved = await this.variantDetailRepository.save(variant);
+    if (dto.stock !== undefined) await this.inventory.recordChange(storeId, productId, variantId, before, Number(dto.stock), userId);
+    return saved;
   }
 
   /**

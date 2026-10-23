@@ -72,6 +72,14 @@ export class Product {
   @Column({ default: 0 })
   stock: number;
 
+  // تنبيه المخزون المنخفض: يظهر المنتج «منخفضاً» عندما يصل مخزونه لهذا الحد أو أقل
+  @Column({ type: 'int', default: 5 })
+  lowStockThreshold: number;
+
+  // سعر الشراء (اختياري) — لقيمة المخزون بسعر التكلفة والربح المتوقع
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
+  costPrice: number | null;
+
   @Column({ nullable: true })
   sku?: string;
 

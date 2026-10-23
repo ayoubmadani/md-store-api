@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { StatusEnum } from '../order/entities/order.entity';
 import { ShippingProviderService } from '../shipping-provider/shipping-provider.service';
 import { mapProviderStatus, rawProviderStatus } from './provider-status';
+import { InventoryService } from '../inventory/inventory.service';
 
 const BATCH = 50; // طلبيات في كل دفعة
 const TIME_BUDGET_MS = 240_000; // دالة Vercel تتوقف بعد 300 ثانية — نتوقف قبلها بهامش
@@ -22,6 +23,7 @@ export class ShippingSyncService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly shipping: ShippingProviderService,
+    private readonly inventory: InventoryService,
   ) {}
 
   // يعمل فقط حين يكون الـ API خادماً دائماً (أو محلياً). على Vercel لا يعمل @Cron —
@@ -91,6 +93,8 @@ export class ShippingSyncService {
               WHERE id = $1 AND status = $4`,
               [order.id, raw, next, StatusEnum.SHIPPING],
             );
+            // مرتجع: يعود مخزونه
+            if (next) await this.inventory.safeReconcile(order.id);
 
             if (next === StatusEnum.DELIVERED) {
               result.delivered++;

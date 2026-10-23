@@ -8,6 +8,7 @@ import { AxiosError } from 'axios';
 
 import { Order, StatusEnum } from '../order/entities/order.entity';
 import { SetShippingProviderDto, UpdateShippingProviderDto } from './dto/shipping.dto';
+import { InventoryService } from '../inventory/inventory.service';
 
 /** رقم التتبع من رد شركة التوصيل — كل شركة تضعه في مكان/اسم مختلف */
 export function extractTracking(res: unknown, depth = 0): string | null {
@@ -34,6 +35,7 @@ export class ShippingProviderService {
     private readonly config: ConfigService,
     @InjectRepository(Order)
     private readonly orderRepo: Repository<Order>,
+    private readonly inventory: InventoryService,
   ) {
     this.baseUrl = this.config.get<string>('SHIPPING_PROVIDER_URL')!;
     this.internalKey = this.config.get<string>('INTERNAL_API_KEY')!;
@@ -175,6 +177,7 @@ export class ShippingProviderService {
       status: StatusEnum.SHIPPING,
       shippingAt: new Date(),
     });
+    await this.inventory.safeReconcile(order.id);
 
     return { ...result, tracking: trackingId };
   }
@@ -200,6 +203,7 @@ export class ShippingProviderService {
       shippingCheckedAt: null as any, // تُفحص في أول دورة مزامنة
       shippingProviderStatus: null as any,
     });
+    await this.inventory.safeReconcile(order.id);
     return { id: order.id, status: StatusEnum.SHIPPING, shippingTrackingId: tracking };
   }
 

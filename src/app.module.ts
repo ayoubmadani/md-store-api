@@ -37,6 +37,7 @@ import { AliexpressModule } from './aliexpress/aliexpress.module';
 import { HiggsfieldModule } from './higgsfield/higgsfield.module';
 import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 import { CustomThemeModule } from './custom-theme/custom-theme.module';
+import { InventoryModule } from './inventory/inventory.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { CustomThemeModule } from './custom-theme/custom-theme.module';
     AdminModule,
     SubscriptionModule,
     PaymentModule,
+    InventoryModule,
     ShippingProviderModule,
     CronJobModule,
     ShippingSyncModule,

@@ -32,6 +32,7 @@ import axios from 'axios';
 import { PaymentService } from '../payment/payment.service';
 import { Transaction, TransactionType } from '../payment/entities/transaction.entity';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { InventoryService } from '../inventory/inventory.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local shape types — used only as plain type annotations inside the service,
@@ -143,6 +144,7 @@ export class AdminService {
 
         // 2. احقن الـ DataSource هنا
         private readonly dataSource: DataSource,
+        private readonly inventory: InventoryService,
     ) {
         // 3. أجبر المتغير على أن يكون TreeRepository حقيقي يدعم findTrees
         this.categoryNicheRepo = this.dataSource.getTreeRepository(CategoryNiche);
@@ -500,7 +502,9 @@ export class AdminService {
         if (status === StatusEnum.SHIPPING) order.shippingAt = now;
         if (status === StatusEnum.DELIVERED) order.deliveredAt = now;
 
-        return this.orderRepo.save(order);
+        const saved = await this.orderRepo.save(order);
+        await this.inventory.safeReconcile(order.id);
+        return saved;
     }
 
     async getOrdersInDateRange(query: DateRangeQuery, pagination: PaginationQuery) {
