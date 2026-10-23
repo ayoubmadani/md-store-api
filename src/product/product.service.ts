@@ -441,6 +441,20 @@ export class ProductService {
 
     const [products, total] = await qb.getManyAndCount();
 
+    // المخزون الفعلي: منتج بنسخ مخزونه في النسخ (مجموعها)، وإلا رقم المنتج نفسه
+    if (products.length) {
+      const sums: { productId: string; s: number; n: number }[] = await this.productRepository.manager.query(
+        `SELECT "productId"::text AS "productId", COALESCE(SUM(stock), 0)::int AS s, count(*)::int AS n
+           FROM variant_details WHERE "productId"::text = ANY($1) AND "isActive" = true GROUP BY "productId"`,
+        [products.map((p) => String(p.id))],
+      );
+      const byId = new Map(sums.map((r) => [r.productId, r]));
+      for (const p of products as (Product & { totalStock?: number })[]) {
+        const v = byId.get(String(p.id));
+        p.totalStock = v && v.n > 0 ? v.s : Number(p.stock);
+      }
+    }
+
     return {
       products: sortProductImages(products),
       total,
@@ -699,16 +713,16 @@ export class ProductService {
 
   async getStoreStats(storeId: string, userId: string) {
     await this.storeService.verifyOwnership(storeId, userId);
-    const [totalProducts, activeProducts, outOfStock, totalValue] = await Promise.all([
+    // المخزون الفعلي لكل منتج: مجموع نسخه النشطة إن وُجدت، وإلا رقم المنتج
+    const effective = `COALESCE((SELECT SUM(v.stock) FROM variant_details v WHERE v."productId" = p.id AND v."isActive" = true), p.stock)`;
+    const [totalProducts, activeProducts, [outRow], [valueRow]] = await Promise.all([
       this.productRepository.count({ where: { store: { id: storeId } } }),
       this.productRepository.count({ where: { store: { id: storeId }, isActive: true } }),
-      this.productRepository.count({ where: { store: { id: storeId }, stock: 0 } }),
-      this.productRepository
-        .createQueryBuilder('product')
-        .select('SUM(product.price * product.stock)', 'total')
-        .where('product.storeId = :storeId', { storeId })
-        .getRawOne(),
+      this.productRepository.manager.query(`SELECT count(*)::int AS n FROM products p WHERE p."storeId"::text = $1 AND p."deletedAt" IS NULL AND ${effective} <= 0`, [storeId]),
+      this.productRepository.manager.query(`SELECT COALESCE(SUM(p.price * GREATEST(${effective}, 0)), 0) AS total FROM products p WHERE p."storeId"::text = $1 AND p."deletedAt" IS NULL`, [storeId]),
     ]);
+    const outOfStock = Number(outRow?.n) || 0;
+    const totalValue = { total: valueRow?.total };
     return {
       totalProducts, activeProducts,
       inactiveProducts: totalProducts - activeProducts,
