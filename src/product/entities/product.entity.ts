@@ -76,6 +76,10 @@ export class Product {
   @Column({ type: 'int', default: 5 })
   lowStockThreshold: number;
 
+  // باركود (فريد داخل المتجر — يُتحقق في الخدمة)
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  barcode: string | null;
+
   // سعر الشراء (اختياري) — لقيمة المخزون بسعر التكلفة والربح المتوقع
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
   costPrice: number | null;

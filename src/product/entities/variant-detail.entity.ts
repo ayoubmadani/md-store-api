@@ -39,6 +39,10 @@ export class VariantDetail {
   @Column({ type: 'int', default: 0 })
   stock: number;
 
+  // باركود النسخة (مقاس/لون) — فريد داخل المتجر
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  barcode: string | null;
+
   @Column({ default: false })
   autoGenerate: boolean;
 

@@ -62,6 +62,13 @@ export class InventoryController {
     return this.inventory.movements(storeId, { productId, page: Number(page) || 1 });
   }
 
+  // مسح الباركود من تطبيق المخزون
+  @Get('barcode/:code')
+  @RequirePermission(StorePermission.PRODUCT_CRUD)
+  barcode(@Param('storeId') storeId: string, @Param('code') code: string) {
+    return this.inventory.findByBarcode(storeId, code);
+  }
+
   @Post('adjust')
   @RequirePermission(StorePermission.PRODUCT_CRUD)
   adjust(@Param('storeId') storeId: string, @Body() dto: AdjustStockDto, @GetUser() user: any) {

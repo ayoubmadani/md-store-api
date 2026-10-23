@@ -41,6 +41,12 @@ export class UpdateProductDto {
   @MaxLength(100)
   sku?: string;
 
+  // باركود المنتج (فريد داخل المتجر) — للمسح من تطبيق المخزون
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  barcode?: string | null;
+
   @IsOptional()
   @IsString()
   @MaxLength(150)

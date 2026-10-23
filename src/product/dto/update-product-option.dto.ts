@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, Min, IsString, MaxLength } from 'class-validator';
 
 // تعديل سريع من صفحة إحصائيات المنتج (بدون إعادة حفظ المنتج كاملاً)
 export class UpdateOfferQuickDto {
@@ -23,4 +23,10 @@ export class UpdateVariantQuickDto {
   @IsInt()
   @Min(0)
   stock?: number;
+
+  // باركود النسخة (فريد داخل المتجر)؛ "" يحذفه
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  barcode?: string | null;
 }

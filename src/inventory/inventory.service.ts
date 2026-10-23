@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { StatusEnum } from '../order/entities/order.entity';
 import { orderStockDiff, StockLine } from './stock-reconcile';
@@ -122,15 +122,62 @@ export class InventoryService {
     return { ok: true };
   }
 
+  /** مسح الباركود: منتج بسيط، أو نسخة بعينها — داخل المتجر فقط */
+  async findByBarcode(storeId: string, raw: string) {
+    const code = String(raw || '').trim();
+    if (!code) throw new NotFoundException('الباركود فارغ');
+    const image = `(SELECT pi."imageUrl" FROM "product-images" pi WHERE pi."productId" = p.id LIMIT 1)`;
+    const [v] = await this.dataSource.query(
+      `SELECT v.id, v."productId", v.stock, v.name, v.barcode, p.name AS "productName", p.price AS "productPrice", p."lowStockThreshold", ${image} AS image
+         FROM variant_details v JOIN products p ON p.id = v."productId"
+        WHERE p."storeId"::text = $1 AND v.barcode = $2 AND p."deletedAt" IS NULL LIMIT 1`,
+      [storeId, code],
+    );
+    if (v) {
+      return {
+        product: { id: v.productId, name: v.productName, price: Number(v.productPrice), image: v.image ?? null, lowStockThreshold: Number(v.lowStockThreshold ?? 5) },
+        variant: {
+          id: v.id, stock: Number(v.stock), barcode: v.barcode,
+          parts: Array.isArray(v.name) ? v.name.map((a: Row) => ({ mode: a.displayMode || 'text', value: String(a.value ?? ''), attr: String(a.attrName ?? '') })) : [],
+        },
+      };
+    }
+    const [p] = await this.dataSource.query(
+      `SELECT p.id, p.name, p.stock, p.price, p.barcode, p."lowStockThreshold", ${image} AS image
+         FROM products p WHERE p."storeId"::text = $1 AND p.barcode = $2 AND p."deletedAt" IS NULL LIMIT 1`,
+      [storeId, code],
+    );
+    if (!p) throw new NotFoundException('لا يوجد منتج بهذا الباركود');
+    return {
+      product: { id: p.id, name: p.name, stock: Number(p.stock), price: Number(p.price), barcode: p.barcode, image: p.image ?? null, lowStockThreshold: Number(p.lowStockThreshold ?? 5) },
+      variant: null,
+    };
+  }
+
+  /** الباركود فريد داخل المتجر (منتجات ونسخ) — عند الإنشاء والتعديل */
+  async assertBarcodeFree(storeId: string, raw: string | null | undefined, exclude: { productId?: string; variantId?: string } = {}) {
+    const code = String(raw ?? '').trim();
+    if (!code) return;
+    const [hit] = await this.dataSource.query(
+      `SELECT 'p' AS k, p.id::text AS id FROM products p WHERE p."storeId"::text = $1 AND p.barcode = $2 AND p."deletedAt" IS NULL AND p.id::text <> $3
+       UNION ALL
+       SELECT 'v', v.id::text FROM variant_details v JOIN products p ON p.id = v."productId"
+        WHERE p."storeId"::text = $1 AND v.barcode = $2 AND p."deletedAt" IS NULL AND v.id::text <> $4
+       LIMIT 1`,
+      [storeId, code, exclude.productId ?? '', exclude.variantId ?? ''],
+    );
+    if (hit) throw new ConflictException('هذا الباركود مستعمل لمنتج آخر في متجرك');
+  }
+
   /** جدول المخزون: كل منتج ونسخه، الحالة، وقيمة المخزون */
   async overview(storeId: string) {
     const products: Row[] = await this.dataSource.query(
-      `SELECT p.id, p.name, p.price, p.stock, p."lowStockThreshold", p."costPrice",
+      `SELECT p.id, p.name, p.price, p.stock, p."lowStockThreshold", p."costPrice", p.barcode, p."categoryId",
               (SELECT pi."imageUrl" FROM "product-images" pi WHERE pi."productId" = p.id LIMIT 1) AS image
          FROM products p WHERE p."storeId"::text = $1 ORDER BY p.name`, [storeId],
     );
     const variants: Row[] = products.length ? await this.dataSource.query(
-      `SELECT v.id, v."productId", v.name, v.price, v.stock FROM variant_details v
+      `SELECT v.id, v."productId", v.name, v.price, v.stock, v.barcode FROM variant_details v
         WHERE v."productId"::text = ANY($1) AND v."isActive" = true`, [products.map((p) => String(p.id))],
     ) : [];
     const byProduct = new Map<string, Row[]>();
@@ -145,7 +192,7 @@ export class InventoryService {
         // أجزاء النسخة كما يراها الزبون: نص يُكتب، صورة/لون يُعرضان (قيمتهما رابط أو كود لون، لا اسم)
         const parts = Array.isArray(v.name) ? v.name.map((a: Row) => ({ mode: a.displayMode || 'text', value: String(a.value ?? ''), attr: String(a.attrName ?? '') })) : [];
         const label = parts.length ? parts.map((x) => (x.mode === 'text' ? x.value : x.attr)).join(' / ') : String(v.name ?? '');
-        return { id: v.id, label, parts, stock: Number(v.stock), price: Number(v.price) > 0 ? Number(v.price) : Number(p.price), status: status(Number(v.stock), threshold) };
+        return { id: v.id, label, parts, barcode: v.barcode ?? null, stock: Number(v.stock), price: Number(v.price) > 0 ? Number(v.price) : Number(p.price), status: status(Number(v.stock), threshold) };
       });
       const stock = vs.length ? vs.reduce((n, v) => n + v.stock, 0) : Number(p.stock);
       const lines = vs.length ? vs : [{ stock: Number(p.stock), price: Number(p.price) }];
@@ -158,7 +205,7 @@ export class InventoryService {
       const st = vs.length ? (vs.every((v) => v.status === 'out') ? 'out' : vs.some((v) => v.status !== 'ok') ? 'low' : 'ok') : status(stock, threshold);
       if (st === 'low') low++;
       if (st === 'out') out++;
-      return { id: p.id, name: p.name, image: p.image ?? null, price: Number(p.price), costPrice: cost, lowStockThreshold: threshold, stock, status: st, variants: vs };
+      return { id: p.id, name: p.name, image: p.image ?? null, barcode: p.barcode ?? null, categoryId: p.categoryId ?? null, price: Number(p.price), costPrice: cost, lowStockThreshold: threshold, stock, status: st, variants: vs };
     });
     const round = (n: number) => Math.round(n * 100) / 100;
     return {

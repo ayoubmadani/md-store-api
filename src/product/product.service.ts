@@ -195,6 +195,7 @@ export class ProductService {
 
   async create(storeId: string, userId: string, dto: CreateProductDto): Promise<Product> {
     await this.storeService.verifyOwnership(storeId, userId);
+    await this.inventory.assertBarcodeFree(storeId, dto.barcode);
 
     console.log(dto);
     
@@ -213,6 +214,7 @@ export class ProductService {
         name: dto.name, desc: dto.desc, price: dto.price,
         priceOriginal: dto.priceOriginal,
         sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
+        barcode: dto.barcode?.trim() || null,
         isActive: dto.isActive ?? true,
         shippingFree: dto.shippingFree ?? false,
         isDigital: dto.isDigital ?? false,
@@ -310,6 +312,7 @@ export class ProductService {
         name: dto.name, desc: dto.desc, price: dto.price,
         priceOriginal: dto.priceOriginal,
         sku: dto.sku, slug: dto.slug, stock: dto.stock ?? 0,
+        barcode: dto.barcode?.trim() || null,
         isActive: dto.isActive ?? true,
         shippingFree: dto.shippingFree ?? false,
         isDigital: dto.isDigital ?? false,
@@ -485,6 +488,7 @@ export class ProductService {
   async update(id: string, storeId: string, userId: string, dto: UpdateProductDto) {
     await this.storeService.verifyOwnership(storeId, userId);
     const product = await this.findOne(id, storeId, userId);
+    if (dto.barcode !== undefined) await this.inventory.assertBarcodeFree(storeId, dto.barcode, { productId: id });
 
     // فحص الحد فقط عند تفعيل منتج كان معطلاً
     if (product.isActive === false && dto.isActive === true) {
@@ -504,6 +508,7 @@ export class ProductService {
         price: dto.price !== undefined ? Number(dto.price) : product.price,
         priceOriginal: dto.priceOriginal !== undefined ? Number(dto.priceOriginal) : product.priceOriginal,
         sku: dto.sku ?? product.sku,
+        barcode: dto.barcode !== undefined ? (dto.barcode?.trim() || null) : product.barcode,
         slug: dto.slug ?? product.slug,
         stock: dto.stock !== undefined ? Number(dto.stock) : product.stock,
         isActive: dto.isActive ?? product.isActive,
@@ -942,7 +947,7 @@ export class ProductService {
 
   async updateVariant(
     productId: string, variantId: string, storeId: string, userId: string,
-    dto: { price?: number; stock?: number },
+    dto: { price?: number; stock?: number; barcode?: string | null },
   ): Promise<VariantDetail> {
     await this.storeService.verifyOwnership(storeId, userId);
     const variant = await this.variantDetailRepository.findOne({
@@ -950,6 +955,10 @@ export class ProductService {
     });
     if (!variant) throw new NotFoundException('المتغير غير موجود');
     if (dto.price !== undefined) variant.price = Number(dto.price);
+    if (dto.barcode !== undefined) {
+      await this.inventory.assertBarcodeFree(storeId, dto.barcode, { variantId });
+      variant.barcode = dto.barcode?.trim() || null;
+    }
     const before = Number(variant.stock);
     if (dto.stock !== undefined) variant.stock = Number(dto.stock);
     const saved = await this.variantDetailRepository.save(variant);
