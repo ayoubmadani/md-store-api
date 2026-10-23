@@ -18,7 +18,10 @@ function setup() {
       return [];
     }),
   };
-  const jwt = { signAsync: jest.fn(async (payload: any) => `jwt:${payload.sub}:${payload.role}`) };
+  const jwt = {
+    signAsync: jest.fn(async (payload: any) => `jwt:${payload.sub}:${payload.role}`),
+    verifyAsync: jest.fn(async (token: string) => { if (!token.startsWith('jwt:')) throw new Error('bad'); return { sub: token.split(':')[1] }; }),
+  };
   return { svc: new HandoffService(ds as any, jwt as any), rows };
 }
 
@@ -45,5 +48,13 @@ describe('HandoffService', () => {
     rows[0].expiresAt = new Date(Date.now() - 1000);
     await expect(svc.redeem(code)).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(svc.redeem('nope')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('Google login → one-time code for the user of a valid session token (no token in the URL)', async () => {
+    const { svc, rows } = setup();
+    const { code } = await svc.createForToken('jwt:u7:user');
+    expect(rows[0].userId).toBe('u7');
+    expect(await svc.redeem(code)).toEqual({ access_token: 'jwt:u7:user', success: true });
+    await expect(svc.createForToken('forged')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

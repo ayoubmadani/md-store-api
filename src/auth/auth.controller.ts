@@ -12,6 +12,7 @@ import { GoogleConfirmGuard } from "./guard/google-confirm.guard";
 import { HandoffService } from './handoff/handoff.service';
 import { AuthGuard as JwtAuthGuard } from './guard/auth.guard';
 import { GetUser } from '../user/decorator/get-user.decorator';
+import { GoogleStockGuard } from './guard/google-stock.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -91,6 +92,20 @@ export class AuthController {
     @Get('google/callback')
     @UseGuards(AuthGuard('google' ))
     async googleAuthRedirect(@Req() req, @Res() res: Response) {
+        // state=stock → تطبيق المخزون: رمز لمرة واحدة عبر /handoff (لا رمز جلسة في الرابط)
+        if (req.query?.state === 'stock') {
+            const stockUrl = this.config.get<string>('STOCK_URL') ?? 'http://localhost:5175';
+            try {
+                const result = await this.authService.GoogleLogin(req.user);
+                if (result && result.access_token) {
+                    const { code } = await this.handoff.createForToken(result.access_token);
+                    return (res as any).redirect(`${stockUrl}/handoff?code=${encodeURIComponent(code)}`);
+                }
+                return (res as any).redirect(`${stockUrl}/login?error=auth_failed`);
+            } catch {
+                return (res as any).redirect(`${stockUrl}/login?error=google_auth_error`);
+            }
+        }
         // state=confirm → جاء من تطبيق التأكيد، فيُعاد إليه بدل لوحة التحكم
         if (req.query?.state === 'confirm') {
             const confirmUrl = this.config.get<string>('CONFIRM_URL') ?? 'http://localhost:3176';
@@ -117,6 +132,11 @@ export class AuthController {
             return (res as any).redirect(`${this.config.get<string>('FRONT_URL')}/auth/login?error=google_auth_error`);
         }
     }
+
+    // ── تطبيق المخزون (mdstore-stock): نفس استراتيجية google والرجوع، state=stock ──
+    @Get('stock/google')
+    @UseGuards(GoogleStockGuard)
+    async googleStockAuth(@Req() req) { }
 
     // ── تطبيق التأكيد (confirm-app): نفس استراتيجية google، والرجوع إلى google/callback ──
     @Get('confirm/google')

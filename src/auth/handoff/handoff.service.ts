@@ -24,6 +24,18 @@ export class HandoffService {
     return { code, expiresIn: TTL_SECONDS };
   }
 
+  /** بعد دخول Google: رمز لمرة واحدة لصاحب جلسة صالحة — بدل وضع رمز الجلسة في رابط الرجوع */
+  async createForToken(accessToken: string) {
+    let sub: string | undefined;
+    try {
+      sub = (await this.jwt.verifyAsync(accessToken))?.sub;
+    } catch {
+      sub = undefined;
+    }
+    if (!sub) throw new UnauthorizedException('جلسة غير صالحة');
+    return this.create(String(sub));
+  }
+
   async redeem(code: string) {
     // ذرّي: استبدالان متزامنان لنفس الرمز — ينجح واحد فقط
     const [rows] = await this.dataSource.query(
