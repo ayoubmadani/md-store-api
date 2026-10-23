@@ -9,13 +9,32 @@ import { ConfigService } from "@nestjs/config";
 import { CredentialLoginDto } from "./dto/credentialLogin.dto";
 import { ChangeEmailDto } from "./dto/changeEmail.dto";
 import { GoogleConfirmGuard } from "./guard/google-confirm.guard";
+import { HandoffService } from './handoff/handoff.service';
+import { AuthGuard as JwtAuthGuard } from './guard/auth.guard';
+import { GetUser } from '../user/decorator/get-user.decorator';
 
 @Controller('auth')
 export class AuthController {
     constructor(
         private readonly authService: AuthService,
-        private readonly config: ConfigService
+        private readonly config: ConfigService,
+        private readonly handoff: HandoffService,
     ) { }
+
+    // دخول سريع لتطبيق المخزون: اللوحة تطلب رمزاً لمرة واحدة (60 ثانية)…
+    @Post('handoff')
+    @UseGuards(JwtAuthGuard)
+    @HttpCode(HttpStatus.OK)
+    createHandoff(@GetUser() user: any) {
+        return this.handoff.create(String(user?.actorId || user?.id || user?.sub));
+    }
+
+    // …والتطبيق يستبدله بجلسة عادية
+    @Post('handoff/redeem')
+    @HttpCode(HttpStatus.OK)
+    redeemHandoff(@Body('code') code: string) {
+        return this.handoff.redeem(code);
+    }
 
     @Post('login')
     @HttpCode(HttpStatus.OK)

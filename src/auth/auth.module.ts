@@ -8,6 +8,7 @@ import { MailModule } from "../mail/mail.module";
 import { PassportModule } from "@nestjs/passport"; // 2. استورد PassportModule
 import { GoogleStrategy } from "./strategy/google.strategy";
 import { GoogleSupportStrategy } from "./strategy/google-support.strategy";
+import { HandoffService } from './handoff/handoff.service';
 
 @Module({
     imports: [
@@ -28,6 +29,7 @@ import { GoogleSupportStrategy } from "./strategy/google-support.strategy";
     ],
     controllers: [AuthController],
     providers: [
+        HandoffService,
         AuthService,
         GoogleStrategy,
         GoogleSupportStrategy,
