@@ -174,7 +174,7 @@ export class InventoryService {
     const products: Row[] = await this.dataSource.query(
       `SELECT p.id, p.name, p.price, p.stock, p."lowStockThreshold", p."costPrice", p.barcode, p."categoryId",
               (SELECT pi."imageUrl" FROM "product-images" pi WHERE pi."productId" = p.id LIMIT 1) AS image
-         FROM products p WHERE p."storeId"::text = $1 ORDER BY p.name`, [storeId],
+         FROM products p WHERE p."storeId"::text = $1 AND p."deletedAt" IS NULL ORDER BY p.name`, [storeId],
     );
     const variants: Row[] = products.length ? await this.dataSource.query(
       `SELECT v.id, v."productId", v.name, v.price, v.stock, v.barcode FROM variant_details v
