@@ -488,6 +488,20 @@ export class OrdersService {
 
     // ─── STATUS COUNTS ────────────────────────────────────────────────────────
 
+    /** مسح باركود طلب: الباركود الداخلي (O…) أو رقم تتبع شركة التوصيل — داخل المتجر فقط */
+    async findByCode(storeId: string, raw: string) {
+        const code = String(raw || '').trim().toUpperCase();
+        if (!code) throw new NotFoundException('الرمز فارغ');
+        const [row] = await this.ordersRepo.query(
+            `SELECT o.id FROM orders o
+              WHERE o."storeId"::text = $1 AND (upper(o.barcode) = $2 OR upper(o."shippingTrackingId") = $2)
+              ORDER BY o."createdAt" DESC LIMIT 1`,
+            [storeId, code],
+        );
+        if (!row) throw new NotFoundException('لا يوجد طلب بهذا الرمز');
+        return { id: row.id };
+    }
+
     async getCountStatus(storeId: string) {
         return this.ordersRepo
             .createQueryBuilder('o')

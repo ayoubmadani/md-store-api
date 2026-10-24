@@ -70,6 +70,14 @@ export class OrdersController {
         return this.ordersService.getCountPageByStoreId(storeId, status, query, parseIsDigital(isDigital));
     }
 
+    // مسح باركود الطلب أو رقم تتبع التوصيل من تطبيق الهاتف
+    @Get('scan/:storeId/:code')
+    @RequirePermission(StorePermission.ORDER_VIEW)
+    async scan(@GetUser() user: any, @Param('storeId') storeId: string, @Param('code') code: string) {
+        await this.storeService.verifyOwnership(storeId, userIdOf(user));
+        return this.ordersService.findByCode(storeId, code);
+    }
+
     @Get('get-one/:orderId')
     @RequirePermission(StorePermission.ORDER_VIEW, { entity: 'order', param: 'orderId' })
     async getOne(@Param('orderId') orderId: string, @GetUser() user: any) {

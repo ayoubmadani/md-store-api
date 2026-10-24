@@ -150,6 +150,10 @@ export class Order {
   @Column({ default: false })
   isUploadedShipping: boolean;
 
+  // باركود الطلب (O100523): تولّده قاعدة البيانات لكل طلب جديد (تسلسل) — لا يُكتب من الكود
+  @Column({ type: 'varchar', length: 32, nullable: true, insert: false, update: false })
+  barcode?: string | null;
+
   // ── شحن: رقم التتبع وآخر حالة عند شركة التوصيل ───────
   @Column({ nullable: true })
   shippingTrackingId?: string;
