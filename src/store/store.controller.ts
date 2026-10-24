@@ -86,7 +86,7 @@ export class StoreController {
     const userId = this.getUserId(user);
     // متاجره + المتاجر التي هو عضو مقبول فيها (مع صلاحياته وهل يمكن الدخول إليها الآن)
     const [owned, shared] = await Promise.all([this.storeService.getAllStores(userId), this.team.memberStores(userId)]);
-    const ownedItems = owned.map((s: any) => ({ ...s, role: 'owner', permissions: ALL_PERMISSIONS, selectable: true, reason: null }));
+    const ownedItems = owned.map((s: any) => ({ ...s, ownerId: userId, role: 'owner', permissions: ALL_PERMISSIONS, selectable: true, reason: null }));
     // آخر متجر اختاره (يبقى بعد تسجيل الخروج) — فقط إن كان ما يزال في قائمته
     const selectedStoreId = await this.storeService.getLastStoreId(userId);
     const all = [...ownedItems, ...shared];

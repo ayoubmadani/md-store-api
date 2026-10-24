@@ -342,7 +342,7 @@ export class TeamService {
         : r.suspendedByPlan ? AccessError.MEMBER_SUSPENDED
           : !r.groupId ? AccessError.NO_GROUP
             : !r.groupActive ? AccessError.GROUP_DISABLED : null;
-      return { ...store, role: 'member' as const, ownerName: r.ownerName, groupName: r.groupName, permissions: r.permissions ?? [], selectable: !reason, reason };
+      return { ...store, role: 'member' as const, ownerId: r.ownerId, ownerName: r.ownerName, groupName: r.groupName, permissions: r.permissions ?? [], selectable: !reason, reason };
     });
   }
 
