@@ -94,7 +94,7 @@ export class AuthController {
     async googleAuthRedirect(@Req() req, @Res() res: Response) {
         // state=stock → تطبيق المخزون: رمز لمرة واحدة عبر /handoff (لا رمز جلسة في الرابط)
         if (req.query?.state === 'stock') {
-            const stockUrl = this.config.get<string>('STOCK_URL') ?? 'http://localhost:5175';
+            const stockUrl = this.config.get<string>('STOCK_URL') ?? 'https://stock.mdstore.top';
             try {
                 const result = await this.authService.GoogleLogin(req.user);
                 if (result && result.access_token) {
