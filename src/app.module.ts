@@ -38,6 +38,7 @@ import { HiggsfieldModule } from './higgsfield/higgsfield.module';
 import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 import { CustomThemeModule } from './custom-theme/custom-theme.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { InventoryModule } from './inventory/inventory.module';
     SubscriptionModule,
     PaymentModule,
     InventoryModule,
+    PushModule,
     ShippingProviderModule,
     CronJobModule,
     ShippingSyncModule,

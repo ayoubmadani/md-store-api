@@ -12,6 +12,7 @@ import { Store } from "../store/entities/store.entity";
 import { NtfyService } from "../ntfy/ntfy.service";
 import { Shipping } from "../shipping/entity/shipping.entity";
 import { ConfirmationService } from "../confirmation/confirmation.service";
+import { PushService } from '../push/push.service';
 import { InventoryService } from '../inventory/inventory.service';
 
 // الإضافات المختارة كما هي معرّفة في المنتج وقت الطلب (المفعّلة فقط) — لا نثق باسم أو سعر يرسله العميل
@@ -34,6 +35,7 @@ export class OrdersService {
         private readonly ntfyService: NtfyService,
         private readonly confirmationService: ConfirmationService,
         private readonly inventory: InventoryService,
+        private readonly push: PushService,
     ) { }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
@@ -206,7 +208,10 @@ export class OrdersService {
         await this.confirmationService.autoSendNewOrder(storeId, savedOrder.id);
 
         // مهم: إرجاع الطلب مع الـ relations لضمان ظهور الـ items في الفرونت إند
-        return this.getOne(savedOrder.id);
+        const full = await this.getOne(savedOrder.id);
+        // إشعار تطبيق الهاتف لصاحب المتجر وفريقه — بلا انتظار ولا يرمي (لا يؤخر الطلب ولا يُفشله)
+        if (full) void this.push.notifyNewOrder({ ...full, storeId });
+        return full;
     }
 
     // ─── GET ALL ──────────────────────────────────────────────────────────────
